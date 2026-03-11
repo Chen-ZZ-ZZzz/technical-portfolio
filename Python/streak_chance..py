@@ -1,30 +1,26 @@
 import random
 
-number_of_streaks = 0
+EXPERIMENTS = 10_000
+FLIPS_PER_EXPERIMENT = 100
+STREAK_LENGTH = 6
 
-for experiment_number in range(10000):
-    results = []
-    counter_0 = 0
-    counter_1 = 0
 
-    for i in range(0, 100):
-        results.append(random.randint(0, 1))
-
-    for result in results:
-        if result == 0:
-            counter_0 += 1
-            counter_1 = 0
-
-            if counter_0 == 6:
+def run_experiments(num_experiments: int, flips_per: int, streak_len: int) -> int:
+    """Run experiments and return the number that contained a streak."""
+    number_of_streaks = 0
+    for _ in range(num_experiments):
+        count = 0
+        last = None
+        for _ in range(flips_per):
+            flip = random.randint(0, 1)
+            count = count + 1 if flip == last else 1
+            last = flip
+            if count == streak_len:
                 number_of_streaks += 1
                 break
+    return number_of_streaks
 
-        else:
-            counter_1 += 1
-            counter_0 = 0
 
-            if counter_1 == 6:
-                number_of_streaks += 1
-                break
-
-print('Chance of streak: %s%%' % (number_of_streaks / 100)
+if __name__ == '__main__':
+    streaks = run_experiments(EXPERIMENTS, FLIPS_PER_EXPERIMENT, STREAK_LENGTH)
+    print(f'Chance of streak: {streaks / EXPERIMENTS * 100:.2f}%')
