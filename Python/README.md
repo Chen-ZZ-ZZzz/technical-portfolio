@@ -72,14 +72,6 @@ Takes a list of lists of strings and prints a right-justified table.
 
 ---
 
-### Password Strength Checker (`password_checker.py`)
-
-Checks a password against rules (length, digit, uppercase, lowercase) and reports all failures.
-
-**Concepts practiced:** `re` module, compiled patterns, list comprehensions, f-strings.
-
----
-
 ### Custom `strip()` (`strip_reg.py`)
 
 Reimplements Python's built-in `str.strip()` using regular expressions.
