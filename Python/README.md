@@ -6,7 +6,7 @@ This folder contains Python scripts demonstrating:
 - Automation and utility scripts
 - Data parsing and processing
 - Test automation utilities
-- 
+
 
 ## Skills Demonstrated
 
