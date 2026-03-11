@@ -1,19 +1,26 @@
 def collatz(number):
-    if number % 2:
-        return_value = 3 * number +1
-
+    """
+    Compute the next number in the Collatz sequence.
+    If number is odd: 3n + 1
+    If number is even: n / 2
+    """
+    if number % 2 == 1:
+        next_number = 3 * number + 1
     else:
-        return_value = number // 2
-    print(return_value, end='')
-    return(return_value)
+        next_number = number // 2
+    print(next_number, end=' ')
+    return next_number
 
-print('Input a integer number')
-print('This programme will calculate until it gets 1!')
-try:
-    cal_until_one = int(input('>'))
-    while cal_until_one != 1:
-        cal_until_one = collatz(cal_until_one)
-        print(' ', end='')
-    print()
-except ValueError:
-    print('You must enter an integer')
+def main():
+    print('Input an integer number:')
+    print('This program will calculate the Collatz sequence until it reaches 1!')
+    try:
+        number = int(input('> '))
+        while number != 1:
+            number = collatz(number)
+        print()  # for newline at the end
+    except ValueError:
+        print('Error: You must enter an integer.')
+
+if __name__ == "__main__":
+    main()
