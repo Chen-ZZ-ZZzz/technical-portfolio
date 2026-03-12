@@ -3,10 +3,6 @@
 
 This folder contains small HIL/SIL test simulations and QA scripts.
 
-# Test Automation & QA Tools
-
-A collection of scripts focused on log analysis, test output processing, and quality assurance tooling. Each script was written, reviewed, and improved with attention to robustness, correctness, and readable reporting.
-
 ---
 
 ## Skills Demonstrated
@@ -32,9 +28,3 @@ Scans `.log` files under a directory (or a single file) for `ERROR` and `WARN` e
 **Concepts practiced:** `re`, `pathlib.rglob`, `defaultdict`, walrus operator `:=`, dynamic column formatting, `file=sys.stderr`.
 
 ---
-
-## Notes
-
-- Scripts accept both a single file and a directory as input where applicable
-- All output tables use dynamic column widths to stay readable regardless of path length
-- Errors and warnings always go to `stderr`; clean report output to `stdout`
