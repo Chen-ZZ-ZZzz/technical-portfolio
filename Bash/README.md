@@ -18,6 +18,8 @@ This folder contains Bash scripts for automation and system tasks.
 
 ---
 
+## Example Scripts
+
 ### Project Backup (`bak_pj.sh`)
 
 Compresses a folder into a timestamped `.tar.gz` archive, stored in a sibling `*-backups` directory.
