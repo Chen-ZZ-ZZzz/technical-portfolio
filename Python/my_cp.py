@@ -24,5 +24,4 @@ def copy_by_extension(src_root: Path, base_dst: Path) -> None:
 
 
 if __name__ == '__main__':
-    base = Path.home() / 'iwish/prog/python3_boring/test'
-    copy_by_extension(src_root=base / 'spam', base_dst=base)
+    main()
