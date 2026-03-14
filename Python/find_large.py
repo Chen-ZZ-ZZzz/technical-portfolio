@@ -1,6 +1,19 @@
+"""
+find_large.py — find files and folders exceeding a size threshold
+
+Usage:
+    python3 find_large.py <directory> [--mb <megabytes>]
+
+Examples:
+    python3 find_large.py ./downloads
+    python3 find_large.py ./downloads --mb 500
+"""
+
+import argparse
 from pathlib import Path
 
-BIG = 100 * 1024 * 1024  # 100 MB
+DEFAULT_MB = 100
+BIG = DEFAULT_MB * 1024 * 1024
 
 
 def dir_size(path: Path) -> int:
@@ -28,12 +41,29 @@ def find_large(root: Path, threshold: int = BIG) -> None:
         except OSError:
             continue
         if size > threshold:
-            print(f"{size / 1024 / 1024:.1f} MB  {f}")
+            print(f'{size / 1024 / 1024:.1f} MB  {f}')
     print('Done')
 
 
 def main() -> None:
-    find_large(Path.home() / 'iwish/downloads/films')
+    parser = argparse.ArgumentParser(
+        description='Find files and folders exceeding a size threshold.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Examples:\n'
+            '  python3 find_large.py ./downloads\n'
+            '  python3 find_large.py ./downloads --mb 500'
+        )
+    )
+    parser.add_argument('directory', type=Path, help='Directory to scan')
+    parser.add_argument('--mb', type=int, default=DEFAULT_MB,
+                        help=f'Size threshold in MB (default: {DEFAULT_MB})')
+    args = parser.parse_args()
+
+    if not args.directory.is_dir():
+        parser.error(f"Directory not found: '{args.directory}'")
+
+    find_large(args.directory, threshold=args.mb * 1024 * 1024)
 
 
 if __name__ == '__main__':
