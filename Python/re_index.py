@@ -40,10 +40,17 @@ def insert_gap(prefix: str, root: Path, start: int, width: int) -> None:
 
 
 def main() -> None:
-    root = Path.home() / 'iwish/prog/python3_boring/test/spam3'
-    root.mkdir(exist_ok=True)
-    renumber('spam', root)
-    # insert_gap('spam', root, start=3, width=2)
+    import argparse
+    parser = argparse.ArgumentParser(description='Renumber or gap-insert prefixed files.')
+    parser.add_argument('directory', type=Path)
+    parser.add_argument('prefix')
+    parser.add_argument('--insert-gap', nargs=2, type=int, metavar=('START', 'WIDTH'))
+    args = parser.parse_args()
+
+    if args.insert_gap:
+        insert_gap(args.prefix, args.directory, *args.insert_gap)
+    else:
+        renumber(args.prefix, args.directory)
 
 
 if __name__ == '__main__':
