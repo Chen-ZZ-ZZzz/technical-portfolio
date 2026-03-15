@@ -1,36 +1,62 @@
+"""
+is_phone.py — validate simple German phone numbers
+
+Accepted formats:
+    +49 171 1234567
+    0049 171 1234567
+    0171-1234567
+    0711 123456
+
+Rejected:
+    letters, double plus, trunk 0 after +49, too short
+
+Usage:
+    python3 is_phone.py <number> [<number> ...]
+
+Example:
+    python3 is_phone.py '+49 171 1234567' '0171-1234567' 'bad@@x'
+"""
+
+import argparse
 import re
 
-'''2) Validate “simple” German phone numbers
-Goal: Write is_phone(s) -> bool for patterns like:
-+49 171 1234567
-0171-1234567
-0711 123456
-Reject: letters, double plus, too short.'''
+PHONE_PAT = re.compile(
+    r"""
+    ^
+    (?:
+        (?:\+|00)49[ -]?   # international: +49 or 0049
+        [1-9][0-9]{1,4}[ -]?       # prefix, no trunk 0
+        [0-9]{6,8}                 # subscriber
+      |
+        0[0-9]{1,4}[ -]?           # national: trunk 0 + prefix
+        [0-9]{6,8}                 # subscriber
+    )
+    $
+    """,
+    re.VERBOSE
+)
 
-phone_list = ['+49 171 1234567', '0171-1234567', '0711 123456', 'asfahflafa', '++49177213107171', '171196876fa81', '0197912', '+4917612102914', '0711212198672', '+49 0711-09876543']
 
 def is_phone(s: str) -> bool:
-    # # my version does not enforce the German trunk “0” rule: International format +49 / 0049: must NOT keep the trunk 0 (so +49 0711… should be rejected)
-    # phone_pat = re.compile(r'(?:\A(?:\+|00)49)?[ -]?[0-9]{2,5}[ -]?[0-9]{6,8}')
-    # if re.fullmatch(phone_pat, s):
-    #     return True
-    # else:
-    #     return False
+    """Return True if s matches a recognised German phone number format."""
+    return PHONE_PAT.fullmatch(s) is not None
 
-    # chatgpt5.2 ver.
-    PHONE_RX = re.compile(
-        r"""
-        ^
-        (?:
-            (?:\+|00)49[ -]?      # +49 or 0049
-            [1-9][0-9]{1,4}[ -]?          # prefix (2–5 digits)
-            [0-9]{6,8}               # subscriber (6–8 digits)
-          |
-            0[0-9]{1,4}[ -]?         # national: trunk 0 + prefix
-            [0-9]{6,8}               # subscriber
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Validate German phone numbers.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Example:\n'
+            "  python3 is_phone.py '+49 171 1234567' '0171-1234567' 'bad'"
         )
-        $
-        """,
-        re.VERBOSE
     )
-    return PHONE_RX.fullmatch(s) is not None
+    parser.add_argument('numbers', nargs='+', help='Phone number(s) to validate')
+    args = parser.parse_args()
+    for number in args.numbers:
+        status = 'PASS' if is_phone(number) else 'FAIL'
+        print(f'{status}  {number}')
+
+
+if __name__ == '__main__':
+    main()
