@@ -1,29 +1,69 @@
-"""8) Mask secrets in config text
-Mask values for keys like password=..., token: ..., api_key ...
-Keep key, replace value with ***
-Work across different separators = : whitespace
+"""
+mask.py — mask secret values in config text
 
+Masks values for keys: password, token, api_key
+Works across separators: =  :  whitespace
+Quoted and unquoted values supported.
+Comment lines (starting with #) are left untouched.
+
+Usage:
+    python3 mask.py <configfile>
+
+Example:
+    python3 mask.py config.txt
+"""
+
+import argparse
 import re
+from pathlib import Path
 
-def mask(txt, sink=None):
-    pat = re.compile(
-        r"""
-        (?P<key>password|token|api_key)
-        (?P<sep>[= :]+)
-        (?P<value>
-            "[^"]*"         # quoted value
-           | [^\s#]+)""",            # or unquoted, stop at space or #
-        re.MULTILINE | re.X)
+SECRET_PAT = re.compile(
+    r"""
+    (?P<key>password|token|api_key)
+    (?P<sep>[= :]+)
+    (?P<value>
+        "[^"]*"     # quoted value
+      | [^\s#]+     # unquoted: stop at space or #
+    )
+    """,
+    re.MULTILINE | re.VERBOSE
+)
 
-    def rep(ma) -> str:
-        va = ma.group("value")
-        if len(va) >= 2 and va[0] == '"' and va[-1] == '"':
-            va = va[1:-1]
 
-        # gpt if not None, but i think it should be stored in any rate
+def mask(txt: str, sink: list | None = None) -> str:
+    """Mask secret values in config text; optionally collect (key, value) pairs in sink."""
+    def rep(m: re.Match) -> str:
+        val = m.group("value")
+        if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
+            val = val[1:-1]
         if sink is not None:
-            sink.append((ma.group("key"), va))
-        return f"{ma.group('key')}{ma.group('sep')}***"
+            sink.append((m.group("key"), val))
+        return f"{m.group('key')}{m.group('sep')}***"
 
-    newlist = [pat.sub(rep, f) if not f.strip().startswith("#") else f for f in txt.splitlines()]
-    return "\n".join(newlist)
+    lines = [
+        SECRET_PAT.sub(rep, line) if not line.strip().startswith("#") else line
+        for line in txt.splitlines()
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Mask secret values in config text.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Example:\n"
+            "  python3 mask.py config.txt"
+        )
+    )
+    parser.add_argument("configfile", type=Path, help="Config file to mask")
+    args = parser.parse_args()
+
+    if not args.configfile.is_file():
+        parser.error(f"File not found: '{args.configfile}'")
+
+    print(mask(args.configfile.read_text(encoding="utf-8")))
+
+
+if __name__ == "__main__":
+    main()
