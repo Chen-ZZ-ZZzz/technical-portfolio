@@ -1,9 +1,38 @@
-"""5) Extract hashtags but not inside words
-Text: "We love #python, but not C# or abc#def. Also #привет is ok."
-Goal: ["python", "привет"]
-Hints: word boundaries don’t work perfectly with #. Use lookarounds:
-not preceded by word char
-# then letters/numbers/underscore in Unicode"""
-def hash_out(s: str) -> list:
-    # that’s a very real findall() “gotcha”, list of that group
-    return re.findall(r"(?<!\w)#(\w+)", s)
+"""
+hash_out.py — extract hashtags from text, ignoring C# or mid-word # signs
+
+Usage:
+    python3 hash_out.py <text>
+
+Example:
+    python3 hash_out.py 'We love #python, but not C# or abc#def. Also #привет is ok.'
+    → ['python', 'привет']
+"""
+
+import argparse
+import re
+
+HASHTAG_PAT = re.compile(r'(?<!\w)#(\w+)')
+
+
+def hash_out(s: str) -> list[str]:
+    """Return list of hashtag words, excluding false positives like C# or abc#def."""
+    return HASHTAG_PAT.findall(s)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Extract hashtags from text.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Example:\n'
+            "  python3 hash_out.py 'We love #python, but not C# or abc#def.'"
+        )
+    )
+    parser.add_argument('text', help='Text to search for hashtags')
+    args = parser.parse_args()
+    print(hash_out(args.text))
+
+
+if __name__ == '__main__':
+    main()
