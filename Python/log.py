@@ -20,3 +20,15 @@ LOG_PAT = re.compile(
     $
     ''',
     re.X | re.A)
+
+def log_parse(line: str) -> dict:
+    m = LOG_PAT.fullmatch(line)
+    # m_dict = copy.copy(log_tem)
+    # for y in m_dict:
+    #     m_dict[y] = m.group(y)
+    # print(m.groupdict())
+    return m.groupdict() if m else None
+
+log_lines = Path('test/sample.log').read_text(encoding='utf-8').splitlines()
+for x in log_lines:
+    log_parse(x.strip())
