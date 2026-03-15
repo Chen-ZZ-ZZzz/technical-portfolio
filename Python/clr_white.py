@@ -1,15 +1,36 @@
-"""7) Normalize whitespace, but keep newlines
-Goal: Replace runs of spaces/tabs with one space, but don’t destroy line breaks.
-Input:
-"hello\t\tworld\nthis   is\tok"
-Output:
-"hello world\nthis is ok"
-Hints: character class [ \t]+."""
+"""
+clr_white.py — normalize whitespace (spaces/tabs) while preserving newlines
 
+Usage:
+    python3 clr_white.py <text>
+
+Example:
+    python3 clr_white.py $'hello\t\tworld\nthis   is\tok'
+    → 'hello world\nthis is ok'
+"""
+
+import argparse
 import re
 
-def clr_white(bad):
-    # print(f"This is the text needed to be normalized:\n{bad}")
-    # good = re.sub(r"[ \t]+", " ", bad)
-    # print(f"Thi is the normalized text:\n{good}")
-    return re.sub(r"[ \t]+", " ", bad)
+
+def clr_white(text: str) -> str:
+    """Replace runs of spaces/tabs with a single space; newlines untouched."""
+    return re.sub(r'[ \t]+', ' ', text)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Normalize spaces and tabs while preserving newlines.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Example:\n'
+            "  python3 clr_white.py $'hello\\t\\tworld\\nthis   is\\tok'"
+        )
+    )
+    parser.add_argument('text', help='Text to normalize')
+    args = parser.parse_args()
+    print(clr_white(args.text))
+
+
+if __name__ == '__main__':
+    main()
