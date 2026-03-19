@@ -12,19 +12,30 @@ from pathlib import Path
 from typing import Iterator
 
 
+def _scan_file(f, path, regex):
+    for lineno, line in enumerate(f, start=1):
+        if regex.search(line):
+            yield path, lineno, line.rstrip("\n")
+
+
 def igrep(base: Path, pat: str) -> Iterator[tuple[Path, int, str]]:
     regex = re.compile(pat)
 
     for path in base.rglob("*"):
-        if path.suffix not in (".txt", ".log"):
+        if not path.is_file() or path.suffix not in (".txt", ".log"):
             continue
 
         try:
-            with path.open("r", encoding="utf-8", errors="replace") as f:
-                for lineno, line in enumerate(f, start=1):
-                    if regex.search(line):
-                        yield path, lineno, line.rstrip("\n")
-        except (PermissionError, OSError):
+            try:
+                with path.open("r", encoding="utf-8") as f:
+                    yield from _scan_file(f, path, regex)
+
+            except UnicodeDecodeError:
+                with path.open("r", encoding="latin-1") as f:
+                    yield from _scan_file(f, path, regex)
+
+        except (PermissionError, OSError) as e:
+            print(f"[SKIPPED] {path} ({e})")
             continue
 
 
