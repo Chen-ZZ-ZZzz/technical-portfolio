@@ -1,54 +1,69 @@
 """
-Level 5 — Scale & performance awareness
-Exercise 8: file statistics without Path explosion
+dir_stats.py -- Compute file statistics for a directory tree efficiently
 
-Compute:
-number of files
-total size
-largest file
+Usage:
+    python3 dir_stats.py <directory>
 
-Constraints:
-must work on very large trees
-minimize Path object creation
-explain why you structured it that way
+Output:
+    Number of files, total size, and largest file.
 
-This is where performance awareness matters.
+Uses os.walk() with raw strings to minimize object creation
+for large directory trees.
+
 """
 
+import argparse
 import os
+from pathlib import Path
 
-def dir_stats(root: Path):
-    number = 0
-    total = 0                   # total size
-    large = 0                   # largest size
-    name = None                 # path of the largest file
 
-    root = Path(root)
-    if not root.is_dir():
-        raise ValueError("Source must be a directory")
+def dir_stats(root: Path) -> tuple[int, float, float, str | None]:
+    """Return (count, total_mb, largest_mb, largest_path) for a directory tree.
 
-    for dir, _, files in os.walk(root): # this is more ecomomy?
-        for file in files:
-            fullpath = os.path.join(dir, file)
+    Uses os.walk() and os.stat() with raw strings to avoid
+    creating Path objects for every entry.
+    """
+    root = str(root)
+    count = 0
+    total = 0
+    largest_size = 0
+    largest_path = None
+
+    for dirpath, _, filenames in os.walk(root):
+        for fname in filenames:
+            fullpath = os.path.join(dirpath, fname)
 
             try:
-                st = os.stat(fullpath)
+                size = os.stat(fullpath).st_size
             except OSError:
-                continue        # skill bad files
+                continue
 
-            number += 1
-            size = st.st_size
+            count += 1
             total += size
 
-            if size > large:
-                large = size
-                name = fullpath
+            if size > largest_size:
+                largest_size = size
+                largest_path = fullpath
 
-    total = total / (1024 * 1024) # MB
-    large = large / (1024 * 1024)
+    total_mb = total / (1024 * 1024)
+    largest_mb = largest_size / (1024 * 1024)
 
-    return (
-        f"There are {number} files in {root}.\n"
-        f"Total size: {total:.2f} MB\n"
-        f"Largest file: {name} ({large:.2f} MB)"
-)
+    return count, total_mb, largest_mb, largest_path
+
+
+def main():
+    parser = argparse.ArgumentParser(description="file statistics for a directory")
+    parser.add_argument("directory", help="root directory to scan")
+    args = parser.parse_args()
+
+    count, total_mb, largest_mb, largest_path = dir_stats(Path(args.directory))
+
+    print(
+        f"There are {count} files in {args.directory}.\n"
+        f"Total size: {total_mb:.2f} MB\n"
+        f"Largest file: {largest_path} ({largest_mb:.2f} MB)"
+    )
+
+
+if __name__ == "__main__":
+    main()
