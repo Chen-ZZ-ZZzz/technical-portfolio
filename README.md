@@ -1,4 +1,4 @@
-# Technical Portfolio – Zichen Chen
+# Technical Portfolio – Chen
 
 This portfolio showcases my technical skills, projects, and exercises across multiple domains:
 
