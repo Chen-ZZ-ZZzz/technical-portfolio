@@ -1,65 +1,78 @@
-"""Given a config file containing:
-key=value
+"""
+config_update.py -- Update or insert a key=value pair in a config file atomically
 
-Write a function that:
-updates or inserts a key
-preserves other lines
-writes atomically
-preserves file permissions if file exists
+Usage:
+    python3 config_update.py <file> <key> <value>
+
 """
 
-
+import argparse
+import os
+import tempfile
 from pathlib import Path
-import os, tempfile
 
-def update_key_value(path: Path, key: str, val: str):
+
+def update_key_value(path: Path, key: str, val: str) -> None:
+    """Update or insert a key=value pair, preserving other lines and permissions."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     newline = f"{key}={val}\n"
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
     content = []
-    counter = 0
+    found = 0
+    mode = None
 
-    if p.exists():
-        with p.open("r", encoding="utf-8") as f:
+    if path.exists():
+        mode = path.stat().st_mode
+
+        with path.open("r", encoding="utf-8") as f:
             for line in f:
                 if line.startswith(f"{key}="):
                     content.append(newline)
-                    counter += 1
+                    found += 1
                 else:
                     content.append(line)
-        if counter == 0:
-            content.append(newline)
 
-    # assert counter <= 1, f"There are more than one {key} in the file!"
-    # Bad idea.
-    # Assertions can be disabled with python -O.
-    # Use:
-    # if counter > 1:
-    #     raise ValueError(...)
-    # Never use assert for business logic validation.
-
-        if counter > 1:
+        if found > 1:
             raise ValueError(f"Duplicate key detected: {key}")
 
-        mode = p.stat().st_mode
-
+        if found == 0:
+            content.append(newline)
     else:
         content.append(newline)
-        mode = None
 
     with tempfile.NamedTemporaryFile(
-            mode="w+", encoding="utf-8",
-            dir=p.parent,
-            delete=False
+        mode="w", encoding="utf-8",
+        delete=False, dir=path.parent
     ) as tmp:
-        # tmp.write(content)
-        # wrong here! write() expects a string
         tmp.writelines(content)
         tmp.flush()
         os.fsync(tmp.fileno())
         tmp_path = Path(tmp.name)
 
-    tmp_path.replace(p)
-    if mode is not None:        # dont simplify to if mode:
-        # what if mode is really 0? It is not safe
-        p.chmod(mode)
+    try:
+        tmp_path.replace(path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    if mode is not None:
+        path.chmod(mode)
+
+    dir_fd = os.open(path.parent, os.O_DIRECTORY)
+    os.fsync(dir_fd)
+    os.close(dir_fd)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="update key=value in a config file")
+    parser.add_argument("file", help="path to the config file")
+    parser.add_argument("key", help="config key")
+    parser.add_argument("value", help="config value")
+    args = parser.parse_args()
+
+    update_key_value(args.file, args.key, args.value)
+    print(f"Updated {args.key}={args.value} in {args.file}")
+
+
+if __name__ == "__main__":
+    main()
