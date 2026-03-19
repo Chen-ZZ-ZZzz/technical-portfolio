@@ -1,39 +1,51 @@
 """
-Write:
-def atomic_write_text(path: Path, data: str):
-    ...
-Requirements:
-file must never be left empty or partial
-write must be atomic on POSIX
-parent directory may or may not exist
-encoding must be UTF-8
-This is a core industrial pattern."""
+atom_write.py -- Write data to the file safely
 
+Usage:
+    python3 atom_write.py <file> <data>
+
+"""
+
+import argparse
+import os
 import tempfile
-def atomic_write_text(path: Path, data: str):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # try:
-    #     path.touch()
-    # except FileExistsError:
-    #     print("This file exists already.")
-    #     break
-    # Atomic write pattern must not pre-create or truncate the target file.
-    # creates the file if missing — defeating atomic safety.
-    # Atomic writing means: The original file stays untouched until replacement.
-    dir_fd = os.open(path.parent, os.O_DIRECTORY)
-    os.fsync(dir_fd)
-    os.close(dir_fd)
-    # For full durability on POSIX, you should also fsync the directory
-    # This ensures the rename itself is persisted.
+from pathlib import Path
+
+
+def atomic_write_text(file: Path, data: str) -> None:
+    """atomically write data to a file"""
+    file = Path(file)
+    file.parent.mkdir(parents=True, exist_ok=True)
+
     with tempfile.NamedTemporaryFile(
-            encoding="utf-8", delete_on_close=False,
-            dir=path.parent     # Atomic rename on POSIX works only: within the same filesystem
-            # That’s why we use: dir=path.parent
+        mode="w", encoding="utf-8", delete=False, dir=file.parent
     ) as tmp:
         tmp.write(data)
         tmp.flush()
         os.fsync(tmp.fileno())
-        tmp_path = tmp.name     # tmp is a file object, not a path. You need tmp.name.
-    tmp_path.replace(path)
-"""I write to a temporary file in the same directory, fsync it, and then atomically replace the target path to guarantee the file is never partially written."""
+        tmp_path = Path(tmp.name)
+
+    # atomic swap temp to the file
+    try:
+        tmp_path.replace(file)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    # fsync directory for rename is on disk
+    dir_fd = os.open(file.parent, os.O_DIRECTORY)
+    os.fsync(dir_fd)
+    os.close(dir_fd)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="atomic text writer")
+    parser.add_argument("file", help="target file")
+    parser.add_argument("data", help="input data")
+    args = parser.parse_args()
+
+    atomic_write_text(args.file, args.data)
+
+
+if __name__ == "__main__":
+    main()
