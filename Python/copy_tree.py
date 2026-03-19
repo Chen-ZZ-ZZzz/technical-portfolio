@@ -1,83 +1,57 @@
 """
-Level 4 — Copying & safety semantics
-Exercise 7: safe recursive copy
+copy_tree.py -- Recursively copy a directory without overwriting existing files
 
-Write a function:
-def copy_tree(src: Path, dst: Path):
-    ...
+Usage:
+    python3 copy_tree.py <source> <destination>
 
 Rules:
-do not overwrite existing files
-fail fast if a conflict exists
-preserve permissions and timestamps
-skip symlinks entirely
+    - Fail fast if a destination file already exists
+    - Preserve permissions and timestamps
+    - Skip symlinks entirely
 
-You may use shutil, but must control behavior explicitly."""
+"""
 
-from pathlib import Path
+import argparse
 import shutil
+from pathlib import Path
 
-def copy_tree(src: Path, dst: Path):
+
+def copy_tree(src: Path, dst: Path) -> None:
+    """Recursively copy src to dst, raising on conflicts and skipping symlinks."""
     src = Path(src)
     dst = Path(dst)
 
     if not src.is_dir():
-        raise ValueError("Source must be a directory")
+        raise ValueError(f"Source must be a directory: {src}")
 
     for root, dirs, files in src.walk(follow_symlinks=False):
-        root = Path(root)
-
-        # if folder != src:
-        #     dst = dst / folder.parts[-1] # bad idea
-        # Compute relative path safely
         rel = root.relative_to(src)
-        root_dst = dst / rel
-        root_dst.mkdir(parents=True, exist_ok=True)
-        shutil.copystat(root, root_dst, follow_symlinks=False)
+        dst_dir = dst / rel
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copystat(root, dst_dir, follow_symlinks=False)
 
-        for f in files:
-            f = root / f
-            f_dst = root_dst / f
+        for fname in files:
+            src_file = root / fname
+            dst_file = dst_dir / fname
 
-            if f.is_smylink():
-                continue        # skip symlinks entirely
+            if src_file.is_symlink():
+                continue
 
-            if f_dst.exists():
-                # print(f"File already exists: {f.name}")
-                # break
-                raise FileExistsError(f"Conflict: {f_dst}")
+            if dst_file.exists():
+                raise FileExistsError(f"Conflict: {dst_file}")
 
-            shutil.copy2(f, f_dst, follow_symlinks=False) # preserve metadata
+            shutil.copy2(src_file, dst_file, follow_symlinks=False)
 
-from pathlib import Path
-import shutil
-import tempfile
 
-def copy_tree_atomic(src: Path, dst: Path):
-    src = Path(src)
-    dst = Path(dst)
+def main():
+    parser = argparse.ArgumentParser(description="safe recursive directory copy")
+    parser.add_argument("source", help="source directory")
+    parser.add_argument("destination", help="destination directory")
+    args = parser.parse_args()
 
-    if not src.is_dir():
-        raise ValueError("Source must be a directory")
+    copy_tree(args.source, args.destination)
+    print(f"Copied {args.source} -> {args.destination}")
 
-    if dst.exists():
-        raise FileExistsError(f"Destination already exists: {dst}")
 
-    tmp_dir = Path(tempfile.mkdtemp(dir=dst.parent))
-
-    try:
-        # Copy into temp directory
-        shutil.copytree(
-            src,
-            tmp_dir,
-            symlinks=False,
-            copy_function=shutil.copy2,
-            dirs_exist_ok=True,
-        )
-
-        # Atomic rename
-        tmp_dir.replace(dst)
-
-    except Exception:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
+if __name__ == "__main__":
+    main()
