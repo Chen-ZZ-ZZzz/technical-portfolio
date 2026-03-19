@@ -29,7 +29,9 @@ def igrep(base: Path, pat: str) -> Iterator[tuple[Path, int, str]]:
             try:
                 with path.open("r", encoding="utf-8") as f:
                     yield from _scan_file(f, path, regex)
-
+                    
+            # NOTE: if UTF-8 fails mid-file, lines before the error
+            # are yielded twice (once per encoding attempt)
             except UnicodeDecodeError:
                 with path.open("r", encoding="latin-1") as f:
                     yield from _scan_file(f, path, regex)
