@@ -64,7 +64,7 @@ def main() -> None:
     )
     parser.add_argument('directory', type=Path, help='Target directory')
     parser.add_argument('prefix', help='Filename prefix e.g. spam')
-    parser.add_argument('--insert-gap', nargs=2, type=int, metavar=('START', 'WIDTH'),
+    parser.add_argument('-i', '--insert-gap', nargs=2, type=int, metavar=('START', 'WIDTH'),
                         help='Insert a gap of WIDTH at START instead of closing gaps')
     args = parser.parse_args()
 
