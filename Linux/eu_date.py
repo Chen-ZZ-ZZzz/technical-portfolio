@@ -70,7 +70,10 @@ def _rename_dir(root: Path, apply: bool) -> None:
 
 def _convert_file(path: Path, apply: bool) -> None:
     """Convert dates inside file content."""
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise SystemExit(f"Error: not a text file or unsupported encoding: '{path}'")
     result = DATE_PAT.sub(_swap_date, text)
 
     if not apply:
