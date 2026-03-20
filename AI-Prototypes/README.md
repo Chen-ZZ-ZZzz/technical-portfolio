@@ -11,3 +11,5 @@ Projects built with AI-assisted development (Claude Code + claude.ai), exploring
 ## Approach
 
 Each project here was developed as a human–AI collaboration: I defined the requirements, investigated the APIs, directed architecture decisions, and reviewed all output. Claude Code handled implementation and refactoring. The goal is working software I can fully explain and maintain.
+
+---
