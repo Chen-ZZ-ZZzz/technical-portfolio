@@ -72,8 +72,8 @@ def _convert_file(path: Path, apply: bool) -> None:
     """Convert dates inside file content."""
     try:
         text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        raise SystemExit(f"Error: not a text file or unsupported encoding: '{path}'")
+    except (UnicodeDecodeError, OSError) as e:
+        raise SystemExit(f"Error: cannot read '{path}': {e}")
     result = DATE_PAT.sub(_swap_date, text)
 
     if not apply:
