@@ -9,10 +9,10 @@ from alerce_qa.reporting import _psfflux_to_mag, build_qa_row
 
 
 def _cl(top_class="SN", class_prob=0.95, consensus=0.95, n_classifiers=2,
-        n_agree=2, n_disagree=0, flag=None):
+        n_agree=2, n_disagree=0, flag=None, verdict="pass"):
     return dict(top_class=top_class, class_prob=class_prob, consensus=consensus,
                 n_classifiers=n_classifiers, n_agree=n_agree, n_disagree=n_disagree,
-                flag=flag)
+                flag=flag, verdict=verdict)
 
 
 class TestPsffluxToMag:
@@ -77,10 +77,15 @@ class TestBuildQaRow:
         assert row["status"] == "PASS"
         assert row["flag"] is None
 
-    def test_status_review_on_genuine_split(self, data_complete):
+    def test_status_review_major_on_genuine_split(self, data_complete):
         flag = "genuine split across 2 classes (weighted: 'SN' 55%, 'AGN' 45%) — needs review"
-        row = build_qa_row("ZTF1", data_complete, [], _cl(flag=flag))
-        assert row["status"] == "REVIEW"
+        row = build_qa_row("ZTF1", data_complete, [], _cl(flag=flag, verdict="review_major"))
+        assert row["status"] == "REVIEW_MAJOR"
+
+    def test_status_flag_when_single_classifier(self, data_complete):
+        row = build_qa_row("ZTF1", data_complete, [], _cl(n_classifiers=1, n_agree=1, n_disagree=0))
+        assert row["status"] == "FLAG"
+        assert "insufficient_classifiers" in row["flag"]
 
     def test_status_flag_on_completeness_issues(self, data_complete):
         row = build_qa_row("ZTF1", data_complete, ["no_magstats"], _cl(flag=None))

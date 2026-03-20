@@ -36,6 +36,8 @@ pyproject.toml     — build: hatchling, script: alerce-qa
 - `fetch_object_data`: 3 API calls per object (detections, magstats, probabilities), each with retry (2 attempts, 2s base delay)
 - `validate_completeness`: confirmed = ndet > 1; no magnitude threshold filtering
 - `classify_object`: weighted consensus — lc_classifier outweights stamp_classifier, gap widens with ndet; consensus ≥ 0.90 → clean, ≥ 0.65 + dissenters < 0.30 → minor flag, else genuine split
+- `build_qa_row` status tiers (in priority order): FLAG if completeness issues or n_classifiers < 2 ("insufficient_classifiers"); PASS if consensus ≥ 0.90; REVIEW_MINOR if consensus ≥ 0.65 + outlier dissenters; REVIEW_MAJOR otherwise
+- REVIEW_MINOR is currently dormant for ZTF: `lc_classifier` returns empty for most objects, leaving only stamp_classifier voting → n_classifiers=1 → FLAG (insufficient_classifiers). Will activate when lc_classifier data flows.
 
 ## QA report columns
 
@@ -44,7 +46,14 @@ pyproject.toml     — build: hatchling, script: alerce-qa
 - `mag_range`: magmax − magmin (brightness amplitude)
 - `timespan_days`: last − first detection epoch (from `mjd` or `jd`)
 - `n_agree` / `n_disagree`: classifiers voting for/against the plurality class
-- `status`: PASS (no flag) / REVIEW (genuine split) / FLAG (everything else)
+- `n_classifiers`: number of classifiers that returned results for this object
+- `status`: PASS / REVIEW_MINOR / REVIEW_MAJOR / FLAG — see tier rules below
+
+## CLI summary (lean) output columns
+
+`oid, ndet, top_class, consensus, n_classifiers, status`
+
+The terminal printout (`SUMMARY_COLUMNS` in `__main__.py`) shows these six columns. Full details including mag stats and flag strings are in the CSV.
 
 ## Survey support
 

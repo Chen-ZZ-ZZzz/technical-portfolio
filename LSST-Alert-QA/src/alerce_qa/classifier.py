@@ -55,13 +55,13 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
     if probs.empty:
         return {"top_class": None, "class_prob": None, "consensus": None,
                 "n_classifiers": 0, "n_agree": 0, "n_disagree": 0,
-                "flag": "no_classification"}
+                "flag": "no_classification", "verdict": "review_major"}
 
     top = probs[probs["ranking"] == 1].copy()
     if top.empty:
         return {"top_class": None, "class_prob": None, "consensus": None,
                 "n_classifiers": 0, "n_agree": 0, "n_disagree": 0,
-                "flag": "no_ranking1_rows"}
+                "flag": "no_ranking1_rows", "verdict": "review_major"}
 
     top["_w"] = (
         top["classifier_name"].apply(lambda n: _method_weight(n, ndet))
@@ -75,7 +75,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
     if total_weight == 0:
         return {"top_class": None, "class_prob": None, "consensus": None,
                 "n_classifiers": len(top), "n_agree": 0, "n_disagree": 0,
-                "flag": "zero_total_weight"}
+                "flag": "zero_total_weight", "verdict": "review_major"}
 
     plurality    = class_weights.idxmax()
     w_consensus  = class_weights[plurality] / total_weight
@@ -88,13 +88,15 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
     outliers_only = dissenters.empty or (dissenters["probability"] < OUTLIER_PROB_THRESHOLD).all()
 
     if w_consensus >= HIGH_CONFIDENCE_THRESHOLD:
-        flag = None
+        flag    = None
+        verdict = "pass"
 
     elif w_consensus >= MAJORITY_THRESHOLD and outliers_only:
         flag = (
             f"minor disagreement: {n_agree}/{n_total} agree on '{plurality}'; "
             f"dissenters all below prob {OUTLIER_PROB_THRESHOLD}"
         )
+        verdict = "review_minor"
 
     else:
         top3 = class_weights.sort_values(ascending=False).head(3)
@@ -103,6 +105,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
             f"genuine split across {n_classes} classes "
             f"(weighted: {breakdown}) — needs review"
         )
+        verdict = "review_major"
 
     return {
         "top_class":     plurality,
@@ -112,4 +115,5 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
         "n_agree":       int(n_agree),
         "n_disagree":    int(n_total - n_agree),
         "flag":          flag,
+        "verdict":       verdict,
     }

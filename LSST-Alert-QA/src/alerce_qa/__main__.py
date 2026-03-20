@@ -1,27 +1,40 @@
 """CLI entry point: python -m alerce_qa [survey] [page_size | oid oid ...]"""
 
+import datetime
+import pathlib
 import sys
 
 from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE
 from .reporting import run_pipeline
 
+SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
+
 
 def main() -> None:
-    survey = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SURVEY
-    rest   = sys.argv[2:]
+    args = sys.argv[1:]
+
+    survey = args[0] if args else DEFAULT_SURVEY
+    rest   = args[1:]
 
     if rest and not rest[0].isdigit():
         explicit_oids = rest
+        n = len(explicit_oids)
         print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={explicit_oids} ===\n")
         df = run_pipeline(survey=survey, oids=explicit_oids)
     else:
-        page_size = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
-        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={page_size} ===\n")
-        df = run_pipeline(page_size=page_size, survey=survey)
+        n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
+        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
+        df = run_pipeline(page_size=n, survey=survey)
+
+    reports_dir = pathlib.Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = reports_dir / f"qa_{survey}_{date}_n{len(df)}.csv"
+    df.to_csv(csv_path, index=False)
 
     print("\n=== QA Report ===")
-    print(df.to_string())
-    print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged")
+    print(df[SUMMARY_COLUMNS].to_string())
+    print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
 
 
 if __name__ == "__main__":

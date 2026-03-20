@@ -1,7 +1,5 @@
 # LSST/ZTF Alert Data Quality Pipeline
 
-Datenqualitäts-Pipeline für astronomische Transient-Alerts aus ZTF und LSST.
-
 A data quality pipeline for ZTF (and eventually LSST) transient alert data via the [ALeRCE](https://alerce.science/) broker. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
 
 LSST support is included with graceful degradation — the pipeline runs end-to-end but full QA is not yet possible pending survey ramp-up.
@@ -25,7 +23,7 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 - **Completeness validation** — checks for missing detections, null magnitudes, absent real/bogus scores, sparse observations, and API fetch failures
 - **Weighted classifier consensus** — aggregates votes from up to 24 independent classifiers, weighting by method relevance (light curve vs stamp), confidence, and model recency
 - **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (early-stage, sparse), with graceful degradation for unimplemented API endpoints
-- **Structured QA reporting** — each object gets a status (PASS / FLAG / REVIEW) with detailed flags explaining why
+- **Structured QA reporting** — each object gets a tiered status (PASS / REVIEW_MINOR / REVIEW_MAJOR / FLAG) with detailed flags explaining why
 
 ---
 
@@ -63,7 +61,7 @@ python pipeline.py ztf 25
 # ZTF — specific OIDs
 python pipeline.py ztf ZTF17aaaaahl ZTF18abc
 
-# LSST — fetch 10 objects
+# LSST — fetch 100 objects
 python pipeline.py lsst
 
 # Via installed script
@@ -98,6 +96,8 @@ Prints classification verdict, per-filter magstats, and light curve summary for 
 
 ## QA Report
 
+Reports are saved to `reports/qa_{survey}_{timestamp}_n{count}.csv` after each run. The CLI also prints a summary table (`oid`, `ndet`, `top_class`, `consensus`, `n_classifiers`, `status`) and a flagged-object count.
+
 One row per object. Columns:
 
 | Column | Description |
@@ -115,15 +115,22 @@ One row per object. Columns:
 | `has_issues` | `True` if any completeness issues |
 | `completeness_issues` | List of issue tokens (see below) |
 | `flag` | Combined flag string, or `None` |
-| `status` | `PASS` / `FLAG` / `REVIEW` |
+| `status` | `PASS` / `REVIEW_MINOR` / `REVIEW_MAJOR` / `FLAG` |
 
-**Status values:**
+**Status tiers (evaluated in order):**
 
-- `PASS` — no flags
-- `REVIEW` — genuine classifier split, needs human inspection
-- `FLAG` — completeness issues or minor disagreement
+| Status | Condition |
+|---|---|
+| `FLAG` | Any completeness issues, or fewer than 2 classifiers voted (`insufficient_classifiers`) |
+| `PASS` | No issues, consensus ≥ 0.90 across ≥ 2 classifiers |
+| `REVIEW_MINOR` | No issues, consensus ≥ 0.65, all dissenters below prob 0.30 |
+| `REVIEW_MAJOR` | No issues, genuine classifier split — needs human inspection |
 
-**Completeness issue tokens:** `no_detections`, `no_magstats`, `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
+Note: `REVIEW_MINOR` is currently dormant for ZTF because `lc_classifier` returns no data for most objects, leaving only one classifier voting. It will activate once `lc_classifier` data flows.
+
+**Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats`, `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
+
+**Classification flag tokens** (appear in `flag` only): `insufficient_classifiers`, `minor disagreement: ...`, `genuine split: ...`, `no_classification`, `no_ranking1_rows`, `zero_total_weight`
 
 ---
 
@@ -137,11 +144,12 @@ Weighted consensus across all classifiers. Each vote is weighted by:
 
 Rules applied in order:
 
-| Condition | Result |
-|---|---|
-| consensus ≥ 0.90 | Clean label, no flag |
-| consensus ≥ 0.65 and all dissenters < prob 0.30 | Majority label, minor flag |
-| otherwise | Genuine split → `REVIEW` |
+| Condition | Verdict | Status |
+|---|---|---|
+| < 2 classifiers voted | — | `FLAG` (insufficient_classifiers) |
+| consensus ≥ 0.90 | pass | `PASS` |
+| consensus ≥ 0.65, all dissenters < prob 0.30 | review_minor | `REVIEW_MINOR` |
+| otherwise | review_major | `REVIEW_MAJOR` |
 
 ---
 
@@ -152,7 +160,7 @@ Rules applied in order:
 | Detections | ✓ | ✓ |
 | Magstats | ✓ | — (falls back to raw detections) |
 | Classifiers | ✓ | — (not yet in API) |
-| `rb`/`drb` scores | ✓ | reliability only |
+| `rb`/`drb` scores | ✓ (`rb` + `drb`) | `rb_absent` checked via `reliability`; no `drb` equivalent |
 | Profiler | ✓ | — (`query_lightcurve` ZTF only) |
 
 ---
@@ -169,7 +177,7 @@ src/alerce_qa/
     profiler.py    — single-object diagnostic tool
     __main__.py    — CLI entry point
 pipeline.py        — backwards-compatible shim
-tests/             — 63 pytest tests, mock data only
+tests/             — 64 pytest tests, mock data only
 pyproject.toml
 ```
 

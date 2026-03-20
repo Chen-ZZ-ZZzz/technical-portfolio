@@ -65,16 +65,22 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
     all_flags = []
     if issues:
         all_flags.append("completeness: " + ", ".join(issues))
+    if cl.get("n_classifiers", 0) < 2:
+        all_flags.append("insufficient_classifiers")
     if cl.get("flag"):
         all_flags.append(cl["flag"])
     flag = "; ".join(all_flags) or None
 
-    if flag is None:
-        status = "PASS"
-    elif "genuine split" in (flag or ""):
-        status = "REVIEW"
-    else:
+    if issues:
         status = "FLAG"
+    elif cl.get("n_classifiers", 0) < 2:
+        status = "FLAG"
+    elif cl.get("verdict") == "pass":
+        status = "PASS"
+    elif cl.get("verdict") == "review_minor":
+        status = "REVIEW_MINOR"
+    else:
+        status = "REVIEW_MAJOR"
 
     return {
         "oid":                oid,
