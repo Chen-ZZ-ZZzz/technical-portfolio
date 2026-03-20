@@ -25,12 +25,12 @@ Python scripts covering file system operations, text processing, regex, and CLI 
 
 ---
 
-## Example Scripts
+## `basics/`
 
 ### Coin Toss Game (`coin_toss.py`)
 A simple CLI coin toss game where the player gets two guesses.
 
-### Streak Finder (`streak_finder.py`)
+### Streak Finder (`streak_chance.py`)
 Runs 10,000 experiments, each flipping a coin 100 times, and calculates the probability of a streak of 6 identical results.
 
 ### Chess Board Validator (`chess_validator.py`)
@@ -39,17 +39,12 @@ Validates a dictionary representing a chess board, checking square names, piece 
 ### Inventory Manager (`inventory.py`)
 Displays a formatted inventory and adds items from a loot list.
 
-### Table Printer (`table_printer.py`)
+### Table Printer (`tab_printer.py`)
 Takes a list of lists of strings and prints a right-justified table with dynamic column widths.
 
-### Password Strength Checker (`password_checker.py`)
-Checks a password against rules (length, digit, uppercase, lowercase) and reports all failures at once.
 
-### Custom `strip()` (`my_strip.py`)
+### Custom `strip()` (`strip_reg.py`)
 Reimplements Python's built-in `str.strip()` using regular expressions.
-
-### Directory Walker (`file_walker.py`)
-Recursively walks a directory tree and yields absolute paths of all `.py` files, skipping `.git`, `.venv`, and `__pycache__`.
 
 ### Collatz Sequence (`collatz.py`)
 Computes and prints the Collatz sequence from a user-supplied integer down to 1.
@@ -57,14 +52,9 @@ Computes and prints the Collatz sequence from a user-supplied integer down to 1.
 ### Mad Libs (`madLibs.py`)
 Reads a text file containing placeholder tokens (`NOUN`, `VERB`, etc.), prompts the user interactively, and saves the filled-in result as a new file.
 
-### Copy by Extension (`cp_ext.py`)
-Recursively scans a source directory and copies files into separate destination folders organised by extension (`.pdf`, `.jpg`, etc.).
+---
 
-### Find Large Files (`find_large.py`)
-Walks a directory and reports files and folders exceeding a configurable size threshold (default 100 MB).
-
-### Empty Directory Detector (`leer_dir.py`)
-Finds directories containing no files and no subdirectories. Yields results sorted lexicographically. Handles permission errors via `on_error` callback.
+## `regex/`
 
 ### Email Domain Extractor (`email_domains.py`)
 Extracts valid domain names from a list of email addresses, silently ignoring malformed inputs.
@@ -86,6 +76,25 @@ Masks secret values (`password`, `token`, `api_key`) in config text across diffe
 
 ### Date Format Converter (`datefix.py`)
 Converts `DD.MM.YYYY` dates to ISO `YYYY-MM-DD` in a text blob without touching already-correct ISO dates.
+
+### Repeated Words Finder (`rpt_words.py`)
+Find repeated consecutive words (case-insensitive) in text.
+
+---
+
+## `filesystem/`
+
+### Directory Walker (`file_walker.py`)
+Recursively walks a directory tree and yields absolute paths of all `.py` files, skipping `.git`, `.venv`, and `__pycache__`.
+
+### Copy by Extension (`cp_ext.py`)
+Recursively scans a source directory and copies files into separate destination folders organised by extension (`.pdf`, `.jpg`, etc.).
+
+### Find Large Files (`find_large.py`)
+Walks a directory and reports files and folders exceeding a configurable size threshold (default 100 MB).
+
+### Empty Directory Detector (`leer_dir.py`)
+Finds directories containing no files and no subdirectories. Yields results sorted lexicographically. Handles permission errors via `on_error` callback.
 
 ### Log File Grep (`log_reader.py`)
 Searches `.txt` and `.log` files for regex matches, streaming line by line. Falls back from UTF-8 to latin-1 on decode errors. Outputs `path:lineno:line` in grep style.
