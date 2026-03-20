@@ -1,5 +1,5 @@
 """
-eu_date.py — rename files with American-style dates (MM-DD-YYYY)
+eu_date.py -- rename files with American-style dates (MM-DD-YYYY)
              to European-style (DD-MM-YYYY) recursively
 
 Usage:
