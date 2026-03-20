@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 clr_white.py -- normalize whitespace (spaces/tabs) while preserving newlines
 
