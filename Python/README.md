@@ -1,6 +1,8 @@
 # Python Scripts -- Utilities & Exercises
 
-Python scripts covering file system operations, text processing, regex, and CLI tooling. Each script was written and refactored with attention to idiomatic patterns, clean structure, and reusability. All scripts are importable as modules and usable as standalone CLI tools.
+Python-Skripte zu Dateisystem, Textverarbeitung, Regex und CLI-Tooling.
+
+Python scripts covering file system operations, text processing, regex, and CLI tooling. All scripts are importable as modules and usable as standalone CLI tools.
 
 ---
 
