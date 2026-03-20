@@ -2,7 +2,7 @@
 
 import sys
 
-from .config import DEFAULT_SURVEY
+from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE
 from .reporting import run_pipeline
 
 
