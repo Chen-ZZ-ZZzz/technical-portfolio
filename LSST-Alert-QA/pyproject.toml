@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alerce-qa"
+version = "0.1.0"
+description = "LSST/ZTF Alert Data Quality Pipeline via ALeRCE"
+requires-python = ">=3.13"
+dependencies = [
+    "alerce",
+    "pandas",
+]
+
+[project.scripts]
+alerce-qa = "alerce_qa.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alerce_qa"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-mock>=3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

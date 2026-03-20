@@ -1,0 +1,132 @@
+"""QA row assembly and full pipeline orchestration."""
+
+import math
+import time
+
+import pandas as pd
+
+from .classifier import classify_object
+from .client import fetch_candidates, fetch_object_data
+from .config import (
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_SURVEY,
+    INTER_OBJECT_DELAY,
+    OUTPUT_COLUMNS,
+)
+from .validators import validate_completeness
+
+
+def _psfflux_to_mag(flux_series: pd.Series) -> pd.Series:
+    """Convert LSST psfFlux (nanojanskies) to AB magnitudes. Drops non-positive values."""
+    positive = flux_series[flux_series > 0].dropna()
+    return positive.apply(lambda f: -2.5 * math.log10(f) + 31.4)
+
+
+def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
+    """
+    Assemble one output row from pre-computed inputs. No API calls.
+    status: PASS (no flag) / REVIEW (genuine split) / FLAG (everything else)
+    """
+    dets = data["dets"]
+    ms   = data["ms"]
+
+    # Detection counts and magnitude range
+    if not ms.empty:
+        ndet   = int(ms["ndet"].sum())
+        magmin = float(ms["magmin"].min())
+        magmax = float(ms["magmax"].max())
+    elif not dets.empty:
+        ndet = len(dets)
+        if "magpsf" in dets.columns and not dets["magpsf"].isna().all():
+            mags = dets["magpsf"].dropna()
+        elif "psfFlux" in dets.columns:
+            mags = _psfflux_to_mag(dets["psfFlux"])
+        else:
+            mags = pd.Series(dtype=float)
+        magmin = float(mags.min()) if not mags.empty else float("nan")
+        magmax = float(mags.max()) if not mags.empty else float("nan")
+    else:
+        ndet = 0
+        magmin = magmax = float("nan")
+
+    mag_range = round(magmax - magmin, 4) if magmin == magmin and magmax == magmax else float("nan")
+
+    # Timespan: last − first detection epoch
+    timespan_days = float("nan")
+    if not dets.empty:
+        epoch_col = next((c for c in ("mjd", "jd") if c in dets.columns), None)
+        if epoch_col:
+            span = dets[epoch_col].max() - dets[epoch_col].min()
+            timespan_days = round(float(span), 2)
+
+    confirmed = ndet > 1
+
+    # Merge completeness issues and classification flag into one flag string
+    all_flags = []
+    if issues:
+        all_flags.append("completeness: " + ", ".join(issues))
+    if cl.get("flag"):
+        all_flags.append(cl["flag"])
+    flag = "; ".join(all_flags) or None
+
+    if flag is None:
+        status = "PASS"
+    elif "genuine split" in (flag or ""):
+        status = "REVIEW"
+    else:
+        status = "FLAG"
+
+    return {
+        "oid":                oid,
+        "ndet":               ndet,
+        "mag_range":          mag_range,
+        "timespan_days":      timespan_days,
+        "top_class":          cl.get("top_class"),
+        "class_prob":         round(cl["class_prob"], 4) if cl.get("class_prob") is not None else None,
+        "consensus":          round(cl["consensus"], 4)  if cl.get("consensus")  is not None else None,
+        "n_classifiers":      cl.get("n_classifiers", 0),
+        "n_agree":            cl.get("n_agree", 0),
+        "n_disagree":         cl.get("n_disagree", 0),
+        "confirmed":          confirmed,
+        "has_issues":         bool(issues),
+        "completeness_issues": issues,
+        "flag":               flag,
+        "status":             status,
+    }
+
+
+def run_pipeline(
+    page_size: int = DEFAULT_PAGE_SIZE,
+    survey: str = DEFAULT_SURVEY,
+    oids: list | None = None,
+    inter_object_delay: float = INTER_OBJECT_DELAY,
+) -> pd.DataFrame:
+    """
+    Full pipeline: fetch → validate → classify → QA report.
+
+    oids:   optional explicit list of OID strings — skips fetch_candidates.
+    survey: "ztf" (default) or "lsst".
+      For LSST, magstats are not available via the API — ndet and mag stats
+      are computed from raw detections instead.
+
+    Returns a DataFrame (one row per object).
+    """
+    if oids is None:
+        oids = fetch_candidates(page_size=page_size, survey=survey)
+    if not oids:
+        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+
+    rows = []
+    for i, oid in enumerate(oids, 1):
+        print(f"[{i:>3}/{len(oids)}] {oid}", end="  ", flush=True)
+        data   = fetch_object_data(oid, survey=survey)
+        issues = validate_completeness(data, survey=survey)
+        ndet   = int(data["ms"]["ndet"].sum()) if not data["ms"].empty else len(data["dets"])
+        cl     = classify_object(data["probs"], ndet)
+        row    = build_qa_row(oid, data, issues, cl)
+        rows.append(row)
+        print(row["status"])
+        if inter_object_delay > 0:
+            time.sleep(inter_object_delay)
+
+    return pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
