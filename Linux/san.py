@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-san.py — sanitize file and directory names for shell safety
+san.py -- sanitize file and directory names for shell safety
 
-Replaces Unicode characters with ASCII equivalents (ä→ae, ß→ss, é→e, etc.)
+Replaces Unicode characters with ASCII equivalents (äpfel->ae, ß->ss, é->e, etc.)
 then replaces any remaining non-safe characters with underscores.
 
 Safe characters kept: A-Z a-z 0-9 . - _
 Dots in extensions are preserved.
-Runs dry-run by default — use --apply to rename for real.
+Runs dry-run by default -- use --apply to rename for real.
 
 Usage:
     ./san.py <directory> [-a] [-s] [-v]
@@ -20,7 +20,7 @@ Examples:
 
 Requirements:
     pip install unidecode                       # general
-    sudo apt install python3-unidecode         # Debian/Ubuntu
+    sudo apt install python3-unidecode          # Debian/Ubuntu
 """
 
 import argparse
@@ -40,9 +40,9 @@ MULTI_UNDERSCORE = re.compile(r"_{2,}")
 def sanitize(name: str) -> str:
     """
     Sanitize a filename:
-    1. Transliterate Unicode → ASCII  (ä→ae, ß→ss, é→e ...)
+    1. Transliterate Unicode -> ASCII  (ä->ae, ß->ss, é->e ...)
     2. Replace unsafe chars with _
-    3. Collapse multiple __ → _
+    3. Collapse multiple __ -> _
     4. Strip leading/trailing underscores from stem
     """
     stem, _, ext = name.rpartition(".")
@@ -87,12 +87,12 @@ def process(root: Path, apply: bool, shallow: bool, verbose: bool) -> None:
         new_path = dirpath / new_name
 
         if new_path.exists():
-            print(f"SKIP (conflict): {old_path} → {new_name}")
+            print(f"SKIP (conflict): {old_path} -> {new_name}")
             skipped += 1
             continue
 
         if verbose or not apply:
-            print(f"{'RENAME' if apply else 'DRY-RUN'}: {old_path} → {new_name}")
+            print(f"{'RENAME' if apply else 'DRY-RUN'}: {old_path} -> {new_name}")
 
         if apply:
             old_path.rename(new_path)
@@ -100,7 +100,7 @@ def process(root: Path, apply: bool, shallow: bool, verbose: bool) -> None:
         changed += 1
 
     status = "renamed" if apply else "would rename"
-    print(f"\nDone — {changed} {status}, {skipped} skipped.")
+    print(f"\nDONE. {changed} {status}, {skipped} skipped.")
     if not apply:
         print("Run with --apply to rename for real.")
 
