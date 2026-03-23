@@ -7,7 +7,7 @@ This portfolio showcases technical skills, projects, and exercises across multip
 ## Projects
 
 ### [LSST-Alert-QA](LSST-Alert-QA/)
-Data quality pipeline for astronomical transient alerts from ZTF and LSST via the [ALeRCE](https://alerce.science/) broker. Weighted classifier consensus, completeness validation, structured QA reporting. 64 pytest tests, mock data only. Built iteratively with Claude Code.
+Data quality pipeline for astronomical transient alerts from ZTF and LSST via the [ALeRCE](https://alerce.science/) broker. Weighted classifier consensus, completeness validation, structured QA reporting. Built iteratively with Claude Code.
 
 ### [Health Checker](health-checker/)
 Network and log health tools for lab and CI environments. Ping-based host reachability checks with latency reporting, and log file scanning for ERROR/WARN patterns with per-file and aggregate summaries. CI-friendly exit codes.
