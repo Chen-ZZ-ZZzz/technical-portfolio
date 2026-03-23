@@ -1,9 +1,8 @@
-
 # Test Automation / QA Tools
 
 This folder contains small HIL/SIL test simulations and QA scripts.
 
-log_scan.py and net_check.py are the original scripts for the Health Checker project.
+`log_scan.py` and `net_check.py` are the original scripts for the **[Health Checker](../health-checker/)** project — a standalone network and log health toolkit with structured output (JSON, CSV, table), timestamped reports, and pytest tests.
 
 ---
 
