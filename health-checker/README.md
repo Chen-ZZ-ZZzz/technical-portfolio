@@ -20,7 +20,9 @@ Python 3.13, no external dependencies. pytest for tests.
 python3 net_check.py hosts.txt -p 22 443
 python3 log_scan.py /var/log/
 ./run_checks.sh hosts.txt /var/log/ -s
-python3 -m pytest tests/ -v
+uv init
+uv add pytest httpx
+uv run pytest
 ```
 
 ```
