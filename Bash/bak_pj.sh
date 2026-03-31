@@ -35,7 +35,7 @@ main() {
     OUTPUT_FILE=${BACKUP_FOLDER}/${FOLDER_NAME}_backup_${TIMESTAMP}.tar.gz
 
     mkdir -p "$BACKUP_FOLDER"
-    tar -cvf "$OUTPUT_FILE" -C "$(dirname "$SOURCE_FOLDER")" "$FOLDER_NAME"
+    tar -cf "$OUTPUT_FILE" -C "$(dirname "$SOURCE_FOLDER")" "$FOLDER_NAME"
 
     echo "Backup complete: $OUTPUT_FILE"
 }
