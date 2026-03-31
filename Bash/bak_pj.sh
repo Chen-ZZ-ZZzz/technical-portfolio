@@ -1,22 +1,43 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
-# -----------------------------
-# Usage: ./backup_project.sh /path/to/folder
-# -----------------------------
-
-SOURCE_FOLDER="${1:?Usage: $0 /path/to/folder}"
-
-if [ ! -d "$SOURCE_FOLDER" ]; then
-    echo "Error: Folder '$SOURCE_FOLDER' does not exist." >&2
-    exit 1
+if [[ "${TRACE-0}" == "1" ]]; then
+    set -o xtrace
 fi
 
-FOLDER_NAME=$(basename "$SOURCE_FOLDER")
-BACKUP_FOLDER="$(dirname "$SOURCE_FOLDER")/${FOLDER_NAME}-backups"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_FILE="${BACKUP_FOLDER}/${FOLDER_NAME}_backup_${TIMESTAMP}.tar.gz"
+if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
+    echo "Usage: $0 /path/to/folder
 
-mkdir -p "$BACKUP_FOLDER"
-tar -czf "$OUTPUT_FILE" -C "$(dirname "$SOURCE_FOLDER")" "$FOLDER_NAME"
+Back up a folder into a timestamped archive, in a sibling *-backups directory.
 
-echo "Backup complete: $OUTPUT_FILE"
+"
+    exit 0
+fi
+
+cd "$(dirname "$0")"
+
+main() {
+    if [[ -z "${1-}" ]]; then
+        echo "Usage: $0 /path/to/folder" >&2
+        exit 1
+    fi
+
+    SOURCE_FOLDER=$1
+
+    if [[ ! -d "$SOURCE_FOLDER" ]]; then
+        echo "Error: Folder '$SOURCE_FOLDER' does not exist." >&2
+        exit 1
+    fi
+
+    FOLDER_NAME=$(basename "$SOURCE_FOLDER")
+    BACKUP_FOLDER=$(dirname "$SOURCE_FOLDER")/${FOLDER_NAME}-backups
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    OUTPUT_FILE=${BACKUP_FOLDER}/${FOLDER_NAME}_backup_${TIMESTAMP}.tar.gz
+
+    mkdir -p "$BACKUP_FOLDER"
+    tar -cvf "$OUTPUT_FILE" -C "$(dirname "$SOURCE_FOLDER")" "$FOLDER_NAME"
+
+    echo "Backup complete: $OUTPUT_FILE"
+}
+
+main "$@"
