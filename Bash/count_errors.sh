@@ -31,7 +31,7 @@ main (){
     while IFS= read -r -d '' file; do
         count=$(grep -c 'ERROR' "$file" || true)
         echo "$count  $file"
-        (( total += count ))
+        total=$(( total + count ))
     done < <(find "$DIR" -type f -name '*.log' -print0)
 
     echo "---"
