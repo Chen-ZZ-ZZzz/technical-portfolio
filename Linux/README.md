@@ -2,7 +2,7 @@
 
 Kleine CLI-Werkzeuge für den täglichen Einsatz unter Linux.
 
-Small Python CLI tools for everyday file management on Linux.
+Small CLI tools (Python and Bash) for everyday file management on Linux.
 
 ---
 
@@ -15,6 +15,7 @@ Small Python CLI tools for everyday file management on Linux.
 | **File operations** | `Path.walk()`, `Path.rename()`, `rglob`; safe renaming with conflict detection; atomic writes with `tempfile` + `fsync` |
 | **Unicode handling** | Transliteration via `unidecode`; safe ASCII filename generation |
 | **Error handling** | `parser.error()` for input validation; graceful skip on conflicts |
+| **Shell scripting** | `set -euo pipefail`, parameter expansion (`${var##*.}`, `${var%.*}`), `pandoc` integration |
 
 ---
 
@@ -31,3 +32,6 @@ Converts American-style dates (`MM-DD-YYYY`) to European-style (`DD-MM-YYYY`). A
 
 ### Whitespace Normalizer (`clr_white.py`)
 Replaces runs of spaces and tabs with a single space while preserving newlines. Reads from file or stdin, prints to stdout by default, `--in-place` to overwrite.
+
+### Markdown to PDF (`md2pdf.sh`)
+Converts a Markdown file to PDF via `pandoc`. Validates file existence and extension, outputs PDF alongside the source file. Bash strict mode with `set -euo pipefail`.
