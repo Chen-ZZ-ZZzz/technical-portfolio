@@ -1,9 +1,9 @@
-"""Tests for alerce_qa.validators."""
+"""Tests for rubin_qa.validators."""
 
 import pandas as pd
 import pytest
 
-from alerce_qa.validators import validate_completeness
+from rubin_qa.validators import validate_completeness
 
 
 def _data(dets=None, ms=None, probs=None, fetch_errors=None):

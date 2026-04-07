@@ -1,11 +1,11 @@
-"""Tests for alerce_qa.reporting."""
+"""Tests for rubin_qa.reporting."""
 
 import math
 
 import pandas as pd
 import pytest
 
-from alerce_qa.reporting import _psfflux_to_mag, build_qa_row
+from rubin_qa.reporting import _psfflux_to_mag, build_qa_row
 
 
 def _cl(top_class="SN", class_prob=0.95, consensus=0.95, n_classifiers=2,

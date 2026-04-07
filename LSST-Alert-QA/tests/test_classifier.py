@@ -1,9 +1,9 @@
-"""Tests for alerce_qa.classifier."""
+"""Tests for rubin_qa.classifier."""
 
 import pandas as pd
 import pytest
 
-from alerce_qa.classifier import _method_weight, _version_score, classify_object
+from rubin_qa.classifier import _method_weight, _version_score, classify_object
 
 
 class TestVersionScore:

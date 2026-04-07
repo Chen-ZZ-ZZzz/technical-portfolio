@@ -1,8 +1,8 @@
-# LSST/ZTF Alert Data Quality Pipeline
+# LSST/ZTF/ANTARES Alert Data Quality Pipeline
 
-A data quality pipeline for ZTF (and eventually LSST) transient alert data via the [ALeRCE](https://alerce.science/) broker. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
+A data quality pipeline for ZTF (and eventually LSST) transient alert data via the [ALeRCE](https://alerce.science/) and [ANTARES](https://antares.noirlab.edu/) brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
 
-LSST support is included with graceful degradation — the pipeline runs end-to-end but full QA is not yet possible pending survey ramp-up.
+ALeRCE LSST support is included with graceful degradation. ANTARES support uses tag-based classification (discrete labels rather than probability distributions), with pipeline/infrastructure tags filtered out before scoring.
 
 ## Context
 
@@ -14,6 +14,7 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 - Python 3, pandas, pytest
 - [ALeRCE](https://alerce.science/) broker API and Python client
+- [ANTARES](https://antares.noirlab.edu/) broker and `antares-client`
 - Claude Code (AI-assisted development)
 
 ---
@@ -22,6 +23,7 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 - **Completeness validation** — checks for missing detections, null magnitudes, absent real/bogus scores, sparse observations, and API fetch failures
 - **Weighted classifier consensus** — aggregates votes from up to 24 independent classifiers, weighting by method relevance (light curve vs stamp), confidence, and model recency
+- **ANTARES tag classification** — maps discrete science tags to the same verdict schema, filtering out pipeline/infrastructure tags before scoring
 - **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (early-stage, sparse), with graceful degradation for unimplemented API endpoints
 - **Structured QA reporting** — each object gets a tiered status (PASS / REVIEW_MINOR / REVIEW_MAJOR / FLAG) with detailed flags explaining why
 
@@ -64,20 +66,33 @@ python pipeline.py ztf ZTF17aaaaahl ZTF18abc
 # LSST — fetch 100 objects
 python pipeline.py lsst
 
+# ANTARES — fetch 20 random loci
+python pipeline.py antares 20
+
+# ANTARES — specific locus IDs or ZTF object IDs
+python pipeline.py antares ANT2020j7wo4 ZTF20aafqubg
+
 # Via installed script
-alerce-qa ztf 20
+rubin-qa ztf 20
+rubin-qa antares 10
 ```
 
 ### Python API
 
 ```python
-from alerce_qa import run_pipeline
+from rubin_qa.reporting import run_pipeline, run_antares_pipeline
 
-# Full run
+# ALeRCE full run
 df = run_pipeline(page_size=50, survey="ztf")
 
-# Explicit OIDs
+# ALeRCE explicit OIDs
 df = run_pipeline(survey="ztf", oids=["ZTF17aaaaahl", "ZTF18abc"])
+
+# ANTARES random loci
+df = run_antares_pipeline(page_size=20)
+
+# ANTARES explicit locus IDs or ZTF object IDs
+df = run_antares_pipeline(locus_ids=["ANT2020j7wo4", "ZTF20aafqubg"])
 
 print(df[["oid", "top_class", "consensus", "status"]])
 ```
@@ -85,7 +100,7 @@ print(df[["oid", "top_class", "consensus", "status"]])
 ### Diagnostic profiler (ZTF only)
 
 ```python
-from alerce_qa.profiler import object_profile
+from rubin_qa.profiler import object_profile
 
 object_profile("ZTF17aaaaahl")
 ```
@@ -106,10 +121,10 @@ One row per object. Columns:
 | `ndet` | Total detection count |
 | `mag_range` | Brightness amplitude: magmax − magmin |
 | `timespan_days` | Last − first detection epoch |
-| `top_class` | Plurality class from weighted consensus |
+| `top_class` | ALeRCE: plurality class from weighted consensus; ANTARES: all science tags, sorted and joined |
 | `class_prob` | Best classifier probability for `top_class` |
 | `consensus` | Weighted consensus score [0, 1] |
-| `n_classifiers` | Number of classifiers that voted |
+| `n_classifiers` | ALeRCE: classifiers that voted; ANTARES: science tags present |
 | `n_agree` / `n_disagree` | Classifiers voting for/against plurality class |
 | `confirmed` | `True` if ndet > 1 |
 | `has_issues` | `True` if any completeness issues |
@@ -136,48 +151,59 @@ Note: `REVIEW_MINOR` is currently dormant for ZTF because `lc_classifier` return
 
 ## Classification
 
+### ALeRCE
+
 Weighted consensus across all classifiers. Each vote is weighted by:
 
 - **Method** — `lc_classifier` outweighs `stamp_classifier`; the gap widens as `ndet` grows (lc data becomes more informative)
 - **Confidence** — the classifier's own probability for its top class
 - **Recency** — small tiebreaker from classifier version string
 
-Rules applied in order:
+| Condition | Status |
+|---|---|
+| < 2 classifiers voted | `FLAG` (insufficient_classifiers) |
+| consensus ≥ 0.90 | `PASS` |
+| consensus ≥ 0.65, all dissenters < prob 0.30 | `REVIEW_MINOR` |
+| otherwise | `REVIEW_MAJOR` |
 
-| Condition | Verdict | Status |
-|---|---|---|
-| < 2 classifiers voted | — | `FLAG` (insufficient_classifiers) |
-| consensus ≥ 0.90 | pass | `PASS` |
-| consensus ≥ 0.65, all dissenters < prob 0.30 | review_minor | `REVIEW_MINOR` |
-| otherwise | review_major | `REVIEW_MAJOR` |
+### ANTARES
+
+Tags are filtered into science vs pipeline sets before scoring. The 19 science tags (e.g. `dimmers`, `nuclear_transient`, `extragalactic`) count toward consensus; the 19 pipeline/infrastructure tags (e.g. `lc_feature_extractor`, `high_snr`, `in_LSSTDDF`) are stripped. Unknown tags are flagged explicitly rather than silently ignored.
+
+`top_class` reports all science tags present, sorted (e.g. `"dimmers, extragalactic"`). Consensus = 1/n_science_tags. Single science tag → PASS; multiple → REVIEW_MINOR/MAJOR by count; none → FLAG.
+
+All ANTARES tags are filter outputs, not confirmed classifications — treat every tag as a candidate until followed up.
 
 ---
 
-## Survey Support
+## Broker / Survey Support
 
-| Feature | ZTF | LSST |
-|---|---|---|
-| Detections | ✓ | ✓ |
-| Magstats | ✓ | — (falls back to raw detections) |
-| Classifiers | ✓ | — (not yet in API) |
-| `rb`/`drb` scores | ✓ (`rb` + `drb`) | `rb_absent` checked via `reliability`; no `drb` equivalent |
-| Profiler | ✓ | — (`query_lightcurve` ZTF only) |
+| Feature | ZTF (ALeRCE) | LSST (ALeRCE) | ANTARES |
+|---|---|---|---|
+| Detections | ✓ | ✓ | ✓ (alerts, upper limits filtered out) |
+| Magstats | ✓ | — (falls back to raw detections) | ✓ (locus properties) |
+| Classifiers | ✓ | — (not yet in API) | ✓ (tag-based, science tags only) |
+| `rb`/`drb` scores | ✓ | `reliability` only | — (pre-filtered upstream, rb ≥ 0.55) |
+| Catalog cross-matches | — | — | ✓ (Gaia, Sloan, WISE, Chandra) |
+| Real-time stream | — | — | ✓ (Kafka, requires credentials) |
+| Profiler | ✓ | — | — |
 
 ---
 
 ## Project Structure
 
 ```
-src/alerce_qa/
-    config.py      — constants and thresholds
-    client.py      — ALeRCE API wrapper with retry
-    validators.py  — completeness checks
-    classifier.py  — weighted consensus logic
-    reporting.py   — QA row assembly and pipeline orchestration
-    profiler.py    — single-object diagnostic tool
-    __main__.py    — CLI entry point
-pipeline.py        — backwards-compatible shim
-tests/             — 64 pytest tests, mock data only
+src/rubin_qa/
+    config.py          — constants and thresholds
+    client.py          — ALeRCE API wrapper with retry
+    antares_client.py  — ANTARES API wrapper
+    validators.py      — validate_completeness, validate_antares
+    classifier.py      — classify_object (weighted consensus), classify_antares (tags)
+    reporting.py       — QA row assembly and pipeline orchestration (ALeRCE + ANTARES)
+    profiler.py        — single-object diagnostic tool (ZTF only)
+    __main__.py        — CLI entry point
+pipeline.py            — backwards-compatible shim
+tests/                 — pytest, mock data only
 pyproject.toml
 ```
 
@@ -189,13 +215,21 @@ pyproject.toml
 python -m pytest tests/ -v
 ```
 
-All tests use mock data — no live ALeRCE API calls.
+All tests use mock data — no live API calls.
 
 ---
 
 ## Known API Quirks
 
+**ALeRCE:**
 - `lc_classifier` returns empty for many objects; `stamp_classifier` works reliably
 - API returns duplicate oids — deduplicated in `fetch_candidates`
 - LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
 - LSST oids come back as integers from the API — normalized to `str` in `fetch_candidates`
+
+**ANTARES:**
+- Kafka streaming requires credentials (request from ANTARES team); search/fetch API is open
+- `get_random_locus_ids` returns duplicates — deduplicated in `fetch_antares_candidates`
+- `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
+- ANTARES pre-filters alerts to rb ≥ 0.55, fwhm ≤ 5.0 px, elong ≤ 1.2 — objects in ANTARES already pass these; ALeRCE objects may not
+- `antares-client` import is deferred — ALeRCE-only installs are unaffected if the package is absent

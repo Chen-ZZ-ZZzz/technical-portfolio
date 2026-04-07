@@ -3,20 +3,23 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "alerce-qa"
+name = "rubin-qa"
 version = "0.1.0"
-description = "LSST/ZTF Alert Data Quality Pipeline via ALeRCE"
+description = "LSST/ZTF/ANTARES Alert Data Quality Pipeline"
 requires-python = ">=3.13"
 dependencies = [
     "alerce",
+    "antares-client",
     "pandas",
+    "pytest>=9.0.2",
+    "pytest-mock>=3.15.1",
 ]
 
 [project.scripts]
-alerce-qa = "alerce_qa.__main__:main"
+rubin-qa = "rubin_qa.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/alerce_qa"]
+packages = ["src/rubin_qa"]
 
 [dependency-groups]
 dev = [
@@ -24,5 +27,14 @@ dev = [
     "pytest-mock>=3",
 ]
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow",
+    "network: marks tests requiring network access",
+    "integration: marks integration tests",
+]
