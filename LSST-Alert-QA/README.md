@@ -1,20 +1,26 @@
 # LSST/ZTF/ANTARES Alert Data Quality Pipeline
 
-A data quality pipeline for ZTF (and eventually LSST) transient alert data via the [ALeRCE](https://alerce.science/) and [ANTARES](https://antares.noirlab.edu/) brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
+A data quality pipeline for ZTF (and eventually LSST) alert data via the [ALeRCE][alerce link] and [ANTARES][antares link] brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
 
-ALeRCE LSST support is included with graceful degradation. ANTARES support uses tag-based classification (discrete labels rather than probability distributions), with pipeline/infrastructure tags filtered out before scoring.
+ALeRCE LSST support is included with graceful degradation.
+
+**ANTARES** (Arizona-NOIRLab Temporal Analysis and Response to Events System) is an NSF NOIRLab broker that processes ZTF alerts and is approved for the full LSST stream. Unlike ALeRCE's probability-based classifiers, ANTARES uses discrete _tags_ produced by Python filters — each tag is a science signal (e.g. `nuclear_transient`, `dimmers`) or a pipeline annotation. The search API is open; real-time Kafka streaming requires credentials. ANTARES started ingesting LSST alerts Feb 24, 2026.
+
+---
 
 ## Context
 
-Built as a QA engineering showcase using real astronomical alert data from the Vera C. Rubin Observatory (LSST, launched February 2026) and the Zwicky Transient Facility. Development assisted by Claude Code. The validation patterns — completeness checks, classifier consensus, threshold tuning, structured reporting — transfer directly to sensor data validation in HIL/SIL test environments.
+Built as a QA engineering showcase using real astronomical alert data from the Vera C. Rubin Observatory (LSST, launched February 2026) and the Zwicky Transient Facility (ZTF). Development assisted by Claude Code.
+
+The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
 
 ---
 
 ## Built With
 
 - Python 3, pandas, pytest
-- [ALeRCE](https://alerce.science/) broker API and Python client
-- [ANTARES](https://antares.noirlab.edu/) broker and `antares-client`
+- [ALeRCE broker][alerce link] API and Python client
+- [ANTARES broker][antares link] and `antares-client`
 - Claude Code (AI-assisted development)
 
 ---
@@ -36,16 +42,10 @@ Requires Python 3.13. Uses `uv` for package management.
 ```bash
 git clone <repo>
 cd <repo>
-python -m venv .venv
-source .venv/bin/activate
-uv pip install -e .
+uv sync
 ```
 
-Dev dependencies (pytest):
-
-```bash
-uv pip install pytest pytest-mock
-```
+Dev dependencies (pytest) are included, uv sync handles everything
 
 ---
 
@@ -55,22 +55,22 @@ uv pip install pytest pytest-mock
 
 ```bash
 # ZTF — fetch 100 objects (default)
-python pipeline.py
+uv run pipeline.py
 
 # ZTF — fetch N objects
-python pipeline.py ztf 25
+uv run pipeline.py ztf 25
 
 # ZTF — specific OIDs
-python pipeline.py ztf ZTF17aaaaahl ZTF18abc
+uv run pipeline.py ztf ZTF17aaaaahl ZTF18abc
 
 # LSST — fetch 100 objects
-python pipeline.py lsst
+uv run pipeline.py lsst
 
 # ANTARES — fetch 20 random loci
-python pipeline.py antares 20
+uv run pipeline.py antares 20
 
 # ANTARES — specific locus IDs or ZTF object IDs
-python pipeline.py antares ANT2020j7wo4 ZTF20aafqubg
+uv run pipeline.py antares ANT2020j7wo4 ZTF20aafqubg
 
 # Via installed script
 rubin-qa ztf 20
@@ -212,7 +212,7 @@ pyproject.toml
 ## Tests
 
 ```bash
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 All tests use mock data — no live API calls.
@@ -233,3 +233,6 @@ All tests use mock data — no live API calls.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
 - ANTARES pre-filters alerts to rb ≥ 0.55, fwhm ≤ 5.0 px, elong ≤ 1.2 — objects in ANTARES already pass these; ALeRCE objects may not
 - `antares-client` import is deferred — ALeRCE-only installs are unaffected if the package is absent
+
+[alerce link]: https://alerce.science/
+[antares link]: https://antares.noirlab.edu/
