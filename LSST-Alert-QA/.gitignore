@@ -24,3 +24,8 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Runtime
+reports/
+bright_sso_state.json
+logs/
