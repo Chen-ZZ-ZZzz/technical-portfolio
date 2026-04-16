@@ -8,7 +8,7 @@ A data quality pipeline for ZTF (and eventually LSST) alert data via the [ALeRCE
 
 The [Vera C. Rubin Observatory](https://rubinobservatory.org/) is an astronomical observatory in Chile. Its main task is to conduct an astronomical survey of the southern sky every few nights, creating a ten-year time-lapse record, termed the **Legacy Survey of Space and Time (LSST)**.
 
-The telescope would generate up tp 10 millions alerts per night, about objects that have changed brightness or position relative to archived images. The alerts are immediately available to the public, via alert streams from external "_event brokers_".
+The telescope would generate up to 10 millions alerts per night, about objects that have changed brightness or position relative to archived images. The alerts are immediately available to the public, via alert streams from external "_event brokers_".
 
 The Zwicky Transient Facility (ZTF) serves as a prototype of the system, generating 1 million alerts per night.
 
@@ -23,6 +23,18 @@ The Zwicky Transient Facility (ZTF) serves as a prototype of the system, generat
 Built as a QA engineering showcase using real astronomical alert data from the Vera C. Rubin Observatory (LSST, launched February 2026) and the Zwicky Transient Facility (ZTF). Development assisted by Claude Code.
 
 The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
+
+### Solar System Objects (SSO) Monitoring Script
+
+**Purpose:** Daily scan of ANTARES for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
+
+First run defaults to 7-day lookback with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
+
+**Known limitations:**
+
+1. `sso_candidates` tag is ZTF-based, LSST pipeline not yet in ANTARES tag system.
+
+2. Magnitude thresholds are currently arbitrary starting points.
 
 ---
 
