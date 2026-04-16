@@ -24,11 +24,11 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
 
-### Solar System Objects (SSO) Monitoring Script
+### Bright Solar System Objects (SSO) Monitor
 
-**Purpose:** Daily scan of ANTARES for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
+`antares_sso_monitor.py` is a stand-alone script which scans ANTARES for SSO loci that have suddenly brightened daily. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
-First run defaults to 7-day lookback with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
+First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
 
 **Known limitations:**
 
