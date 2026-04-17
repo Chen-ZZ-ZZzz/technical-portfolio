@@ -26,7 +26,7 @@ RETRY_WAIT = 300  # 5 minutes
 
 
 def _now_mjd() -> float:
-    """Return the MJD of the current time"""
+    """Return the MJD of current time"""
     epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
     now = datetime.datetime.now(datetime.timezone.utc)
     return MJD_J2000 + (now - epoch).total_seconds() / 86400  # 86400s = 1 day
@@ -149,7 +149,10 @@ def scan():
     else:
         print("No brightening events detected.")
 
-    _save_state({"last_mjd": now_mjd, "magnitudes": new_magnitudes})
+    # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
+    # for cross check
+    merged = {**prev_mag, **new_magnitudes}
+    _save_state({"last_mjd": now_mjd, "magnitudes": merged})
 
 
 if __name__ == "__main__":

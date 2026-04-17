@@ -26,7 +26,7 @@ The validation patterns include completeness checks, classifier consensus, thres
 
 ### Bright Solar System Objects (SSO) Monitor
 
-`antares_sso_monitor.py` is a stand-alone script which scans ANTARES for SSO loci that have suddenly brightened daily. Proof of concept / exploration. Self built _without assists from Claude Code_.
+`antares_sso_monitor.py` is a stand-alone script which scans ANTARES daily for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
 First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
 
