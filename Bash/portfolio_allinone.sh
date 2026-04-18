@@ -22,7 +22,7 @@ require_cmd(){
 }
 
 main(){
-    if [[ -n "${1-}" ]]; then
+    if [[ $# -gt 0 ]]; then
         echo "Error: $0 takes no arguments" >&2
         exit 1
     fi
@@ -42,6 +42,7 @@ main(){
     git clone "$my_repo"
     cd "$home_dir"
 
+    local project
     for project in health-checker LSST-Alert-QA; do
         echo "=== $project ==="
         (cd "$project"
