@@ -149,6 +149,9 @@ def scan():
     else:
         print("No brightening events detected.")
 
+    # blank line between runs for readability
+    print("\n")
+
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
     merged = {**prev_mag, **new_magnitudes}

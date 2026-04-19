@@ -1,7 +1,6 @@
 # Bright SSO Monitor Setup
 
-Daily systemd user timer that runs `antares_sso_monitor.py` and logs
-brightness alerts.
+Implementation of daily systemd user timer that runs `antares_sso_monitor.py` and logs brightness alerts.
 
 ## Files
 

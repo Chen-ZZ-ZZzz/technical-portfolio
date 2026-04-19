@@ -32,7 +32,7 @@ First run defaults to 7-day look-back with empty magnitudes. Daily deployment au
 
 **Known limitations:**
 
-1. `sso_candidates` tag is ZTF-based, LSST pipeline not yet in ANTARES tag system.
+1. `sso_candidates` tag is ZTF-based, LSST pipeline not yet in ANTARES tag system. After analysing a few days' worth of date, observed high false positive rate due to stellar variable contamination in the tag.
 
 2. Magnitude thresholds are currently arbitrary starting points.
 
