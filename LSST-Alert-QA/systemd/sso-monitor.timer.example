@@ -1,0 +1,11 @@
+# Rename to sso-monitor.timer
+
+[Unit]
+Description=Run SSO monitor daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

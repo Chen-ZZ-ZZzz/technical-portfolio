@@ -1,0 +1,12 @@
+# Rename to sso-monitor.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=ANTARES SSO brightness monitor
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 60
+WorkingDirectory=/path/to/LSST-Alert-QA/
+ExecStart=/path/to/uv run antares_sso_monitor.py
+StandardOutput=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
+StandardError=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
