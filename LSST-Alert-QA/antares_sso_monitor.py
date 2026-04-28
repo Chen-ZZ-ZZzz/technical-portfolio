@@ -12,7 +12,7 @@ import datetime
 from requests.exceptions import ConnectionError, Timeout
 import time
 
-from elasticsearch_dsl import Search
+from elasticsearch.dsl import Search
 from antares_client.search import search
 
 MAG_THRESHOLD = 15.0  # flag if brighter than this. adjust based on your interest
@@ -54,6 +54,15 @@ def _save_state(state: dict) -> None:
 
 
 def scan():
+    """
+    Walk through all sso tagged loci in ANTARES databank which have new
+    alerts since last scan (baseline 7 days).
+
+    Search for (and report) any locus that is brighter than magnitude 15,
+    or that has brightened more than one magnitude since last scan.
+
+    Record magnitudes of all sso loci for reference.
+    """
     state = _load_state()
     since = state["last_mjd"]
     prev_mag = state["magnitudes"]
@@ -66,7 +75,8 @@ def scan():
     # returns a lazy iterator
     query = (
         Search()
-        .filter("term", tags="sso_candidates")
+        .filter("term", tags="sso_confirmed")
+        #        .exclude("term", catalogs="gaia_dr3_gaia_source")
         .filter("range", **{"properties.newest_alert_observation_time": {"gte": since}})
         .to_dict()
     )

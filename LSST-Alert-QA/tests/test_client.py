@@ -67,13 +67,15 @@ class TestFetchCandidates:
         with patch("rubin_qa.client._client") as mock_client:
             mock_client.query_objects.side_effect = APIError("down")
             with patch("rubin_qa.client.time.sleep"):
-                result = fetch_candidates()
+                with pytest.warns(UserWarning, match="fetch_candidates"):
+                    result = fetch_candidates()
         assert result == []
 
     def test_returns_empty_list_on_empty_result(self):
         with patch("rubin_qa.client._client") as mock_client:
             mock_client.query_objects.return_value = pd.DataFrame({"oid": []})
-            result = fetch_candidates()
+            with pytest.warns(UserWarning, match="fetch_candidates"):
+                result = fetch_candidates()
         assert result == []
 
 

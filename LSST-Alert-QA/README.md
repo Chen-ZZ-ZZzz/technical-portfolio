@@ -99,8 +99,8 @@ uv run pipeline.py antares 20
 uv run pipeline.py antares ANT2020j7wo4 ZTF20aafqubg
 
 # Via installed script
-rubin-qa ztf 20
-rubin-qa antares 10
+uv run rubin-qa ztf 20
+uv run rubin-qa antares 10
 ```
 
 ### Python API
