@@ -23,6 +23,11 @@ MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
 STATE_FILE = pathlib.Path("bright_sso_state.json")
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
+STELLAR_CATALOGS = {
+    "gaia_dr3_gaia_source"      # gaia data release 3
+    "vsx"                       # variable star index
+    "tns_public_objects"        # astronomical transients, mostly supernovae
+}
 
 
 def _now_mjd() -> float:
@@ -68,15 +73,15 @@ def scan():
     prev_mag = state["magnitudes"]
     now_mjd = _now_mjd()
 
-    print(f"Scanning MJD {since:.1f} to {now_mjd:.1f}")
+    print(f"\nScanning MJD {since:.1f} to {now_mjd:.1f}")
     print(f"Known loci from last scan: {len(prev_mag)}\n")
 
     # gets all solar system objects detected by rubin since last scan.
     # returns a lazy iterator
     query = (
         Search()
-        .filter("term", tags="sso_confirmed")
-        #        .exclude("term", catalogs="gaia_dr3_gaia_source")
+        .filter("term", tags="sso_candidates")
+        .exclude("terms", catalogs=STELLAR_CATALOGS)
         .filter("range", **{"properties.newest_alert_observation_time": {"gte": since}})
         .to_dict()
     )
@@ -140,7 +145,7 @@ def scan():
                 time.sleep(RETRY_WAIT)
             else:
                 print(f"Network error after {MAX_RETRIES} attempts: {e}")
-                print("State not updated – will retry next run.")
+                print("State not updated – will retry next run.\n")
                 return
 
     if alerts:
@@ -160,7 +165,7 @@ def scan():
         print("No brightening events detected.")
 
     # blank line between runs for readability
-    print("\n")
+    # print("\n")
 
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
