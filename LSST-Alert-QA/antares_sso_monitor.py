@@ -24,9 +24,9 @@ STATE_FILE = pathlib.Path("bright_sso_state.json")
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 STELLAR_CATALOGS = {
-    "gaia_dr3_gaia_source"      # gaia data release 3
-    "vsx"                       # variable star index
-    "tns_public_objects"        # astronomical transients, mostly supernovae
+    "gaia_dr3_gaia_source",      # gaia data release 3
+    "vsx",                       # variable star index
+    "tns_public_objects",        # astronomical transients, mostly supernovae
 }
 
 
@@ -165,7 +165,7 @@ def scan():
         print("No brightening events detected.")
 
     # blank line between runs for readability
-    # print("\n")
+    print("\n")
 
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
