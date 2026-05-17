@@ -27,6 +27,7 @@ STELLAR_CATALOGS = {
     "gaia_dr3_gaia_source",      # gaia data release 3
     "vsx",                       # variable star index
     "tns_public_objects",        # astronomical transients, mostly supernovae
+    "2mass_xsc",                 # 2MASS Extended Source Catalog
 }
 
 
@@ -73,7 +74,7 @@ def scan():
     prev_mag = state["magnitudes"]
     now_mjd = _now_mjd()
 
-    print(f"\nScanning MJD {since:.1f} to {now_mjd:.1f}")
+    print(f"\n\nScanning MJD {since:.1f} to {now_mjd:.1f}")
     print(f"Known loci from last scan: {len(prev_mag)}\n")
 
     # gets all solar system objects detected by rubin since last scan.
@@ -163,9 +164,6 @@ def scan():
             )
     else:
         print("No brightening events detected.")
-
-    # blank line between runs for readability
-    print("\n")
 
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
