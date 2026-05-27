@@ -1,5 +1,5 @@
 """
-sso_monitor.py — daily scan for brightening SSO candidates in ANTARES.
+antares_sso_monitor.py - daily scan for brightening SSO candidates in ANTARES.
 Detects loci that have crossed below mag 15, or brightened significantly
 since the last scan.
 
@@ -31,7 +31,7 @@ STELLAR_CATALOGS = {
 }
 
 
-def _now_mjd() -> float:
+def now_mjd() -> float:
     """Return the MJD of current time"""
     epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -50,7 +50,7 @@ def _load_state() -> dict:
 
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
-    return {"last_mjd": _now_mjd() - 7.0, "magnitudes": {}}
+    return {"last_mjd": now_mjd() - 7.0, "magnitudes": {}}
 
 
 def _save_state(state: dict) -> None:
@@ -72,9 +72,8 @@ def scan():
     state = _load_state()
     since = state["last_mjd"]
     prev_mag = state["magnitudes"]
-    now_mjd = _now_mjd()
 
-    print(f"\n\nScanning MJD {since:.1f} to {now_mjd:.1f}")
+    print(f"\n\nScanning MJD {since:.1f} to {now_mjd():.1f}")
     print(f"Known loci from last scan: {len(prev_mag)}\n")
 
     # gets all solar system objects detected by rubin since last scan.
@@ -168,7 +167,7 @@ def scan():
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
     merged = {**prev_mag, **new_magnitudes}
-    _save_state({"last_mjd": now_mjd, "magnitudes": merged})
+    _save_state({"last_mjd": now_mjd(), "magnitudes": merged})
 
 
 if __name__ == "__main__":

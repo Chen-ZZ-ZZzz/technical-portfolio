@@ -1019,6 +1019,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alerce" },
     { name = "antares-client" },
+    { name = "astropy" },
     { name = "elasticsearch-dsl" },
     { name = "pandas" },
 ]
@@ -1034,6 +1035,7 @@ dev = [
 requires-dist = [
     { name = "alerce" },
     { name = "antares-client" },
+    { name = "astropy", specifier = ">=7.2.0" },
     { name = "elasticsearch-dsl", specifier = ">=8.18.0" },
     { name = "pandas" },
 ]
