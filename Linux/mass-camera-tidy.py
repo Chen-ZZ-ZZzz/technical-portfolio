@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-mass-camera-tidy –– mass cleanup for camera dumps.
+mass-camera-tidy -- mass cleanup for camera dumps.
 
 Walks DIR non-recursively, then in order of priority:
   1. Date rename  : insert _YYMM_ into undated photo/video filenames
@@ -19,11 +19,11 @@ Date source:
 
 Detection rules for "already has a date" (skipped silently). A stem
 matching any of these patterns is considered dated:
-  - canonical  _YYMM_   anywhere in stem            IMG_2207_13131.jpg
-  - leading    YYMM_    at start of stem            2207_IMG_13131.jpg
-  - legacy separated:   _NNNN+_YYMM at end          IMG_13131_2207.jpg
-  - legacy embedded:    _NNNN+YYMM at end           IMG_131312207.jpg
-  - YYYYMMDD anywhere   (Pixel / Android timestamp) PXL_20260516_xxx.jpg
+  - canonical        _YYMM_         anywhere in stem     IMG_2207_13131.jpg
+  - leading          YYMM_          at start of stem     2207_IMG_13131.jpg
+  - legacy trailing: _NNNN+(_)YYMM  at end of digits     IMG_13131(_)2207.jpg
+  - legacy leading:  _YYMM+NNNN     start of digits      IMG_220713131.jpg
+  - YYYYMMDD anywhere   (Pixel / Android timestamp)  PXL_20260516_xxx.jpg
 
 False positives are possible (e.g. DSC_1208_2.jpg matches canonical
 _YYMM_ but its 1208 is really a seq). Those skip the date rename but still
@@ -46,15 +46,31 @@ import re
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 
-PHOTO_EXTS = {".jpg", ".jpeg", ".heic", ".heif", ".cr2", ".cr3", ".arw",
-              ".nef", ".dng", ".raw", ".rw2", ".orf", ".raf"}
+PHOTO_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".heic",
+    ".heif",
+    ".cr2",
+    ".cr3",
+    ".arw",
+    ".nef",
+    ".dng",
+    ".raw",
+    ".rw2",
+    ".orf",
+    ".raf",
+}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mts", ".m2ts", ".mkv"}
 ALL_EXTS = PHOTO_EXTS | VIDEO_EXTS
 JPEG_EXTS = {".jpg", ".jpeg"}
-MONTH = r"(?:0[1-9]|1[0-2])"    # valid month component: 01-12
-DAY   = r"(?:0[1-9]|[12]\d|3[01])"  # valid day component: 01-31
+YY = r"[0-2][0-9]"                # legacy 2-digit year, 2000-2029
+YYYY = r"20\d{2}"                 # valid 4-digit year, 2000-2099
+MONTH = r"(?:0[1-9]|1[0-2])"      # valid month component: 01-12
+DAY = r"(?:0[1-9]|[12]\d|3[01])"  # valid day component: 01-31
 
 
 def _is_dated(stem):
@@ -63,11 +79,11 @@ def _is_dated(stem):
     one canonical or legacy form; any hit means "skip date rename".
     """
     patterns = [
-        rf"_\d{{2}}{MONTH}_",               # canonical    _YYMM_
-        rf"^\d{{2}}{MONTH}_",               # leading      YYMM_
-        rf"_\d{{4,}}_\d{{2}}{MONTH}$",      # legacy sep   _NNNN+_YYMM$
-        rf"_\d{{6,}}{MONTH}$",              # legacy emb   _NNNN+YYMM$
-        rf"\d{{4}}{MONTH}{DAY}",            # YYYYMMDD     Pixel / Android
+        rf"_\d{{2}}{MONTH}_",       # canonical    _YYMM_
+        rf"^\d{{2}}{MONTH}_",       # leading      YYMM_
+        rf"_\d{{4,}}_?{YY}{MONTH}", # legacy emb   _NNNN+(_)YYMM
+        rf"_{YY}{MONTH}\d{{4,}}",   # legacy emb-prefix  _YYMM+NNNN
+        rf"{YYYY}{MONTH}{DAY}",     # YYYYMMDD     Pixel / Android
     ]
     return any(re.search(p, stem) for p in patterns)
 
@@ -86,47 +102,82 @@ def _add_date_to_stem(stem, yymm):
     return f"{yymm}_{stem}"
 
 
-def _read_date_yymm(path):
-    """Return YYMM (4 chars) from EXIF/container metadata, or None."""
+def _read_dates_yymm(paths):
+    """
+    Batch read date metadata. Returns {path: yymm_str or None}.
+    """
+    if not paths:
+        return {}
+    results = subprocess.run(
+        [
+            "exiftool",
+            "-j",
+            "-d",
+            "%y%m",
+            "-DateTimeOriginal",
+            "-CreateDate",
+            "-MediaCreateDate",
+            *[str(p) for p in paths],
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
     try:
-        out = subprocess.check_output(
-            ["exiftool", "-s3",
-             "-d", "%y%m",
-             "-DateTimeOriginal",
-             "-CreateDate",
-             "-MediaCreateDate",
-             str(path)],
-            stderr=subprocess.DEVNULL, text=True
-        )
-        for line in out.splitlines():
-            line = line.strip()
-            if re.fullmatch(rf"\d{{2}}{MONTH}", line):
-                return line
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    return None
+        entries = json.loads(results.stdout) if results.stdout else []
+    except json.JSONDecodeError:
+        entries = []
+    date_dict = {}  # dictionary of {file_name: date}
+    for entry in entries:
+        for tag in ("DateTimeOriginal", "CreateDate", "MediaCreateDate"):
+            v = entry.get(tag)
+            if v and re.fullmatch(rf"\d{{2}}{MONTH}", str(v)):
+                date_dict[entry["SourceFile"]] = str(v)
+                break
+    return {p: date_dict.get(str(p)) for p in paths}
 
 
-def _get_orientation(path):
-    """Return EXIF Orientation value (1-8) or 1 if unknown."""
+def _get_orientations(paths):
+    """
+    Batch read EXIF orientations. Return {Path: int}, defaulting to 1 if unknown.
+    """
+    if not paths:
+        return {}
+    results = subprocess.run(
+        ["exiftool", "-j", "-n", "-Orientation", *[str(p) for p in paths]],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
     try:
-        out = subprocess.check_output(
-            ["exiftool", "-s3", "-n", "-Orientation", str(path)],
-            stderr=subprocess.DEVNULL, text=True
-        ).strip()
-        return int(out) if out.isdigit() else 1
-    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-        return 1
+        entries = json.loads(results.stdout) if results.stdout else []
+    except json.JSONDecodeError:
+        entries = []
+    orientation_dict = {}
+    for entry in entries:
+        v = entry.get("Orientation")
+        if isinstance(v, int):
+            orientation_dict[entry["SourceFile"]] = v
+    return {p: orientation_dict.get(str(p), 1) for p in paths}
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description=
-        "Mass cleanup for camera dumps: date rename, chmod -x, lowercase ext, rotate JPGs.")
-    parser.add_argument("directory", nargs="?", default=".",
-                    help="Directory to process (default: current).")
-    parser.add_argument("--date", "-d", metavar="YYMM",
-                    help="Force this YYMM for all undated files; "
-                         "overrides metadata. Must be 4 digits, month 01-12.")
+    parser = argparse.ArgumentParser(
+        description="Mass cleanup for camera dumps: date rename, chmod -x, lowercase ext, rotate JPGs."
+    )
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Directory to process (default: current).",
+    )
+    parser.add_argument(
+        "--date",
+        "-d",
+        metavar="YYMM",
+        help="Force this YYMM for all undated files; "
+        "overrides metadata. Must be 4 digits, month 01-12.",
+    )
     args = parser.parse_args()
 
     if args.date is not None:
@@ -148,20 +199,26 @@ def main():
 
     # walk: non-recursive, whitelisted extensions, skip hidden files
     files = sorted(
-        p for p in directory.iterdir()
-        if p.is_file()
-        and not p.name.startswith(".")
-        and p.suffix.lower() in ALL_EXTS
+        p
+        for p in directory.iterdir()
+        if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in ALL_EXTS
     )
 
     # track planned final names to detect collisions against existing files and planed new names.
     virtual_names = {p.name for p in files}
 
     errors = []
+    date_map = {}
     # list of (src_path, final_name)
     # single combined rename todo list for execute phase
     plan = []
 
+    # batch-read date metadata for files that need it (one exiftool call)
+    if not forced_yymm:
+        needs_metadata = [p for p in files if not _is_dated(p.stem)]
+        date_map = _read_dates_yymm(needs_metadata)
+
+    # --- pre flight begins ---
     for p in files:
         stem = p.stem
         suffix = p.suffix
@@ -170,16 +227,13 @@ def main():
         if _is_dated(stem):
             new_stem = stem
         else:
-            if forced_yymm:
-                yymm = forced_yymm
-            else:
-                yymm = _read_date_yymm(p)
-                if not yymm:
-                    errors.append(
-                        f"no date metadata: {p.name} "
-                        f"(pass --date YYMM to override)"
-                    )
-                    continue
+            yymm = forced_yymm or date_map.get(p)
+
+            if not yymm:
+                errors.append(
+                    f"no date metadata: {p.name} (pass --date YYMM to override)"
+                )
+                continue
             new_stem = _add_date_to_stem(stem, yymm)
 
         # --- ext phase ---
@@ -191,9 +245,7 @@ def main():
 
         # --- collision check ---
         if new_name in virtual_names:
-            errors.append(
-                f"target exists: {p.name} -> {new_name}"
-            )
+            errors.append(f"target exists: {p.name} -> {new_name}")
             continue
 
         virtual_names.discard(p.name)
@@ -209,7 +261,7 @@ def main():
 
     # --- apply ---
 
-    #1. chmod a-x
+    # 1. chmod a-x
     chmod_count = 0
     for p in files:
         mode = p.stat().st_mode
@@ -218,34 +270,38 @@ def main():
             p.chmod(new_mode)
             chmod_count += 1
 
-    #2. rotate JPGs based on EXIF orientation (lossless)
+    # 2. rotate JPGs based on EXIF orientation (lossless)
     rotate_count = 0
     if shutil.which("exiftran"):
-        for p in files:
-            if p.suffix.lower() not in JPEG_EXTS:
-                continue
-            if _get_orientation(p) == 1:
+        jpgs = [p for p in files if p.suffix.lower() in JPEG_EXTS]
+        orient_map = _get_orientations(jpgs)
+        for p in jpgs:
+            if orient_map.get(p) == 1:
                 continue
             try:
-                subprocess.check_call(
+                subprocess.run(
                     ["exiftran", "-ai", str(p)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    check=True,
                 )
                 rotate_count += 1
             except subprocess.CalledProcessError:
-                print(f"warning: exiftran failed on {p.name}",)
+                print(f"warning: exiftran failed on {p.name}")
+
     else:
         print("warning: exiftran not installed. Skipping orientation step")
 
-    #3. renames (combined date + ext lowercase)
+    # 3. renames (combined date + ext lowercase)
     rename_count = 0
     for src, new_name in plan:
         dst = src.with_name(new_name)
         src.rename(dst)
         rename_count += 1
 
-    print(f"DONE: {rename_count} renamed, {chmod_count} chmodded, {rotate_count} rotated")
+    print(
+        f"DONE: {rename_count} renamed, {chmod_count} chmodded, {rotate_count} rotated"
+    )
 
 
 if __name__ == "__main__":
