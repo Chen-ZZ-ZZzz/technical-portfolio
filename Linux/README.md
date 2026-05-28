@@ -35,3 +35,6 @@ Replaces runs of spaces and tabs with a single space while preserving newlines. 
 
 ### Markdown to PDF (`md2pdf.sh`)
 Converts a Markdown file to PDF via `pandoc`. Validates file existence and extension, outputs PDF alongside the source file. Bash strict mode with `set -euo pipefail`.
+
+### Camera Dump Clean-up (`mass-camera-tidy.py`)
+Mass clean up photos and videos from camera/phone - remove execute bit, lowercase ext, add date, rotate (jpg) correctly.
