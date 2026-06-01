@@ -37,8 +37,9 @@ Whitelist:
 Usage:
   mass-camera-tidy [DIR] [--date YYMM]
 
-Dependencies: exiftool (required unless --date is given), exiftran (for
-the orientation step; warns and skips if missing).
+Dependencies:
+  exiftool (for metadata, required unless --date is given),
+  exiftran (for orientation rotation; warns and skips if missing).
 """
 
 import argparse
@@ -190,12 +191,12 @@ def main():
     args = _parse_args()
     directory = Path(args.directory)
     if not directory.is_dir():
-        sys.exit(f"error: not a directory: {directory}")
+        sys.exit(f"ERROR: not a directory: {directory}")
 
     forced_yymm = args.date
 
     if not forced_yymm and not shutil.which("exiftool"):
-        sys.exit("error: exiftool not found. Install it or pass --date YYMM.")
+        sys.exit("ERROR: exiftool not found. Install it or pass --date YYMM.")
 
     # walk: non-recursive, whitelisted extensions, skip hidden files
     files = sorted(
@@ -231,7 +232,7 @@ def main():
 
             if not yymm:
                 errors.append(
-                    f"no date metadata: {p.name} (pass --date YYMM to override)"
+                    f"No date metadata: {p.name} (pass --date YYMM to override)"
                 )
                 continue
             new_stem = _add_date_to_stem(stem, yymm)
@@ -245,7 +246,7 @@ def main():
 
         # --- collision check ---
         if new_name in virtual_names:
-            errors.append(f"target exists: {p.name} -> {new_name}")
+            errors.append(f"Target exists: {p.name} -> {new_name}")
             continue
 
         virtual_names.discard(p.name)
@@ -255,7 +256,7 @@ def main():
     # --- errors block; nothing else to report ---
     if errors:
         for e in errors:
-            print(f"error: {e}")
+            print(f"ERROR: {e}")
         print(f"\n{len(errors)} error(s). Nothing changed.")
         sys.exit(1)
 
@@ -272,7 +273,10 @@ def main():
 
     # 2. rotate JPGs based on EXIF orientation (lossless)
     rotate_count = 0
-    if shutil.which("exiftran"):
+    missing = [t for t in ("exiftool", "exiftran") if not shutil.which(t)]
+    if missing:
+        print(f"Warning: {' and '.join(missing)} not installed. Skip orientation step")
+    else:
         jpgs = [p for p in files if p.suffix.lower() in JPEG_EXTS]
         orient_map = _get_orientations(jpgs)
         for p in jpgs:
@@ -287,10 +291,7 @@ def main():
                 )
                 rotate_count += 1
             except subprocess.CalledProcessError:
-                print(f"warning: exiftran failed on {p.name}")
-
-    else:
-        print("warning: exiftran not installed. Skipping orientation step")
+                print(f"Warning: exiftran failed on {p.name}")
 
     # 3. renames (combined date + ext lowercase)
     rename_count = 0
