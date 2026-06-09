@@ -74,7 +74,7 @@ def scan():
     prev_mag = state["magnitudes"]
 
     print(f"\n\nScanning MJD {since:.1f} to {now_mjd():.1f}")
-    print(f"Known loci from last scan: {len(prev_mag)}\n")
+    print(f"Known loci: {len(prev_mag)}\n")
 
     # gets all solar system objects detected by rubin since last scan.
     # returns a lazy iterator
