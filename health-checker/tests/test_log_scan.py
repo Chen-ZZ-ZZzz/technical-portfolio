@@ -1,10 +1,11 @@
 """Tests for log_scan.py."""
 
 import json
+from _pytest import capture
 import pytest
 from log_scan import (
-    _build_level_pattern, _extract_timestamp, _format_csv, _format_json,
-    scan_dir, scan_file,
+    _build_level_pattern, _extract_timestamp, _format_csv, _format_json, _parse_args,
+    scan_dir, scan_file, _save_content,
 )
 
 
@@ -39,22 +40,19 @@ class TestExtractTimestamp:
         assert _extract_timestamp(line) == expected
 
 
-class TestBuildLevelPattern:
-    def test_matches_levels(self):
-        pat = _build_level_pattern(("ERROR", "WARN"))
-        assert pat.search("an ERROR occurred")
-        assert not pat.search("ERRORCODE")  # word boundary
+def test_matches_levels():
+    pat = _build_level_pattern(("ERROR", "WARN"))
+    assert pat.search("an ERROR occurred")
+    assert not pat.search("ERRORCODE")  # word boundary
 
 
-class TestScanFile:
+class TestScans:
     def test_counts_and_line_numbers(self, sample_log, default_pattern):
         report = scan_file(sample_log, default_pattern)
         assert report.counts["ERROR"] == 2
         assert report.counts["WARN"] == 1
         assert [h.line_number for h in report.hits] == [2, 3, 5]
 
-
-class TestScanDir:
     def test_finds_log_files_only(self, tmp_path, default_pattern):
         logs = tmp_path / "logs"
         logs.mkdir()
@@ -77,3 +75,25 @@ class TestFormatters:
         lines = _format_csv([report]).strip().splitlines()
         assert lines[0] == "file,line_number,level,timestamp,line"
         assert len(lines) == 4  # header + 3 hits
+
+
+class TestParseArgs:
+    def test_parse_nonexistent_exists(self):
+        with pytest.raises(SystemExit):
+            _parse_args(["/made/up/path"])
+
+    def test_parse_log_suffix_warn(self, tmp_path, capsys):
+        bad_file = tmp_path / "no_log_suffix"
+        bad_file.write_text("")
+        args = _parse_args([str(bad_file)])
+
+        captured = capsys.readouterr()
+        assert "is not a .log file" in captured.err
+        assert args.target == bad_file
+
+
+def test_save_table_becomes_json(sample_log, default_pattern):
+    report = scan_file(sample_log, default_pattern)
+    content, fmt = _save_content([report], "table")
+    assert fmt == "json"
+    assert json.loads(content)["files"][0]["counts"]["ERROR"] == 2

@@ -23,13 +23,22 @@ import io
 import json
 import re
 import sys
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from common import _red, _USE_COLOR, report_timestamp, save_report
+from common import (
+    _USE_COLOR,
+    report_timestamp,
+    save_report,
+)
 
 DEFAULT_LEVELS = ("ERROR", "WARN")
+
+# TODO: re-add with SQLite
+# # log levels that map to ERROR db status (vs WARN)
+# _ERROR_LEVELS = frozenset(("ERROR", "CRITICAL", "FATAL"))
 
 # Matches common log timestamps at the start of a line
 TIMESTAMP_PAT = re.compile(
@@ -55,9 +64,10 @@ _RESET = "\033[0m"
 
 
 def _colorize_level(level: str) -> str:
+    """Return a color wrapped LEVEL if _USE_COLOR is set, else plain."""
     if not _USE_COLOR:
         return level
-    code = _LEVEL_COLORS.get(level, "")
+    code = _LEVEL_COLORS.get(level, "") # unknown level -> no color
     return f"{code}{level}{_RESET}" if code else level
 
 
@@ -102,7 +112,7 @@ def scan_file(path: Path, pattern: re.Pattern) -> FileReport:
     """Scan one file for matching log levels. Returns a FileReport."""
     report = FileReport(path=path)
     try:
-        f = path.open(errors="replace")
+        f = path.open(encoding="utf-8", errors="replace")
     except PermissionError:
         print(f"[SKIPPED] {path} (permission denied)", file=sys.stderr)
         return report
@@ -136,57 +146,48 @@ def scan_dir(base: Path, pattern: re.Pattern) -> list[FileReport]:
 # -- Output formatters --
 
 
-def _print_table(reports: list[FileReport], levels: tuple[str, ...],
-                 single_file: bool = False, file=None, plain: bool = False) -> None:
-    """Human-readable summary table. plain=True disables ANSI colors (for saving)."""
-    p = lambda *a, **kw: print(*a, **kw, file=file)
-    color_level = (lambda lv: lv) if plain else _colorize_level
+def _display_text(h: LogHit) -> str:
+    """Line text with the leading timestamp removed (display only)."""
+    if h.timestamp:
+        return h.line.removeprefix(h.timestamp).lstrip()
+    return h.line
 
-    if not reports:
-        p("No .log files found.")
-        return
 
-    p(f"Report: {report_timestamp()}\n")
+def _print_table(reports: list[FileReport], levels: tuple[str, ...]) -> None:
+    """Human-readable summary table and hit listing to stdout."""
+    print(f"Report: {report_timestamp()}\n")
 
     col = max(len(str(r.path)) for r in reports)
     header = f"{'FILE':<{col}}  " + "  ".join(f"{lv:>8}" for lv in levels)
-    p(header)
-    p("-" * len(header))
+    print(header)
+    print("-" * len(header))
 
     totals: dict[str, int] = defaultdict(int)
     for r in reports:
         row = f"{str(r.path):<{col}}  " + "  ".join(
             f"{r.counts.get(lv, 0):>8}" for lv in levels
         )
-        p(row)
+        print(row)
         for lv in levels:
             totals[lv] += r.counts.get(lv, 0)
 
-    p("-" * len(header))
-    p(f"{'TOTAL':<{col}}  " + "  ".join(f"{totals[lv]:>8}" for lv in levels))
+    print("-" * len(header))
+    print(f"{'TOTAL':<{col}}  " + "  ".join(f"{totals[lv]:>8}" for lv in levels))
 
-    if single_file:
-        all_hits = [h for r in reports for h in r.hits]
-        if all_hits:
-            p(f"\n--- Matched lines ---")
-            for h in all_hits:
-                label = color_level(h.level)
-                ts = f"[{h.timestamp}] " if h.timestamp else ""
-                p(f"  {h.line_number:>5}: {ts}{label}: {h.line[:120]}")
-    else:
-        all_hits = [h for r in reports for h in r.hits if h.timestamp]
-        if all_hits:
-            recent = sorted(all_hits, key=lambda h: h.timestamp or "", reverse=True)[:5]
-            p(f"\n--- Most recent entries (with timestamps) ---")
-            for h in recent:
-                label = color_level(h.level)
-                p(f"  [{h.timestamp}] {label}: {h.line[:120]}")
+    for r in reports:
+        if not r.hits:
+            continue
+
+        print(f"\n{r.path}")
+        for h in r.hits:
+            ts = f"[{h.timestamp}] " if h.timestamp else ""
+            print(f"  {h.line_number:>8}: {ts}{_colorize_level(h.level)}: {_display_text(h)}")
 
 
 def _format_json(reports: list[FileReport]) -> str:
     """JSON output for programmatic consumption."""
     data = {
-        "timestamp": report_timestamp(),
+        "report_timestamp": report_timestamp(),
         "files": [],
     }
     for r in reports:
@@ -228,44 +229,50 @@ def _format_csv(reports: list[FileReport]) -> str:
 # -- CLI --
 
 
-def main() -> None:
+def _save_content(reports: list[FileReport], out_fmt: str) -> tuple[str, str]:
+    """Return (content, save_fmt). Table output saves as JSON."""
+    save_fmt = "json" if out_fmt == "table" else out_fmt
+    if save_fmt == "json":
+        return _format_json(reports), save_fmt
+    return _format_csv(reports), save_fmt
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Scan log files for ERROR/WARN entries with timestamps.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  python3 log_scan.py /path/to/logs\n"
-            "  python3 log_scan.py app.log --level ERROR CRITICAL\n"
-            "  python3 log_scan.py /path/to/logs -o json\n"
-            "  python3 log_scan.py /path/to/logs -o csv > report.csv\n"
-            "  python3 log_scan.py /path/to/logs -o csv --save"
-        ),
+        description="scan log files for ERROR/WARN entries with timestamps.",
     )
     parser.add_argument(
         "target", type=Path, nargs="?", default=Path("."),
-        help="Directory or single .log file to scan (default: current dir)",
+        help="directory or single .log file to scan (default: current dir)",
     )
     parser.add_argument(
         "--level", "-l", nargs="+", default=list(DEFAULT_LEVELS), metavar="LEVEL",
-        help=f"Log levels to match (default: {' '.join(DEFAULT_LEVELS)})",
+        help=f"log levels to match (default: {' '.join(DEFAULT_LEVELS)})",
     )
     parser.add_argument(
         "--output", "-o", choices=["table", "json", "csv"], default="table",
-        help="Output format (default: table)",
+        help="output format (default: table)",
     )
     parser.add_argument(
         "--save", "-s", action="store_true",
-        help="Save report to reports/ with timestamped filename",
+        help="save report to reports/ with timestamped filename",
     )
-    args = parser.parse_args()
+    # TODO: re-add with SQLite
+    # parser.add_argument(
+    #     "--db", "-d", type=Path, default=None, metavar="PATH",
+    #     help="SQLite database file to record results (default: no recording)",
+    # )
+    args = parser.parse_args(argv) # None -> uses sys.argv[1:]
 
     if not args.target.exists():
-        print(f"Error: '{args.target}' does not exist.", file=sys.stderr)
-        sys.exit(1)
-
+        parser.error(f"'{args.target}' does not exist.")
     if args.target.is_file() and args.target.suffix != ".log":
         print(f"Warning: '{args.target}' is not a .log file.", file=sys.stderr)
+    return args
 
+
+def main() -> None:
+    args = _parse_args()
     levels = tuple(lv.upper() for lv in args.level)
     pattern = _build_level_pattern(levels)
 
@@ -279,33 +286,17 @@ def main() -> None:
         return
 
     if args.output == "json":
-        output = _format_json(reports)
+        print(_format_json(reports))
     elif args.output == "csv":
-        output = _format_csv(reports)
+        print(_format_csv(reports), end="")
     else:
-        single = args.target.is_file()
-        _print_table(reports, levels, single_file=single)
-        output = None
-
-    if output is not None and not args.save:
-        print(output, end="" if args.output == "csv" else "\n")
+        _print_table(reports, levels)
 
     if args.save:
-        save_fmt = args.output if args.output != "table" else "json"
-        if output is None or save_fmt != args.output:
-            if save_fmt == "json":
-                save_content = _format_json(reports)
-            elif save_fmt == "csv":
-                save_content = _format_csv(reports)
-            else:
-                buf = io.StringIO()
-                _print_table(reports, levels, file=buf, plain=True)
-                save_content = buf.getvalue()
-        else:
-            save_content = output
-        saved = save_report(save_content, save_fmt, "log_scan")
+        content, save_fmt = _save_content(reports, args.output)
+        saved = save_report(content, save_fmt, "log_scan")
         if saved:
-            print(f"Report saved: {saved}", file=sys.stderr)
+            print(f"Report saved: {saved}")
 
 
 if __name__ == "__main__":
