@@ -5,9 +5,8 @@ Usage:
     python3 log_scan.py /path/to/logs
     python3 log_scan.py /path/to/single.log
     python3 log_scan.py /path/to/logs --level ERROR CRITICAL
-    python3 log_scan.py /path/to/logs -o json
-    python3 log_scan.py /path/to/logs -o csv > report.csv
-    python3 log_scan.py /path/to/logs -o csv --save
+    python3 log_scan.py /path/to/logs -o json > report.json
+    python3 log_scan.py /path/to/logs -s csv
 
 Recognized timestamp formats:
     2026-03-21 14:05:03                     (ISO datetime)
@@ -229,14 +228,6 @@ def _format_csv(reports: list[FileReport]) -> str:
 # -- CLI --
 
 
-def _save_content(reports: list[FileReport], out_fmt: str) -> tuple[str, str]:
-    """Return (content, save_fmt). Table output saves as JSON."""
-    save_fmt = "json" if out_fmt == "table" else out_fmt
-    if save_fmt == "json":
-        return _format_json(reports), save_fmt
-    return _format_csv(reports), save_fmt
-
-
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="scan log files for ERROR/WARN entries with timestamps.",
@@ -254,9 +245,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="output format (default: table)",
     )
     parser.add_argument(
-        "--save", "-s", action="store_true",
-        help="save report to reports/ with timestamped filename",
-    )
+        "--save", "-s", nargs="?", const="json", choices=["json", "csv"],
+        default=None, metavar="FMT",
+        help="save report to reports/ (json or csv; default json)",    )
     # TODO: re-add with SQLite
     # parser.add_argument(
     #     "--db", "-d", type=Path, default=None, metavar="PATH",
@@ -293,8 +284,8 @@ def main() -> None:
         _print_table(reports, levels)
 
     if args.save:
-        content, save_fmt = _save_content(reports, args.output)
-        saved = save_report(content, save_fmt, "log_scan")
+        content = _format_json(reports) if args.save == "json" else _format_csv(reports)
+        saved = save_report(content, args.save, "log_scan")
         if saved:
             print(f"Report saved: {saved}")
 
