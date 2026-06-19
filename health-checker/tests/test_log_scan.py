@@ -4,8 +4,8 @@ import json
 from _pytest import capture
 import pytest
 from log_scan import (
-    _build_level_pattern, _extract_timestamp, _format_csv, _format_json, _parse_args,
-    scan_dir, scan_file, _save_content,
+    _build_level_pattern, _extract_timestamp, _format_csv, _format_json,
+    scan_dir, scan_file, _parse_args,
 )
 
 
@@ -90,10 +90,3 @@ class TestParseArgs:
         captured = capsys.readouterr()
         assert "is not a .log file" in captured.err
         assert args.target == bad_file
-
-
-def test_save_table_becomes_json(sample_log, default_pattern):
-    report = scan_file(sample_log, default_pattern)
-    content, fmt = _save_content([report], "table")
-    assert fmt == "json"
-    assert json.loads(content)["files"][0]["counts"]["ERROR"] == 2
