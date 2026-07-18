@@ -1,0 +1,13 @@
+# Rename to lsst-pipeline.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=LSST-Alert-QA ALeRcE pipeline
+
+[Service]
+Type=oneshot
+SyslogIdentifier=lsst-alerce
+ExecStartPre=/usr/bin/nm-online -q -t 36
+WorkingDirectory=/path/to/LSST-Alert-QA/
+ExecStart=/path/to/uv run pipeline.py lsst 100
+StandardOutput=append:/path/to/LSST-Alert-QA/logs/pipeline_alerce.log
+StandardError=append://path/to/LSST-Alert-QA/logs/pipeline_alerce_err.log

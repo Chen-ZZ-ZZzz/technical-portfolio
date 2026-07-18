@@ -34,3 +34,29 @@ journalctl --user -u sso-monitor.service -n 50
 - `Persistent=true` runs a missed job on next boot.
 - `ExecStartPre=/bin/sleep 60` lets the network settle before the ANTARES query.
 - State file: `bright_sso_state.json` in the script's working directory.
+
+---
+
+# Automated ALeRcE LSST Pipeline Setup
+
+Weekly systemd user timer that runs `pipeline.py` on ALeRcE broker.
+
+## Files
+
+- `lsst-pipeline.service.example`
+- `lsst-pipeline.timer.example`
+
+## Install
+
+```bash
+# copy both files; drop `.example` suffix; edit paths and/or page numbers.
+systemctl --user daemon-reload
+systemctl --user enable --now lsst-pipeline.timer
+```
+
+## Verify
+
+```bash
+systemctl --user list-timers lsst-pipeline.timer
+systemctl --user status lsst-pipeline.service
+```

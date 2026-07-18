@@ -5,6 +5,7 @@ Description=ANTARES SSO brightness monitor
 
 [Service]
 Type=oneshot
+SyslogIdentifier=lsst-sso
 ExecStartPre=/bin/sleep 60
 WorkingDirectory=/path/to/LSST-Alert-QA/
 ExecStart=/path/to/uv run antares_sso_monitor.py

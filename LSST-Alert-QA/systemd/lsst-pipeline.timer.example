@@ -1,0 +1,12 @@
+# Rename to lsst-pipeline.timer
+
+[Unit]
+Description=Run lsst pipeline weekly
+
+[Timer]
+OnCalendar=Tue *-*-* 07:13:00
+Persistent=true
+RandomizedDelaySec=49
+
+[Install]
+WantedBy=timers.target
