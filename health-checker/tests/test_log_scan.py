@@ -1,11 +1,10 @@
 """Tests for log_scan.py."""
 
 import json
-from _pytest import capture
 import pytest
 from log_scan import (
     _build_level_pattern, _extract_timestamp, _format_csv, _format_json,
-    scan_dir, scan_file, _parse_args,
+    scan_dir, scan_file, _parse_args, _print_table, main
 )
 
 
@@ -76,6 +75,16 @@ class TestFormatters:
         assert lines[0] == "file,line_number,level,timestamp,line"
         assert len(lines) == 4  # header + 3 hits
 
+    def test_totals_absent_level(self, tmp_path, default_pattern, capsys):
+        """Regression: requested level with zero hits must not KeyError in TOTAL row."""
+        f = tmp_path / "err_only.log"
+        f.write_text("2026-07-18 14:05:03 ERROR boom\n")
+        report = scan_file(f, default_pattern)
+        _print_table([report], ("ERROR", "WARN"))
+
+        out = capsys.readouterr().out
+        assert "TOTAL" in out          # reached the row that used to raise
+
 
 class TestParseArgs:
     def test_parse_nonexistent_exists(self):
@@ -90,3 +99,24 @@ class TestParseArgs:
         captured = capsys.readouterr()
         assert "is not a .log file" in captured.err
         assert args.target == bad_file
+
+class TestMain:
+    def test_quiet_mode(self, tmp_path, capsys):
+        f = tmp_path / "tmp.log"
+        f.write_text("2026-07-18 16:00:00 WARN hungry\n")
+        main([str(f),"-q", "-o", "json"])
+
+        captured = capsys.readouterr()
+        assert captured.out == "Scanned 1 file(s): 0 ERROR, 1 WARN\n"
+
+    def test_quiet_with_save(self, tmp_path, capsys, monkeypatch):
+        """Production invocation: summary line first, save confirmation second."""
+        monkeypatch.chdir(tmp_path)
+        f = tmp_path / "tmp.log"
+        f.write_text("2026-07-18 16:00:00 ERROR boom\n")
+        main([str(f), "-q", "-s", "json"])
+
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "Scanned 1 file(s): 1 ERROR, 0 WARN"
+        assert lines[1].startswith("Report saved:")
+        assert len(lines) == 2

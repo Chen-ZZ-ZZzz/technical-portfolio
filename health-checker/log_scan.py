@@ -152,6 +152,15 @@ def _display_text(h: LogHit) -> str:
     return h.line
 
 
+def _totals(reports: list[FileReport]) -> dict[str, int]:
+    """Tally total hits per level across reports. Keys are observed levels only."""
+    totals: dict[str, int] = defaultdict(int)
+    for r in reports:
+        for lv, n in r.counts.items():
+            totals[lv] += n
+    return dict(totals)
+
+
 def _print_table(reports: list[FileReport], levels: tuple[str, ...]) -> None:
     """Human-readable summary table and hit listing to stdout."""
     print(f"Report: {report_timestamp()}\n")
@@ -161,17 +170,15 @@ def _print_table(reports: list[FileReport], levels: tuple[str, ...]) -> None:
     print(header)
     print("-" * len(header))
 
-    totals: dict[str, int] = defaultdict(int)
     for r in reports:
         row = f"{str(r.path):<{col}}  " + "  ".join(
             f"{r.counts.get(lv, 0):>8}" for lv in levels
         )
         print(row)
-        for lv in levels:
-            totals[lv] += r.counts.get(lv, 0)
+    totals = _totals(reports)
 
     print("-" * len(header))
-    print(f"{'TOTAL':<{col}}  " + "  ".join(f"{totals[lv]:>8}" for lv in levels))
+    print(f"{'TOTAL':<{col}}  " + "  ".join(f"{totals.get(lv, 0):>8}" for lv in levels))
 
     for r in reports:
         if not r.hits:
@@ -247,7 +254,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--save", "-s", nargs="?", const="json", choices=["json", "csv"],
         default=None, metavar="FMT",
-        help="save report to reports/ (json or csv; default json)",    )
+        help="save report to reports/ (json or csv; default json)",
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="quiet mode -- one-line summary instead of formatted output (overrides -o)",
+    )
     # TODO: re-add with SQLite
     # parser.add_argument(
     #     "--db", "-d", type=Path, default=None, metavar="PATH",
@@ -262,8 +274,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def main() -> None:
-    args = _parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
     levels = tuple(lv.upper() for lv in args.level)
     pattern = _build_level_pattern(levels)
 
@@ -276,12 +288,17 @@ def main() -> None:
         print("No .log files found.")
         return
 
-    if args.output == "json":
-        print(_format_json(reports))
-    elif args.output == "csv":
-        print(_format_csv(reports), end="")
+    if args.quiet:
+        totals = _totals(reports)
+        parts = ", ".join(f"{totals.get(lv, 0)} {lv}" for lv in levels)
+        print(f"Scanned {len(reports)} file(s): {parts}")
     else:
-        _print_table(reports, levels)
+        if args.output == "json":
+            print(_format_json(reports))
+        elif args.output == "csv":
+            print(_format_csv(reports), end="")
+        else:
+            _print_table(reports, levels)
 
     if args.save:
         content = _format_json(reports) if args.save == "json" else _format_csv(reports)
