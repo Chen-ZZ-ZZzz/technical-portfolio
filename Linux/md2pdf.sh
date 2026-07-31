@@ -37,7 +37,16 @@ main (){
     fi
 
     echo "Converting $MD_FILE to $PDF_FILE ..."
-    pandoc "$MD_FILE" -o "$PDF_FILE" -V 'geometry:margin=2.5cm' -V 'fontsize=11pt'
+    pandoc "$MD_FILE" -o "$PDF_FILE" \
+           -V 'geometry:margin=2.5cm' \
+           -V 'fontsize=11pt' \
+           -V 'linestretch=1.15' \
+           -V 'parskip=8pt'
+
+    # view the new pdf file
+    echo "Opening $PDF_FILE"
+    xdg-open "$PDF_FILE" 2>/dev/null
+
 }
 
 main "$@"
