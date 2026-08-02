@@ -106,6 +106,7 @@ def run_pipeline(
     survey: str = DEFAULT_SURVEY,
     oids: list | None = None,
     inter_object_delay: float = INTER_OBJECT_DELAY,
+    quiet: bool = False,
 ) -> pd.DataFrame:
     """
     Full pipeline: fetch → validate → classify → QA report.
@@ -114,6 +115,7 @@ def run_pipeline(
     survey: "ztf" (default) or "lsst".
       For LSST, magstats are not available via the API — ndet and mag stats
       are computed from raw detections instead.
+    quiet:  suppress per-object progress output.
 
     Returns a DataFrame (one row per object).
     """
@@ -124,14 +126,16 @@ def run_pipeline(
 
     rows = []
     for i, oid in enumerate(oids, 1):
-        print(f"[{i:>3}/{len(oids)}] {oid}", end="  ", flush=True)
+        if not quiet:
+            print(f"[{i:>3}/{len(oids)}] {oid}", end="  ", flush=True)
         data   = fetch_object_data(oid, survey=survey)
         issues = validate_completeness(data, survey=survey)
         ndet   = int(data["ms"]["ndet"].sum()) if not data["ms"].empty else len(data["dets"])
         cl     = classify_object(data["probs"], ndet)
         row    = build_qa_row(oid, data, issues, cl)
         rows.append(row)
-        print(row["status"])
+        if not quiet:
+            print(row["status"])
         if inter_object_delay > 0:
             time.sleep(inter_object_delay)
 
@@ -207,11 +211,13 @@ def run_antares_pipeline(
     page_size: int = DEFAULT_PAGE_SIZE,
     locus_ids: list | None = None,
     inter_object_delay: float = INTER_OBJECT_DELAY,
+    quiet: bool = False,
 ) -> pd.DataFrame:
     """
     ANTARES pipeline: fetch loci → validate → classify tags → QA report.
 
     locus_ids: optional explicit list of ANTARES locus IDs — skips fetch_antares_candidates.
+    quiet:     suppress per-object progress output.
     Returns a DataFrame (one row per locus) with the same schema as run_pipeline.
     """
     from .antares_client import fetch_antares_candidates, fetch_antares_locus
@@ -223,13 +229,15 @@ def run_antares_pipeline(
 
     rows = []
     for i, lid in enumerate(locus_ids, 1):
-        print(f"[{i:>3}/{len(locus_ids)}] {lid}", end="  ", flush=True)
+        if not quiet:
+            print(f"[{i:>3}/{len(locus_ids)}] {lid}", end="  ", flush=True)
         data   = fetch_antares_locus(lid)
         issues = validate_antares(data)
         cl     = classify_antares(data["tags"])
         row    = build_antares_qa_row(lid, data, issues, cl)
         rows.append(row)
-        print(row["status"])
+        if not quiet:
+            print(row["status"])
         if inter_object_delay > 0:
             time.sleep(inter_object_delay)
 

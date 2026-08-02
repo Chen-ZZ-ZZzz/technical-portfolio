@@ -101,6 +101,9 @@ uv run pipeline.py antares ANT2020j7wo4 ZTF20aafqubg
 # Via installed script
 uv run rubin-qa ztf 20
 uv run rubin-qa antares 10
+
+# quiet mode — one-line summary
+uv run pipeline.py -q
 ```
 
 ### Python API

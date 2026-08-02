@@ -3,9 +3,9 @@
   survey: ztf (default) | lsst | antares
 """
 
+import argparse
 import datetime
 import pathlib
-import sys
 
 from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE
 from .reporting import run_antares_pipeline, run_pipeline
@@ -14,29 +14,48 @@ SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "st
 
 
 def main() -> None:
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(
+        description="LSST/ZTF/ANTARES Alert Data Quality Pipeline"
+    )
+    parser.add_argument(
+        "survey", nargs="?", default=DEFAULT_SURVEY,
+        help="Broker/survey: ztf (default) | lsst | antares",
+    )
+    parser.add_argument(
+        "targets", nargs="*",
+        help="page_size (int) or explicit oid/locus_id list",
+    )
+    parser.add_argument(
+        "-q", "--quiet", action="store_true",
+        help="One-line summary only: broker, totals, output path",
+    )
+    opts = parser.parse_args()
 
-    survey = args[0] if args else DEFAULT_SURVEY
-    rest   = args[1:]
+    survey = opts.survey
+    rest   = opts.targets
+    quiet  = opts.quiet
 
     if survey == "antares":
         if rest and not rest[0].isdigit():
             explicit_ids = rest
-            print(f"=== ANTARES Alert QA Pipeline  locus_ids={explicit_ids} ===\n")
-            df = run_antares_pipeline(locus_ids=explicit_ids)
+            if not quiet:
+                print(f"=== ANTARES Alert QA Pipeline  locus_ids={explicit_ids} ===\n")
+            df = run_antares_pipeline(locus_ids=explicit_ids, quiet=quiet)
         else:
             n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
-            print(f"=== ANTARES Alert QA Pipeline  page_size={n} ===\n")
-            df = run_antares_pipeline(page_size=n)
+            if not quiet:
+                print(f"=== ANTARES Alert QA Pipeline  page_size={n} ===\n")
+            df = run_antares_pipeline(page_size=n, quiet=quiet)
     elif rest and not rest[0].isdigit():
         explicit_oids = rest
-        n = len(explicit_oids)
-        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={explicit_oids} ===\n")
-        df = run_pipeline(survey=survey, oids=explicit_oids)
+        if not quiet:
+            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={explicit_oids} ===\n")
+        df = run_pipeline(survey=survey, oids=explicit_oids, quiet=quiet)
     else:
         n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
-        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
-        df = run_pipeline(page_size=n, survey=survey)
+        if not quiet:
+            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
+        df = run_pipeline(page_size=n, survey=survey, quiet=quiet)
 
     reports_dir = pathlib.Path("reports")
     reports_dir.mkdir(exist_ok=True)
@@ -44,9 +63,13 @@ def main() -> None:
     csv_path = reports_dir / f"qa_{survey}_{date}_n{len(df)}.csv"
     df.to_csv(csv_path, index=False)
 
-    print("\n=== QA Report ===")
-    print(df[SUMMARY_COLUMNS].to_string())
-    print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
+    if quiet:
+        flagged = df["flag"].notna().sum()
+        print(f"{survey}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}")
+    else:
+        print("\n=== QA Report ===")
+        print(df[SUMMARY_COLUMNS].to_string())
+        print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
 
 
 if __name__ == "__main__":

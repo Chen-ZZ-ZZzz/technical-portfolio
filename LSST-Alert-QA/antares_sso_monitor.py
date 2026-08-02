@@ -6,11 +6,11 @@ since the last scan.
 State is stored in sso_state.json between runs.
 """
 
-import json
-import pathlib
 import datetime
-from requests.exceptions import ConnectionError, Timeout
+import json
 import time
+from pathlib import Path
+from requests.exceptions import ConnectionError, Timeout
 
 from elasticsearch.dsl import Search
 from antares_client.search import search
@@ -20,7 +20,7 @@ DELTA_MAG_ALERT = (
     1.0  # flag if brightened by this much since last scan. 1 mag = ~ 2.5x flux increase
 )
 MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
-STATE_FILE = pathlib.Path("bright_sso_state.json")
+STATE_FILE = Path("bright_sso_state.json")
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 STELLAR_CATALOGS = {
@@ -72,6 +72,8 @@ def scan():
     state = _load_state()
     since = state["last_mjd"]
     prev_mag = state["magnitudes"]
+    new_mag = {}
+    alerts = []
 
     print(f"\n\nScanning MJD {since:.1f} to {now_mjd():.1f}")
     print(f"Known loci: {len(prev_mag)}\n")
@@ -86,9 +88,6 @@ def scan():
         .to_dict()
     )
 
-    new_magnitudes = {}
-    alerts = []
-
     # retry guard against mid scan network failures.
     for attempt in range(MAX_RETRIES):
         try:
@@ -101,7 +100,7 @@ def scan():
                 if newest is None:
                     continue
 
-                new_magnitudes[lid] = newest
+                new_mag[lid] = newest
                 oldest = p.get("oldest_alert_observation_time") or 0
 
                 # the locus is "new" and below 15
@@ -166,7 +165,7 @@ def scan():
 
     # maintain a cumulating magnitudes dict of all loci ever seen from ANTARES
     # for cross check
-    merged = {**prev_mag, **new_magnitudes}
+    merged = {**prev_mag, **new_mag}
     _save_state({"last_mjd": now_mjd(), "magnitudes": merged})
 
 
