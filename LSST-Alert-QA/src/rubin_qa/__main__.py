@@ -6,6 +6,7 @@
 import argparse
 import datetime
 import pathlib
+import sys
 
 from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE
 from .reporting import run_antares_pipeline, run_pipeline
@@ -56,6 +57,12 @@ def main() -> None:
         if not quiet:
             print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
         df = run_pipeline(page_size=n, survey=survey, quiet=quiet)
+
+    if df.empty:
+        # No rows means the fetch failed or returned nothing — writing here
+        # would leave a header-only CSV that looks like a successful run.
+        print(f"{survey}: no objects processed — no report written", file=sys.stderr)
+        sys.exit(1)
 
     reports_dir = pathlib.Path("reports")
     reports_dir.mkdir(exist_ok=True)
