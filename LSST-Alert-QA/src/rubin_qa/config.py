@@ -1,14 +1,32 @@
+import os
+import pathlib
+
 DEFAULT_SURVEY    = "ztf"
 DEFAULT_PAGE_SIZE = 100
+
+# Output paths anchor to the project root, never the caller's CWD — the systemd
+# units and manual runs start from arbitrary directories, and a bare relative
+# path scatters reports wherever the run happened to begin.
+# config.py sits at <root>/src/rubin_qa/, so parents[2] is the root itself.
+# RUBIN_QA_ROOT overrides it for installs that are not the src-layout checkout.
+PROJECT_ROOT = pathlib.Path(
+    os.environ.get("RUBIN_QA_ROOT") or pathlib.Path(__file__).resolve().parents[2]
+)
+REPORTS_DIR  = PROJECT_ROOT / "reports"
 
 # Classification QA thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.90   # weighted consensus → clean label, no flag
 MAJORITY_THRESHOLD        = 0.65   # weighted consensus → majority, minor flag
 OUTLIER_PROB_THRESHOLD    = 0.30   # dissenting classifier below this → outlier, not genuine split
 
-# Retry config for rate-limited API calls
-RETRY_ATTEMPTS = 2
-RETRY_DELAY    = 2.0  # seconds
+# Retry config for rate-limited or timing-out API calls.
+# ALeRCE returns 504 when its object endpoint is slow under load; a short wait
+# lands on the same bad state, so back off far enough to ride the episode out.
+RETRY_ATTEMPTS = 4
+RETRY_DELAY    = 9.0  # seconds; exponential backoff → 9, 18, 36
+
+# Prefix for all operator-facing failure messages (retries, aborted runs).
+WARN_PREFIX = "WARN: "
 
 INTER_OBJECT_DELAY = 0.5  # seconds between objects; increase if hitting rate limits
 

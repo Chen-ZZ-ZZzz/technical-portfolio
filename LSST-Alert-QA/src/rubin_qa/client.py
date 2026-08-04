@@ -1,12 +1,18 @@
 """ALeRCE API client — fetch candidates and per-object data."""
 
+import sys
 import time
-import warnings
 import pandas as pd
 from alerce.core import Alerce
 from alerce.exceptions import APIError, ObjectNotFoundError, ParseError
 
-from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE, RETRY_ATTEMPTS, RETRY_DELAY
+from .config import (
+    DEFAULT_SURVEY,
+    DEFAULT_PAGE_SIZE,
+    RETRY_ATTEMPTS,
+    RETRY_DELAY,
+    WARN_PREFIX,
+)
 
 _client = Alerce()
 
@@ -17,6 +23,7 @@ def _api_call(fn, *args, **kwargs):
     Returns (result, error_str). On failure: result=None, error_str set.
     """
     last_err = None
+    name = getattr(fn, "__name__", str(fn))
     for attempt in range(RETRY_ATTEMPTS):
         try:
             return fn(*args, **kwargs), None
@@ -25,7 +32,13 @@ def _api_call(fn, *args, **kwargs):
         except (APIError, ParseError) as e:
             last_err = str(e)
             if attempt < RETRY_ATTEMPTS - 1:
-                time.sleep(RETRY_DELAY * (2 ** attempt))
+                delay = RETRY_DELAY * (2 ** attempt)
+                print(
+                    f"{WARN_PREFIX}{name} failed ({last_err}) — "
+                    f"retry {attempt + 1}/{RETRY_ATTEMPTS - 1} in {delay:.0f}s",
+                    file=sys.stderr, flush=True,
+                )
+                time.sleep(delay)
         except Exception as e:
             last_err = str(e)
             break
@@ -44,7 +57,10 @@ def fetch_candidates(page_size: int = DEFAULT_PAGE_SIZE, survey: str = DEFAULT_S
         survey=survey,
     )
     if err or result is None or result.empty:
-        warnings.warn(f"fetch_candidates: {err or 'empty result'}")
+        print(
+            f"{WARN_PREFIX}fetch_candidates: {err or 'empty result'}",
+            file=sys.stderr, flush=True,
+        )
         return []
     oids = [str(o) for o in result["oid"].tolist()]
     seen = set()

@@ -5,13 +5,37 @@
 
 import argparse
 import datetime
-import pathlib
 import sys
 
-from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE
+import pandas as pd
+
+from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE, REPORTS_DIR, WARN_PREFIX
 from .reporting import run_antares_pipeline, run_pipeline
 
 SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
+
+
+def _dispatch(survey: str, rest: list, quiet: bool) -> pd.DataFrame:
+    """Route to the right pipeline. A numeric first target is a page size."""
+    if survey == "antares":
+        if rest and not rest[0].isdigit():
+            if not quiet:
+                print(f"=== ANTARES Alert QA Pipeline  locus_ids={rest} ===\n")
+            return run_antares_pipeline(locus_ids=rest, quiet=quiet)
+        n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
+        if not quiet:
+            print(f"=== ANTARES Alert QA Pipeline  page_size={n} ===\n")
+        return run_antares_pipeline(page_size=n, quiet=quiet)
+
+    if rest and not rest[0].isdigit():
+        if not quiet:
+            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={rest} ===\n")
+        return run_pipeline(survey=survey, oids=rest, quiet=quiet)
+
+    n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
+    if not quiet:
+        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
+    return run_pipeline(page_size=n, survey=survey, quiet=quiet)
 
 
 def main() -> None:
@@ -36,38 +60,27 @@ def main() -> None:
     rest   = opts.targets
     quiet  = opts.quiet
 
-    if survey == "antares":
-        if rest and not rest[0].isdigit():
-            explicit_ids = rest
-            if not quiet:
-                print(f"=== ANTARES Alert QA Pipeline  locus_ids={explicit_ids} ===\n")
-            df = run_antares_pipeline(locus_ids=explicit_ids, quiet=quiet)
-        else:
-            n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
-            if not quiet:
-                print(f"=== ANTARES Alert QA Pipeline  page_size={n} ===\n")
-            df = run_antares_pipeline(page_size=n, quiet=quiet)
-    elif rest and not rest[0].isdigit():
-        explicit_oids = rest
-        if not quiet:
-            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={explicit_oids} ===\n")
-        df = run_pipeline(survey=survey, oids=explicit_oids, quiet=quiet)
-    else:
-        n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
-        if not quiet:
-            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
-        df = run_pipeline(page_size=n, survey=survey, quiet=quiet)
+    try:
+        df = _dispatch(survey, rest, quiet)
+    except Exception as e:
+        print(
+            f"{WARN_PREFIX}{survey}: pipeline failed — {type(e).__name__}: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if df.empty:
         # No rows means the fetch failed or returned nothing — writing here
         # would leave a header-only CSV that looks like a successful run.
-        print(f"{survey}: no objects processed — no report written", file=sys.stderr)
+        print(
+            f"{WARN_PREFIX}{survey}: no objects processed — no report written",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    reports_dir = pathlib.Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = reports_dir / f"qa_{survey}_{date}_n{len(df)}.csv"
+    csv_path = REPORTS_DIR / f"qa_{survey}_{date}_n{len(df)}.csv"
     df.to_csv(csv_path, index=False)
 
     if quiet:

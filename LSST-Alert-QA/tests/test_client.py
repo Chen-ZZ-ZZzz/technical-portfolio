@@ -3,10 +3,10 @@
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 from alerce.exceptions import APIError, ObjectNotFoundError
 
 from rubin_qa.client import _api_call, fetch_candidates, fetch_object_data
+from rubin_qa.config import RETRY_ATTEMPTS, RETRY_DELAY
 
 
 class TestApiCall:
@@ -29,12 +29,17 @@ class TestApiCall:
         assert result is None
         assert "rate limited" in err
 
-    def test_api_error_retries_before_failing(self):
+    def test_api_error_retries_before_failing(self, capsys):
         fn = MagicMock(side_effect=APIError("boom"))
+        fn.__name__ = "query_objects"
         with patch("rubin_qa.client.time.sleep") as mock_sleep:
             _api_call(fn)
-        # RETRY_ATTEMPTS=2 → one retry → one sleep
-        assert mock_sleep.call_count == 1
+        # N attempts → N-1 retries, delays growing exponentially from RETRY_DELAY
+        expected = [RETRY_DELAY * 2 ** i for i in range(RETRY_ATTEMPTS - 1)]
+        assert [c.args[0] for c in mock_sleep.call_args_list] == expected
+        err_out = capsys.readouterr().err
+        assert err_out.count("WARN: query_objects failed") == RETRY_ATTEMPTS - 1
+        assert f"retry 1/{RETRY_ATTEMPTS - 1} in {RETRY_DELAY:.0f}s" in err_out
 
     def test_generic_exception_no_retry(self):
         fn = MagicMock(side_effect=ValueError("unexpected"))
@@ -63,20 +68,20 @@ class TestFetchCandidates:
             result = fetch_candidates(survey="lsst")
         assert result == ["100001", "100002"]
 
-    def test_returns_empty_list_on_api_error(self):
+    def test_returns_empty_list_on_api_error(self, capsys):
         with patch("rubin_qa.client._client") as mock_client:
             mock_client.query_objects.side_effect = APIError("down")
             with patch("rubin_qa.client.time.sleep"):
-                with pytest.warns(UserWarning, match="fetch_candidates"):
-                    result = fetch_candidates()
-        assert result == []
-
-    def test_returns_empty_list_on_empty_result(self):
-        with patch("rubin_qa.client._client") as mock_client:
-            mock_client.query_objects.return_value = pd.DataFrame({"oid": []})
-            with pytest.warns(UserWarning, match="fetch_candidates"):
                 result = fetch_candidates()
         assert result == []
+        assert "WARN: fetch_candidates" in capsys.readouterr().err
+
+    def test_returns_empty_list_on_empty_result(self, capsys):
+        with patch("rubin_qa.client._client") as mock_client:
+            mock_client.query_objects.return_value = pd.DataFrame({"oid": []})
+            result = fetch_candidates()
+        assert result == []
+        assert "WARN: fetch_candidates" in capsys.readouterr().err
 
 
 class TestFetchObjectData:

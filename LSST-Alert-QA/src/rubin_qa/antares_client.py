@@ -1,10 +1,10 @@
 """ANTARES alert broker client — fetch loci and per-locus data."""
 
-import warnings
+import sys
 
 import pandas as pd
 
-from .config import DEFAULT_PAGE_SIZE
+from .config import DEFAULT_PAGE_SIZE, WARN_PREFIX
 
 
 def _search():
@@ -30,7 +30,10 @@ def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
                 deduped.append(id_)
         return deduped
     except Exception as e:
-        warnings.warn(f"fetch_antares_candidates: {e}")
+        print(
+            f"{WARN_PREFIX}fetch_antares_candidates: {e}",
+            file=sys.stderr, flush=True,
+        )
         return []
 
 

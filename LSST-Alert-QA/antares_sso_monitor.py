@@ -20,7 +20,10 @@ DELTA_MAG_ALERT = (
     1.0  # flag if brightened by this much since last scan. 1 mag = ~ 2.5x flux increase
 )
 MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
-STATE_FILE = Path("bright_sso_state.json")
+# Anchored to this script's directory, not the CWD: a run started elsewhere
+# would find no state, silently re-baseline to a 7-day look-back, and re-report
+# every known locus as new.
+STATE_FILE = Path(__file__).resolve().parent / "bright_sso_state.json"
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 STELLAR_CATALOGS = {

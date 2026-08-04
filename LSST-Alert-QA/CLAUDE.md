@@ -36,7 +36,8 @@ pyproject.toml         — build: hatchling, script: rubin-qa
 ## Key design decisions
 
 - `fetch_candidates`: deduplicates oids (ALeRCE API returns duplicates); default page size 100
-- `fetch_object_data`: 3 API calls per object (detections, magstats, probabilities), each with retry (2 attempts, 2s base delay)
+- `fetch_object_data`: 3 API calls per object (detections, magstats, probabilities), each with retry (4 attempts, 9s base delay, exponential → 9/18/36s). Sized for ALeRCE 504 episodes, where the endpoint stays slow for tens of seconds.
+- Failure messaging: all operator-facing failures print `WARN: ` (`WARN_PREFIX` in config.py) to stderr — retries, failed fetches, aborted runs. stdout carries only normal output (progress lines, QA table). A run that produces no rows writes no CSV and exits 1.
 - `validate_completeness`: confirmed = ndet > 1; no magnitude threshold filtering
 - `classify_object`: weighted consensus — lc_classifier outweights stamp_classifier, gap widens with ndet; consensus ≥ 0.90 → clean, ≥ 0.65 + dissenters < 0.30 → minor flag, else genuine split
 - `build_qa_row` status tiers (in priority order): FLAG if completeness issues or n_classifiers < 2 ("insufficient_classifiers"); PASS if consensus ≥ 0.90; REVIEW_MINOR if consensus ≥ 0.65 + outlier dissenters; REVIEW_MAJOR otherwise
