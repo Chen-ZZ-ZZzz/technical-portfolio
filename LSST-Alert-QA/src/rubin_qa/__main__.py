@@ -9,7 +9,7 @@ import sys
 
 import pandas as pd
 
-from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE, REPORTS_DIR, WARN_PREFIX
+from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE, ERROR_PREFIX, REPORTS_DIR
 from .reporting import run_antares_pipeline, run_pipeline
 
 SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
@@ -64,7 +64,7 @@ def main() -> None:
         df = _dispatch(survey, rest, quiet)
     except Exception as e:
         print(
-            f"{WARN_PREFIX}{survey}: pipeline failed — {type(e).__name__}: {e}",
+            f"{ERROR_PREFIX}{survey}: pipeline failed — {type(e).__name__}: {e}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -73,7 +73,7 @@ def main() -> None:
         # No rows means the fetch failed or returned nothing — writing here
         # would leave a header-only CSV that looks like a successful run.
         print(
-            f"{WARN_PREFIX}{survey}: no objects processed — no report written",
+            f"{ERROR_PREFIX}{survey}: no objects processed — no report written",
             file=sys.stderr,
         )
         sys.exit(1)

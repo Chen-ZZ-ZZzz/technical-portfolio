@@ -25,8 +25,12 @@ OUTLIER_PROB_THRESHOLD    = 0.30   # dissenting classifier below this → outlie
 RETRY_ATTEMPTS = 4
 RETRY_DELAY    = 9.0  # seconds; exponential backoff → 9, 18, 36
 
-# Prefix for all operator-facing failure messages (retries, aborted runs).
-WARN_PREFIX = "WARN: "
+# Prefixes for operator-facing messages on stderr.
+#   WARN:  degraded but recoverable — the run continues (retries, empty pages).
+#   ERROR: the operation failed and its caller cannot proceed (failed fetches,
+#          aborted runs). Every ERROR path either returns no data or exits 1.
+WARN_PREFIX  = "WARN: "
+ERROR_PREFIX = "ERROR: "
 
 INTER_OBJECT_DELAY = 0.5  # seconds between objects; increase if hitting rate limits
 

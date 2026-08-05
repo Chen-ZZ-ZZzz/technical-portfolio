@@ -30,5 +30,5 @@ htmlcov/
 
 # Runtime
 reports/
-bright_sso_state.json
+# logs/ also covers bright_sso_state.json, which lives there
 logs/

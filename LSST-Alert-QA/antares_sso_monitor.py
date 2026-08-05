@@ -3,7 +3,7 @@ antares_sso_monitor.py - daily scan for brightening SSO candidates in ANTARES.
 Detects loci that have crossed below mag 15, or brightened significantly
 since the last scan.
 
-State is stored in sso_state.json between runs.
+State is stored in logs/bright_sso_state.json between runs.
 """
 
 import datetime
@@ -23,7 +23,7 @@ MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
 # Anchored to this script's directory, not the CWD: a run started elsewhere
 # would find no state, silently re-baseline to a 7-day look-back, and re-report
 # every known locus as new.
-STATE_FILE = Path(__file__).resolve().parent / "bright_sso_state.json"
+STATE_FILE = Path(__file__).resolve().parent / "logs" / "bright_sso_state.json"
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 STELLAR_CATALOGS = {
@@ -57,6 +57,8 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
+    # logs/ is gitignored, so a fresh checkout has no such directory.
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2))
     tmp.rename(STATE_FILE)

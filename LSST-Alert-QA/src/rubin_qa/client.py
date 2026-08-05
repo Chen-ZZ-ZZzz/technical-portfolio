@@ -9,6 +9,7 @@ from alerce.exceptions import APIError, ObjectNotFoundError, ParseError
 from .config import (
     DEFAULT_SURVEY,
     DEFAULT_PAGE_SIZE,
+    ERROR_PREFIX,
     RETRY_ATTEMPTS,
     RETRY_DELAY,
     WARN_PREFIX,
@@ -56,9 +57,16 @@ def fetch_candidates(page_size: int = DEFAULT_PAGE_SIZE, survey: str = DEFAULT_S
         page_size=page_size,
         survey=survey,
     )
-    if err or result is None or result.empty:
+    if err or result is None:
         print(
-            f"{WARN_PREFIX}fetch_candidates: {err or 'empty result'}",
+            f"{ERROR_PREFIX}fetch_candidates: {err or 'no result'}",
+            file=sys.stderr, flush=True,
+        )
+        return []
+    if result.empty:
+        # Not a failure — the query succeeded and the page held nothing.
+        print(
+            f"{WARN_PREFIX}fetch_candidates: empty result",
             file=sys.stderr, flush=True,
         )
         return []

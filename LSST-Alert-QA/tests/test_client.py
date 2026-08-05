@@ -74,13 +74,14 @@ class TestFetchCandidates:
             with patch("rubin_qa.client.time.sleep"):
                 result = fetch_candidates()
         assert result == []
-        assert "WARN: fetch_candidates" in capsys.readouterr().err
+        assert "ERROR: fetch_candidates" in capsys.readouterr().err
 
     def test_returns_empty_list_on_empty_result(self, capsys):
         with patch("rubin_qa.client._client") as mock_client:
             mock_client.query_objects.return_value = pd.DataFrame({"oid": []})
             result = fetch_candidates()
         assert result == []
+        # A successful query over an empty page is a warning, not a failure.
         assert "WARN: fetch_candidates" in capsys.readouterr().err
 
 

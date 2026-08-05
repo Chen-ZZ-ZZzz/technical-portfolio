@@ -28,7 +28,7 @@ The validation patterns include completeness checks, classifier consensus, thres
 
 `antares_sso_monitor.py` is a stand-alone script which scans ANTARES daily for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
-First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
+First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `logs/bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
 
 **Known limitations:**
 
@@ -174,7 +174,10 @@ Note: `REVIEW_MINOR` is currently dormant for ZTF because `lc_classifier` return
 
 **Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats`, `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
 
-**Classification flag tokens** (appear in `flag` only): `insufficient_classifiers`, `minor disagreement: ...`, `genuine split: ...`, `no_classification`, `no_ranking1_rows`, `zero_total_weight`
+**Classification flag tokens** (appear in `flag` only):
+
+- ALeRCE: `insufficient_classifiers`, `minor disagreement: ...`, `genuine split: ...`, `no_classification`, `no_ranking1_rows`, `zero_total_weight`
+- ANTARES: `no_science_tags (pipeline: [...]; unknown: [...])`, `minor: N science tags — ...`, `multiple science tags (N): ...`
 
 ---
 
@@ -199,7 +202,18 @@ Weighted consensus across all classifiers. Each vote is weighted by:
 
 Tags are filtered into science vs pipeline sets before scoring. The 19 science tags (e.g. `dimmers`, `nuclear_transient`, `extragalactic`) count toward consensus; the 19 pipeline/infrastructure tags (e.g. `lc_feature_extractor`, `high_snr`, `in_LSSTDDF`) are stripped. Unknown tags are flagged explicitly rather than silently ignored.
 
-`top_class` reports all science tags present, sorted (e.g. `"dimmers, extragalactic"`). Consensus = 1/n_science_tags. Single science tag → PASS; multiple → REVIEW_MINOR/MAJOR by count; none → FLAG.
+`top_class` reports all science tags present, sorted (e.g. `"dimmers, extragalactic"`). Consensus = 1/n_science_tags.
+
+| Tags present | Consensus | Status |
+|---|---|---|
+| One science tag | 1.0 | `PASS` |
+| Two or more science tags | ≤ 0.50 | `REVIEW_MAJOR` |
+| Only pipeline/unknown tags | — | `REVIEW_MAJOR`, flagged `no_science_tags` |
+| No tags at all | — | `FLAG` (completeness: `no_classification`) |
+
+Note: `REVIEW_MINOR` is unreachable for ANTARES. Consensus is 1/n, so two tags already score 0.50 — below the 0.65 majority threshold. The tier would only open up if consensus stopped being a flat reciprocal (e.g. weighting tags by reliability).
+
+A locus carrying only pipeline tags is *not* FLAG: `validate_antares` sees a non-empty tag list, so no completeness issue fires and the row lands in `REVIEW_MAJOR` with the `no_science_tags` flag naming the pipeline and unknown tags. Only a locus with zero tags reaches `FLAG`.
 
 All ANTARES tags are filter outputs, not confirmed classifications — treat every tag as a candidate until followed up.
 

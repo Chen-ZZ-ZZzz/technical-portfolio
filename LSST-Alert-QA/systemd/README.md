@@ -33,7 +33,7 @@ journalctl --user -u sso-monitor.service -n 50
 - `status=203/EXEC` in journalctl = executable not found or not executable (check `chmod +x` and the shebang).
 - `Persistent=true` runs a missed job on next boot.
 - `ExecStartPre=/bin/sleep 60` lets the network settle before the ANTARES query.
-- State file: `bright_sso_state.json` in the script's working directory.
+- State file: `logs/bright_sso_state.json`, resolved against the script's own directory (not the CWD).
 
 ---
 
