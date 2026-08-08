@@ -41,7 +41,8 @@ main (){
            -V 'geometry:margin=2.5cm' \
            -V 'fontsize=11pt' \
            -V 'linestretch=1.15' \
-           -V 'parskip=8pt'
+           -V 'parskip=8pt' \
+           -V 'hyperrefoptions:draft' # disable hypertext
 
     # view the new pdf file
     echo "Opening $PDF_FILE"
