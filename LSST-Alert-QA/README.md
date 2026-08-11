@@ -104,6 +104,10 @@ uv run rubin-qa antares 10
 
 # quiet mode — one-line summary
 uv run pipeline.py -q
+
+# long scans confirm first (est. runtime + deadline), unless -y
+uv run pipeline.py ztf 500        # prompts: "≈ 142 min estimated. Continue? [y/N]"
+uv run pipeline.py ztf 500 -y     # skip the prompt
 ```
 
 ### Python API
@@ -122,6 +126,15 @@ df = run_antares_pipeline(page_size=20)
 
 # ANTARES explicit locus IDs or ZTF object IDs
 df = run_antares_pipeline(locus_ids=["ANT2020j7wo4", "ZTF20aafqubg"])
+
+# Deadline defaults to 3x the job's own estimate; override or disable it
+df = run_antares_pipeline(page_size=256, max_run_seconds=900)
+df = run_antares_pipeline(page_size=5000, max_run_seconds=0)   # no deadline
+
+# Inspect the sizing without running
+from rubin_qa.reporting import estimate_runtime, deadline_for
+estimate_runtime(1000, "ztf") / 60   # -> 283 min
+deadline_for(1000, "ztf") / 60       # -> 850 min
 
 print(df[["oid", "top_class", "consensus", "status"]])
 ```
@@ -238,6 +251,7 @@ All ANTARES tags are filter outputs, not confirmed classifications — treat eve
 ```
 src/rubin_qa/
     config.py          — constants and thresholds
+    retry_budget.py    — run-wide retry sleep budget, shared by both clients
     client.py          — ALeRCE API wrapper with retry
     antares_client.py  — ANTARES API wrapper
     validators.py      — validate_completeness, validate_antares
@@ -272,7 +286,14 @@ All tests use mock data — no live API calls.
 
 **ANTARES:**
 - Kafka streaming requires credentials (request from ANTARES team); search/fetch API is open
-- `get_random_locus_ids` returns duplicates — deduplicated in `fetch_antares_candidates`
+- `get_random_locus_ids` returns duplicates *within a single call* — deduplicated in `fetch_antares_candidates`, so a run returns 10-15% fewer loci than the requested page size (measured: 256 requested → 217-228 unique). The ES query is unseeded and the client pages with a fresh request per page, so results reshuffle mid-walk. Not a row-drop in the pipeline — one row is emitted per deduplicated ID.
+- A nonexistent ANT locus ID returns HTTP 500, not 404, so it cannot be told apart from a transient fault and consumes the full retry backoff. ZTF IDs return `not_found` immediately.
+- Both ANTARES fetches retry on timeout / server error (4 attempts, 9s exponential), matching the ALeRCE client. ANTARES applies its own 60s read timeout.
+- Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines. All degrade rather than abort — a short CSV still gets written:
+  - **Per request (60s)** — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own.
+  - **Retry sleep (300s per run)** — shared budget; once spent, calls stop waiting between attempts.
+  - **Run deadline — sized to the job**, at 3× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable.
+- The alerce package sets no request timeout anywhere, so `client._force_session_timeout()` wraps all five `requests.Session` objects the Alerce client holds.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
 - ANTARES pre-filters alerts to rb ≥ 0.55, fwhm ≤ 5.0 px, elong ≤ 1.2 — objects in ANTARES already pass these; ALeRCE objects may not
 - `antares-client` import is deferred — ALeRCE-only installs are unaffected if the package is absent

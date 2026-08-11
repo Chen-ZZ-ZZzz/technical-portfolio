@@ -34,6 +34,8 @@ journalctl --user -u sso-monitor.service -n 50
 - `Persistent=true` runs a missed job on next boot.
 - `ExecStartPre=/bin/sleep 60` lets the network settle before the ANTARES query.
 - State file: `logs/bright_sso_state.json`, resolved against the script's own directory (not the CWD).
+- `pipeline.py` confirms before long scans, but only on a TTY. Under systemd there is no stdin, so it logs the estimate to stderr and proceeds — the unit will not hang waiting for input. Pass `-y` if you want the prompt skipped when running the same command by hand.
+- Each run carries a deadline of 3× its own estimated duration. A run that stops early logs `WARN: ... Upstream or network is stalled` and still writes a partial CSV, so a truncated report in the log means the broker was unwell, not that the job was misconfigured.
 
 ---
 

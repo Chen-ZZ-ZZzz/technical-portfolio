@@ -1,19 +1,40 @@
 """QA row assembly and full pipeline orchestration."""
 
 import math
+import sys
 import time
 
 import pandas as pd
 
+from . import retry_budget
 from .classifier import classify_antares, classify_object
 from .client import fetch_candidates, fetch_object_data
 from .config import (
+    DEADLINE_FLOOR,
+    DEADLINE_SLACK,
     DEFAULT_PAGE_SIZE,
+    DEFAULT_SECONDS_PER_OBJECT,
     DEFAULT_SURVEY,
     INTER_OBJECT_DELAY,
     OUTPUT_COLUMNS,
+    SECONDS_PER_OBJECT,
+    WARN_PREFIX,
 )
 from .validators import validate_antares, validate_completeness
+
+
+def estimate_runtime(n: int, survey: str = DEFAULT_SURVEY) -> float:
+    """Estimated wall-clock seconds for an n-object run, from measured per-object cost."""
+    return n * SECONDS_PER_OBJECT.get(survey, DEFAULT_SECONDS_PER_OBJECT)
+
+
+def deadline_for(n: int, survey: str = DEFAULT_SURVEY) -> float:
+    """
+    Deadline sized to the job rather than fixed: DEADLINE_SLACK × its own estimate,
+    never below DEADLINE_FLOOR. A 5-hour scan is allowed to run 5 hours; what trips
+    is a run dragging far past what its own size predicts.
+    """
+    return max(DEADLINE_FLOOR, DEADLINE_SLACK * estimate_runtime(n, survey))
 
 
 def _psfflux_to_mag(flux_series: pd.Series) -> pd.Series:
@@ -107,6 +128,7 @@ def run_pipeline(
     oids: list | None = None,
     inter_object_delay: float = INTER_OBJECT_DELAY,
     quiet: bool = False,
+    max_run_seconds: float | None = None,
 ) -> pd.DataFrame:
     """
     Full pipeline: fetch → validate → classify → QA report.
@@ -116,16 +138,39 @@ def run_pipeline(
       For LSST, magstats are not available via the API — ndet and mag stats
       are computed from raw detections instead.
     quiet:  suppress per-object progress output.
+    max_run_seconds: wall-clock ceiling on the per-object loop. None (default)
+      sizes it from the job via deadline_for(); 0 disables it entirely. On expiry
+      the run stops and returns the rows gathered so far, so a stalled broker
+      costs a short report rather than an open-ended job. Retry backoff is capped
+      separately by the run-wide retry budget.
 
     Returns a DataFrame (one row per object).
     """
+    retry_budget.reset()
+
     if oids is None:
         oids = fetch_candidates(page_size=page_size, survey=survey)
     if not oids:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
+    # Sized from the resolved object count, not page_size — the two differ once
+    # duplicates are dropped.
+    if max_run_seconds is None:
+        max_run_seconds = deadline_for(len(oids), survey)
+
+    started = time.monotonic()
     rows = []
     for i, oid in enumerate(oids, 1):
+        elapsed = time.monotonic() - started
+        if max_run_seconds and elapsed > max_run_seconds:
+            print(
+                f"{WARN_PREFIX}run_pipeline: stopped after {i - 1}/{len(oids)} objects "
+                f"— {elapsed:.0f}s elapsed, past the {max_run_seconds:.0f}s deadline "
+                f"({DEADLINE_SLACK:g}× this job's estimate). Upstream or network is "
+                f"stalled; returning partial report",
+                file=sys.stderr, flush=True,
+            )
+            break
         if not quiet:
             print(f"[{i:>3}/{len(oids)}] {oid}", end="  ", flush=True)
         data   = fetch_object_data(oid, survey=survey)
@@ -212,23 +257,46 @@ def run_antares_pipeline(
     locus_ids: list | None = None,
     inter_object_delay: float = INTER_OBJECT_DELAY,
     quiet: bool = False,
+    max_run_seconds: float | None = None,
 ) -> pd.DataFrame:
     """
     ANTARES pipeline: fetch loci → validate → classify tags → QA report.
 
-    locus_ids: optional explicit list of ANTARES locus IDs — skips fetch_antares_candidates.
-    quiet:     suppress per-object progress output.
+    locus_ids:       optional explicit list of ANTARES locus IDs — skips fetch_antares_candidates.
+    quiet:           suppress per-object progress output.
+    max_run_seconds: wall-clock ceiling on the per-locus loop. None (default) sizes
+                     it from the job via deadline_for(); 0 disables it entirely. On
+                     expiry the run stops and returns the rows gathered so far, so a
+                     stalled broker costs a short report rather than an open-ended
+                     job. Retry backoff is capped separately by the retry budget.
     Returns a DataFrame (one row per locus) with the same schema as run_pipeline.
     """
     from .antares_client import fetch_antares_candidates, fetch_antares_locus
+
+    retry_budget.reset()
 
     if locus_ids is None:
         locus_ids = fetch_antares_candidates(page_size=page_size)
     if not locus_ids:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
+    # Sized from the deduplicated locus count, which is 10-15% below page_size.
+    if max_run_seconds is None:
+        max_run_seconds = deadline_for(len(locus_ids), "antares")
+
+    started = time.monotonic()
     rows = []
     for i, lid in enumerate(locus_ids, 1):
+        elapsed = time.monotonic() - started
+        if max_run_seconds and elapsed > max_run_seconds:
+            print(
+                f"{WARN_PREFIX}run_antares_pipeline: stopped after {i - 1}/{len(locus_ids)} "
+                f"loci — {elapsed:.0f}s elapsed, past the {max_run_seconds:.0f}s deadline "
+                f"({DEADLINE_SLACK:g}× this job's estimate). Upstream or network is "
+                f"stalled; returning partial report",
+                file=sys.stderr, flush=True,
+            )
+            break
         if not quiet:
             print(f"[{i:>3}/{len(locus_ids)}] {lid}", end="  ", flush=True)
         data   = fetch_antares_locus(lid)

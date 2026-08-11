@@ -9,10 +9,61 @@ import sys
 
 import pandas as pd
 
-from .config import DEFAULT_SURVEY, DEFAULT_PAGE_SIZE, ERROR_PREFIX, REPORTS_DIR
-from .reporting import run_antares_pipeline, run_pipeline
+from .config import (
+    CONFIRM_THRESHOLD_SECONDS,
+    DEFAULT_SURVEY,
+    DEFAULT_PAGE_SIZE,
+    ERROR_PREFIX,
+    REPORTS_DIR,
+    WARN_PREFIX,
+)
+from .reporting import deadline_for, estimate_runtime, run_antares_pipeline, run_pipeline
 
 SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
+
+
+def _planned_count(rest: list) -> int:
+    """How many objects the run will touch: an explicit ID list, or a page size."""
+    if rest and not rest[0].isdigit():
+        return len(rest)
+    return int(rest[0]) if rest else DEFAULT_PAGE_SIZE
+
+
+def _confirm_long_run(survey: str, rest: list, assume_yes: bool) -> None:
+    """
+    Ask before starting a long scan. Exits 1 if the operator declines.
+
+    Only prompts on a TTY: the systemd timers run with no stdin, and a pipeline
+    that blocks on input there would hang a unit until its timeout rather than
+    produce a report. Non-interactive runs log the estimate and proceed — the
+    estimate is the useful part in a service log either way.
+    """
+    n = _planned_count(rest)
+    estimate = estimate_runtime(n, survey)
+    if estimate <= CONFIRM_THRESHOLD_SECONDS:
+        return
+
+    summary = (
+        f"{survey}: {n} objects ≈ {estimate / 60:.0f} min estimated "
+        f"(deadline {deadline_for(n, survey) / 60:.0f} min)"
+    )
+
+    # sys.stdin is None when fd 0 is closed outright (StandardInput=close, some
+    # embeddings) — reaching for .isatty() there would crash the run rather than
+    # skip a prompt. systemd's default of StandardInput=null gives a real file
+    # object, so the units in systemd/ take the isatty() path.
+    interactive = sys.stdin is not None and sys.stdin.isatty()
+    if assume_yes or not interactive:
+        print(f"{WARN_PREFIX}{summary} — proceeding", file=sys.stderr, flush=True)
+        return
+
+    try:
+        reply = input(f"{summary}. Continue? [y/N] ").strip().lower()
+    except EOFError:
+        reply = ""
+    if reply not in ("y", "yes"):
+        print(f"{ERROR_PREFIX}{survey}: aborted — no report written", file=sys.stderr)
+        sys.exit(1)
 
 
 def _dispatch(survey: str, rest: list, quiet: bool) -> pd.DataFrame:
@@ -54,11 +105,17 @@ def main() -> None:
         "-q", "--quiet", action="store_true",
         help="One-line summary only: broker, totals, output path",
     )
+    parser.add_argument(
+        "-y", "--yes", action="store_true",
+        help="Skip the confirmation prompt for long runs",
+    )
     opts = parser.parse_args()
 
     survey = opts.survey
     rest   = opts.targets
     quiet  = opts.quiet
+
+    _confirm_long_run(survey, rest, opts.yes)
 
     try:
         df = _dispatch(survey, rest, quiet)

@@ -4,6 +4,21 @@ import pandas as pd
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def fresh_retry_budget():
+    """
+    The retry budget is module-global and shared by both clients, so a test whose
+    retries drain it would silently change how later tests behave — and the
+    existing client tests do exhaust retries. Reset around every test to keep the
+    suite order-independent.
+    """
+    from rubin_qa import retry_budget
+
+    retry_budget.reset()
+    yield
+    retry_budget.reset()
+
+
 @pytest.fixture
 def ztf_dets():
     return pd.DataFrame({

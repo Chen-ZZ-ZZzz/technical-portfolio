@@ -15,6 +15,7 @@ A data quality pipeline for ZTF (and eventually LSST) alert data via the ALeRCE 
 ```
 src/rubin_qa/
     config.py          — constants and thresholds
+    retry_budget.py    — run-wide retry sleep budget, shared by both clients
     client.py          — ALeRCE API wrapper (_api_call, fetch_candidates, fetch_object_data)
     antares_client.py  — ANTARES API wrapper (fetch_antares_candidates, fetch_antares_locus)
     validators.py      — validate_completeness, validate_antares
@@ -98,6 +99,14 @@ The terminal printout (`SUMMARY_COLUMNS` in `__main__.py`) shows these six colum
 - ALeRCE: API returns duplicate oids — handled in `fetch_candidates`
 - ALeRCE: LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
 - ANTARES: credentials required for Kafka streaming; search/fetch API is open (confirmed). `get_by_ztf_object_id`, `get_by_id`, `get_random_locus_ids` all work without auth.
-- ANTARES: `get_random_locus_ids` returns duplicates — deduplicated in `fetch_antares_candidates`.
+- ANTARES: `get_random_locus_ids` returns duplicates — deduplicated in `fetch_antares_candidates`. Expect **10-15% fewer IDs than requested** (measured 2026-08-06: 256 raw → 217/225/228 unique). Cause is upstream: the ES query uses `random_score` with no seed, and `_list_all_resources` issues a fresh request per page, so ordering reshuffles mid-walk and loci recur across pages. `run_antares_pipeline` emits one row per deduplicated ID unconditionally, so `len(df)` == unique count — a short report is this, not a row-drop.
+- ANTARES: an ANT locus ID that does not exist answers **500, not 404**, so it is indistinguishable from a transient server fault and costs the full retry backoff. `get_by_ztf_object_id` correctly returns None → `locus:not_found`.
+- ANTARES: `fetch_antares_candidates` / `fetch_antares_locus` retry via `antares_client._api_call` (same 4 attempts / 9s exponential as ALeRCE), on `requests` exceptions and `AntaresException`. ANTARES imposes its own 60s read timeout; before the retry existed, one slow morning meant the daily run produced no CSV at all.
+- Retry is per-object in **both** brokers, so an outage multiplies across the page — ALeRCE worst, at 3 retried calls per object. Three ceilings bound it, applied to `run_pipeline` and `run_antares_pipeline` alike. All degrade rather than abort:
+  - `REQUEST_TIMEOUT` (60s) — forced onto the ALeRCE client by `client._force_session_timeout()`, which wraps `Session.request` on all **five** sessions the Alerce object holds (top-level + legacy/multisurvey × search/stamps). The alerce package passes no timeout at all, so requests would block forever; the per-run ceilings are checked *between* calls and cannot interrupt a blocked socket. antares-client applies its own 60s timeout, so it needs no equivalent.
+  - `RETRY_BUDGET_SECONDS` (300s) — total retry *sleep* per run, held in `retry_budget.py` and shared by both clients (a run stalls once, regardless of broker). Each pipeline calls `retry_budget.reset()` before its loop; `_api_call` draws on it via `consume()`, which clamps to what is left so the cap is exact. Once spent, attempts continue with no backoff.
+  - **Run deadline — derived per job, not a constant.** `deadline_for(n, survey)` = `DEADLINE_SLACK` (3×) × `estimate_runtime()`, floored at `DEADLINE_FLOOR` (300s), computed from the *resolved* object count after dedup. `max_run_seconds=None` (default) means derive; `0` disables. A 1000-object ZTF scan is entitled to its ~14h; what trips is a run dragging far past its own estimate, i.e. a stalled broker or link.
+- `SECONDS_PER_OBJECT` (config.py) holds measured per-object cost — ztf 17.0s (3 ALeRCE calls), lsst 3.5s (magstats short-circuits client-side), antares 2.9s. Feeds both the estimate and the deadline; update if broker latency shifts. Affects only pacing, never correctness.
+- CLI confirms before long runs: `_confirm_long_run` prompts y/N when the estimate exceeds `CONFIRM_THRESHOLD_SECONDS` (900s). **Only on a TTY** — under systemd there is no stdin, so it logs the estimate to stderr and proceeds rather than hanging the unit. `-y/--yes` skips it.
 - ANTARES: `locus.alerts` includes both `ztf_candidate` (real detections, have `ant_mag`) and `ztf_upper_limit` (non-detections, no `ant_mag`). Pipeline filters to `ant_mag.notna()` before building the lightcurve.
 - ANTARES: `locus.tags` returns plain strings (not objects); `locus.properties` contains num_mag_values which is the quality-filtered detection count.

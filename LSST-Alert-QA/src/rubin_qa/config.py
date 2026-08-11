@@ -25,6 +25,41 @@ OUTLIER_PROB_THRESHOLD    = 0.30   # dissenting classifier below this → outlie
 RETRY_ATTEMPTS = 4
 RETRY_DELAY    = 9.0  # seconds; exponential backoff → 9, 18, 36
 
+# Per-request ceiling forced onto the ALeRCE client, which passes no timeout of
+# its own (alerce/utils.py Client._request), leaving requests to block forever.
+# Both per-run ceilings below are checked *between* calls, so neither can
+# interrupt a socket already blocked in a read — without this a single hung
+# connection stalls a run indefinitely. Set above ALeRCE's known 504 episodes
+# ("slow for tens of seconds") so genuine slow answers still arrive.
+# ANTARES needs no equivalent: antares-client applies its own 60s timeout.
+REQUEST_TIMEOUT = 60.0
+
+# Total time one run may spend sleeping between retries. Retry is per-object, so
+# a broker-wide outage would otherwise multiply backoff across the whole page.
+# Once spent, remaining calls get their attempts without backoff.
+RETRY_BUDGET_SECONDS = 300.0
+
+# Measured wall-clock cost per object, including INTER_OBJECT_DELAY (2026-08-06).
+# Update if broker response times shift — these only size estimates and deadlines,
+# never correctness.
+SECONDS_PER_OBJECT = {
+    "ztf":     17.0,  # 3 ALeRCE calls per object, ~5.6s each
+    "lsst":     3.5,  # query_magstats short-circuits client-side
+    "antares":  2.9,  # 1 locus fetch
+}
+DEFAULT_SECONDS_PER_OBJECT = 17.0  # unknown survey → assume the slowest
+
+# The run deadline is derived per job, not fixed: a big scan is entitled to take
+# a long time, so a flat ceiling would truncate healthy work. What it catches is
+# a run going far past *its own* estimate — that is a stalled broker or link, not
+# a busy one. On expiry the loop stops and reports the rows already gathered.
+DEADLINE_SLACK = 3.0
+DEADLINE_FLOOR = 300.0  # seconds; keeps short runs from tripping on noise
+
+# Estimated runtime above which the CLI confirms before starting. Only prompts on
+# a TTY — under systemd it logs the estimate and proceeds.
+CONFIRM_THRESHOLD_SECONDS = 900.0
+
 # Prefixes for operator-facing messages on stderr.
 #   WARN:  degraded but recoverable — the run continues (retries, empty pages).
 #   ERROR: the operation failed and its caller cannot proceed (failed fetches,

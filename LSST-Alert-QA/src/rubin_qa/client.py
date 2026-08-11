@@ -3,25 +3,69 @@
 import sys
 import time
 import pandas as pd
+import requests
 from alerce.core import Alerce
 from alerce.exceptions import APIError, ObjectNotFoundError, ParseError
 
+from . import retry_budget
 from .config import (
     DEFAULT_SURVEY,
     DEFAULT_PAGE_SIZE,
     ERROR_PREFIX,
+    REQUEST_TIMEOUT,
     RETRY_ATTEMPTS,
     RETRY_DELAY,
     WARN_PREFIX,
 )
 
+
+def _force_session_timeout(client, timeout: float = REQUEST_TIMEOUT) -> int:
+    """
+    Make every requests.Session inside `client` apply a default timeout.
+
+    The alerce package never passes `timeout` to session.request, so requests
+    blocks forever on a hung connection. The per-run ceilings cannot save us
+    there — both are checked between calls and cannot interrupt a blocked read.
+
+    The Alerce object holds one session directly and one per sub-client
+    (legacy/multisurvey × search/stamps), so all of them need wrapping. An
+    explicit timeout at the call site still wins. Returns how many were patched.
+    """
+    holders = [client] + [v for v in vars(client).values() if hasattr(v, "__dict__")]
+    seen = set()
+    patched = 0
+
+    for holder in holders:
+        session = getattr(holder, "session", None)
+        if not isinstance(session, requests.Session) or id(session) in seen:
+            continue
+        seen.add(id(session))
+        if getattr(session, "_rubin_qa_timeout", False):
+            continue  # already wrapped; don't nest wrappers
+
+        def with_timeout(*args, _original=session.request, **kwargs):
+            kwargs.setdefault("timeout", timeout)
+            return _original(*args, **kwargs)
+
+        session.request = with_timeout
+        session._rubin_qa_timeout = True
+        patched += 1
+
+    return patched
+
+
 _client = Alerce()
+_force_session_timeout(_client)
 
 
 def _api_call(fn, *args, **kwargs):
     """
     Call an ALeRCE API function with simple retry on transient errors.
     Returns (result, error_str). On failure: result=None, error_str set.
+
+    Backoff draws on the run-wide retry_budget: this is called three times per
+    object, so an ALeRCE outage would otherwise stall a page three times over.
+    Once the budget is spent, attempts continue without waiting between them.
     """
     last_err = None
     name = getattr(fn, "__name__", str(fn))
@@ -30,16 +74,29 @@ def _api_call(fn, *args, **kwargs):
             return fn(*args, **kwargs), None
         except ObjectNotFoundError:
             return None, "not_found"
-        except (APIError, ParseError) as e:
+        except ParseError as e:
+            # alerce maps HTTP 400 to ParseError: the request itself is malformed.
+            # That is a real answer, not a transient fault — resending it four
+            # times just burns the run's retry budget on a guaranteed failure.
+            return None, f"bad_request: {e}"
+        except APIError as e:
             last_err = str(e)
             if attempt < RETRY_ATTEMPTS - 1:
-                delay = RETRY_DELAY * (2 ** attempt)
+                granted = retry_budget.consume(RETRY_DELAY * (2 ** attempt))
+                if granted is None:
+                    print(
+                        f"{WARN_PREFIX}{name} failed ({last_err}) — "
+                        f"retry budget exhausted, not retrying",
+                        file=sys.stderr, flush=True,
+                    )
+                    break
                 print(
                     f"{WARN_PREFIX}{name} failed ({last_err}) — "
-                    f"retry {attempt + 1}/{RETRY_ATTEMPTS - 1} in {delay:.0f}s",
+                    f"retry {attempt + 1}/{RETRY_ATTEMPTS - 1} in {granted:.0f}s "
+                    f"({retry_budget.remaining():.0f}s budget left)",
                     file=sys.stderr, flush=True,
                 )
-                time.sleep(delay)
+                time.sleep(granted)
         except Exception as e:
             last_err = str(e)
             break
