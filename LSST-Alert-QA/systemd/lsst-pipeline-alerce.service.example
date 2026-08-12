@@ -1,0 +1,32 @@
+# Rename to lsst-pipeline-alerce.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=LSST-Alert-QA ALeRcE pipeline
+
+[Service]
+Type=oneshot
+SyslogIdentifier=lsst-pipeline-alerce
+ExecStartPre=/usr/bin/nm-online -q -t 36
+WorkingDirectory=/path/to/LSST-Alert-QA/
+ExecStart=/path/to/uv run pipeline.py lsst 100
+
+# No StandardOutput=/StandardError=: both default to the journal under
+# SyslogIdentifier above. See README for why file redirection is a downgrade.
+
+# hardening — see "Sandboxing" in README.md before editing.
+# ReadWritePaths must cover the CSV written to reports/.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/path/to/LSST-Alert-QA/
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @privileged @keyring
+SystemCallErrorNumber=EPERM

@@ -39,21 +39,35 @@ REQUEST_TIMEOUT = 60.0
 # Once spent, remaining calls get their attempts without backoff.
 RETRY_BUDGET_SECONDS = 300.0
 
-# Measured wall-clock cost per object, including INTER_OBJECT_DELAY (2026-08-06).
-# Update if broker response times shift — these only size estimates and deadlines,
-# never correctness.
+# Measured wall-clock cost per object, including INTER_OBJECT_DELAY (2026-08-11,
+# 20 samples per survey over two rounds). Update if broker response times shift —
+# these only size estimates and deadlines, never correctness.
+#
+# These moved a lot between 2026-08-06 and 2026-08-11: ztf was 17.0 (~5.6s per
+# ALeRCE call), now ~3.2s for all three calls together. Whether 17.0 was a bad
+# week or 3.2 is a good day is still unsettled, so DEADLINE_SLACK below is sized
+# to tolerate a return to the old latency rather than these numbers being final.
 SECONDS_PER_OBJECT = {
-    "ztf":     17.0,  # 3 ALeRCE calls per object, ~5.6s each
-    "lsst":     3.5,  # query_magstats short-circuits client-side
-    "antares":  2.9,  # 1 locus fetch
+    "ztf":     3.7,  # 3 ALeRCE calls per object, ~1.1s each
+    "lsst":    2.4,  # query_magstats short-circuits client-side
+    "antares": 1.0,  # 1 locus fetch, ~0.5s
 }
-DEFAULT_SECONDS_PER_OBJECT = 17.0  # unknown survey → assume the slowest
+# No measurement exists for an unmeasured broker, and a new one is likelier to be
+# slow than fast — so this stays deliberately pessimistic (4.6× the slowest survey
+# we have measured) rather than tracking the table above.
+DEFAULT_SECONDS_PER_OBJECT = 17.0
 
 # The run deadline is derived per job, not fixed: a big scan is entitled to take
 # a long time, so a flat ceiling would truncate healthy work. What it catches is
 # a run going far past *its own* estimate — that is a stalled broker or link, not
 # a busy one. On expiry the loop stops and reports the rows already gathered.
-DEADLINE_SLACK = 3.0
+#
+# The slack absorbs two different things, which is why it is 6× and not 3×:
+# per-run variance, and drift in SECONDS_PER_OBJECT between the days we measure
+# it. At ztf 3.7s the deadline allows 22.2s per object — still above the 17.0s
+# ALeRCE actually charged on 2026-08-06 — so a return to that latency degrades
+# the estimate without truncating an otherwise healthy run.
+DEADLINE_SLACK = 6.0
 DEADLINE_FLOOR = 300.0  # seconds; keeps short runs from tripping on noise
 
 # Estimated runtime above which the CLI confirms before starting. Only prompts on

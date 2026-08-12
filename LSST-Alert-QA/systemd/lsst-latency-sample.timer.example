@@ -1,0 +1,29 @@
+# Rename to lsst-latency-sample.timer
+
+[Unit]
+Description=Sample broker latency hourly, at a random offset
+
+[Timer]
+# One sample per hour, landing anywhere inside that hour. The randomisation is the
+# whole point: a fixed offset would sample the same minute of every hour and could
+# not tell time-of-day from load. This covers all 24 hour-buckets in a single day.
+OnCalendar=hourly
+RandomizedDelaySec=3600
+
+# Persistent=true: catch up a missed run after downtime.
+#
+# The argument against is that a catch-up fires at boot, which is not a random hour.
+# That only bites on a machine with a regular boot schedule. On an irregularly-used
+# workstation the alternative is worse: with Persistent=false, hours the machine is
+# routinely off are never sampled at all, and missing whole hour-ranges is a bigger
+# distortion than a mild clustering.
+#
+# The sampler records uptime_s with every record, so boot-adjacent samples can be
+# identified and excluded at analysis time (`--report --exclude-boot`) rather than
+# being decided here.
+Persistent=true
+
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

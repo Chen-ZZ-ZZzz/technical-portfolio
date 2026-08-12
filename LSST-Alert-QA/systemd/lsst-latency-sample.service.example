@@ -1,0 +1,43 @@
+# Rename to lsst-latency-sample.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=Broker latency sample (feeds SECONDS_PER_OBJECT in config.py)
+
+[Service]
+Type=oneshot
+SyslogIdentifier=lsst-latency-sample
+ExecStartPre=/usr/bin/nm-online -q -t 36
+WorkingDirectory=/path/to/LSST-Alert-QA/
+# --quick skips the page_size=100 candidate fetch: it is the heaviest query in the
+# sample and does not need to run every hour. Drop --quick on a few manual runs
+# instead, or on a second timer at daily cadence.
+#
+# --quiet suppresses the full JSON printout, leaving one summary line per run. The
+# sample itself is written by the script, straight to logs/latency_samples.jsonl —
+# stdout is a digest of it, never the record, so --quiet costs no data.
+ExecStart=/path/to/uv run tools/sample_latency.py --quick --quiet
+
+# No StandardOutput=/StandardError= on purpose: both default to the journal, under
+# SyslogIdentifier above. Redirecting them to a file bought a duplicate of the
+# summary line and hid the case that matters — a run that dies before it can append
+# (nm-online timing out, uv failing, a bad import, a full disk). That leaves no JSONL
+# record at all, so --report cannot see it; the journal is the only place it shows up,
+# and there it comes with exit status and unit context attached.
+
+# hardening — see "Sandboxing" in README.md before editing.
+# ReadWritePaths must cover logs/latency_samples.jsonl, which every run appends to.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/path/to/LSST-Alert-QA/
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @privileged @keyring
+SystemCallErrorNumber=EPERM

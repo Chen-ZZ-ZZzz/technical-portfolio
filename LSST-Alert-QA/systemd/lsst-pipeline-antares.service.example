@@ -1,0 +1,34 @@
+# Rename to lsst-pipeline-antares.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=LSST-Alert-QA ANTARES pipeline
+
+[Service]
+Type=oneshot
+SyslogIdentifier=lsst-pipeline-antares
+ExecStartPre=/usr/bin/nm-online -q -t 36
+WorkingDirectory=/path/to/LSST-Alert-QA/
+# 256 requested locus IDs yields ~217-228 unique ones: ANTARES' random_score query
+# repeats loci across pages. A short report is that, not a row drop.
+# -q keeps stdout to the summary table; the CSV holds the full detail either way.
+ExecStart=%h/.local/bin/uv run pipeline.py antares 256 -q
+
+# No StandardOutput=/StandardError=: both default to the journal under
+# SyslogIdentifier above. See README for why file redirection is a downgrade.
+
+# hardening — see "Sandboxing" in README.md before editing
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/path/to/LSST-Alert-QA/
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @privileged @keyring
+SystemCallErrorNumber=EPERM

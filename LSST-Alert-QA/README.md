@@ -127,7 +127,7 @@ df = run_antares_pipeline(page_size=20)
 # ANTARES explicit locus IDs or ZTF object IDs
 df = run_antares_pipeline(locus_ids=["ANT2020j7wo4", "ZTF20aafqubg"])
 
-# Deadline defaults to 3x the job's own estimate; override or disable it
+# Deadline defaults to 6x the job's own estimate; override or disable it
 df = run_antares_pipeline(page_size=256, max_run_seconds=900)
 df = run_antares_pipeline(page_size=5000, max_run_seconds=0)   # no deadline
 
@@ -276,6 +276,34 @@ All tests use mock data — no live API calls.
 
 ---
 
+## Deployment
+
+`systemd/` holds example user units — one `.service` + `.timer` pair per job, all
+named `lsst-<role>` so `systemctl --user list-timers 'lsst-*'` and
+`journalctl -t 'lsst-*'` sweep the whole set:
+
+| Unit | Cadence | Runs |
+|---|---|---|
+| `lsst-sso-monitor` | daily | `antares_sso_monitor.py` |
+| `lsst-pipeline-antares` | daily | `pipeline.py antares 256 -q` |
+| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 100` |
+| `lsst-latency-sample` | hourly, randomized | `tools/sample_latency.py --quick --quiet` |
+
+Install: copy the pair, drop the `.example` suffix, replace `/path/to/...`, then
+`systemctl --user daemon-reload && systemctl --user enable --now <unit>.timer`.
+
+Every service carries the same sandboxing block (`ProtectSystem=strict` +
+`ReadWritePaths` on the project directory, syscall filter, no new privileges). Output
+goes to the journal; `lsst-sso-monitor` is the one exception, keeping its own
+`logs/sso_monitor.log` as the production record. See [`systemd/README.md`](systemd/README.md)
+for per-unit rationale, the directive-by-directive breakdown, and the gotchas
+(`ReadWritePaths` is mandatory under `strict`; `ProtectHome` must stay unset for `uv`).
+
+The long-run confirm prompt only fires on a TTY — under systemd there is no stdin, so
+the estimate is logged to stderr and the run proceeds rather than hanging the unit.
+
+---
+
 ## Known API Quirks
 
 **ALeRCE:**
@@ -292,7 +320,7 @@ All tests use mock data — no live API calls.
 - Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines. All degrade rather than abort — a short CSV still gets written:
   - **Per request (60s)** — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own.
   - **Retry sleep (300s per run)** — shared budget; once spent, calls stop waiting between attempts.
-  - **Run deadline — sized to the job**, at 3× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable.
+  - **Run deadline — sized to the job**, at 6× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (ztf 3.7s, lsst 2.4s, antares 1.0s, measured 2026-08-11); broker latency has moved by 4-5× week to week, so the 6× slack is what keeps a slow-but-healthy run from being truncated between re-measurements.
 - The alerce package sets no request timeout anywhere, so `client._force_session_timeout()` wraps all five `requests.Session` objects the Alerce client holds.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
 - ANTARES pre-filters alerts to rb ≥ 0.55, fwhm ≤ 5.0 px, elong ≤ 1.2 — objects in ANTARES already pass these; ALeRCE objects may not

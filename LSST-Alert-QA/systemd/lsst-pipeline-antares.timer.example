@@ -1,0 +1,12 @@
+# Rename to lsst-pipeline-antares.timer
+
+[Unit]
+Description=Run LSST ANTARES pipeline daily
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+RandomizedDelaySec=29
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,32 @@
+# Rename to lsst-sso-monitor.service and replace /path/to/dir/ with your path
+
+[Unit]
+Description=ANTARES SSO brightness monitor
+
+[Service]
+Type=oneshot
+SyslogIdentifier=lsst-sso-monitor
+ExecStartPre=/bin/sleep 60
+WorkingDirectory=/path/to/LSST-Alert-QA/
+ExecStart=/path/to/uv run antares_sso_monitor.py
+StandardOutput=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
+StandardError=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
+
+# hardening — see "Sandboxing" in README.md before editing.
+# ReadWritePaths must cover the log target above and the state file
+# logs/bright_sso_state.json, which the monitor rewrites every run.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/path/to/LSST-Alert-QA/
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @privileged @keyring
+SystemCallErrorNumber=EPERM
