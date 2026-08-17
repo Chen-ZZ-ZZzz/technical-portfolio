@@ -9,8 +9,9 @@ dist/
 build/
 .eggs/
 
-# Claude Code
-.claude/
+# Claude Code — personal machine state only. settings.json, commands/, agents/
+# and skills/ are project config and stay shareable.
+.claude/settings.local.json
 
 # Pytest
 .pytest_cache/
