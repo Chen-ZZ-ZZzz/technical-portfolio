@@ -29,6 +29,8 @@ htmlcov/
 .DS_Store
 
 # Runtime
-reports/
+# reports/ is deliberately NOT ignored: the audit CSVs are evidence for claims in
+# the README and should travel with the repo. Routine daily-scan output is kept
+# out by the sync script, not by git.
 # logs/ also covers bright_sso_state.json, which lives there
 logs/

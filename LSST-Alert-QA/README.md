@@ -24,17 +24,47 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
 
+It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden.
+
 ### Bright Solar System Objects (SSO) Monitor
 
 `antares_sso_monitor.py` is a stand-alone script which scans ANTARES daily for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
+> **Negative result — and the reason it is in this portfolio.** The premise does not hold: an ANTARES locus is a sky position, not an object, so it cannot track a moving target. Every alert this monitor raised was a stationary variable star or galaxy. The script is kept unfixed because the investigation is the deliverable: a production false-positive rate traced to an invalid design assumption, tested against independent ground truth, with the residual risk quantified instead of tuned away.
+
 First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `logs/bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
 
-**Known limitations:**
+#### Audit, 2026-08-17
 
-1. `sso_candidates` tag is ZTF-based, LSST pipeline not yet in ANTARES tag system. After analysing a few days' worth of date, observed high false positive rate due to stellar variable contamination in the tag.
+**1 — Symptom.** Daily runs from 2026-04-13 raised 208 brightening events across 181 loci. Manual spot-checks kept landing on long-period variables and galaxies rather than asteroids, at a rate high enough to suspect the detector rather than the sky.
 
-2. Magnitude thresholds are currently arbitrary starting points.
+**2 — Audit design.** Full population, not a sample: all 375 loci the monitor had ever touched. This first required recovering the test population — the 181 loci that actually alerted were **absent from `bright_sso_state.json`** (the state was reset on 2026-06-09; the two sets have zero overlap), so they were reconstructed from `logs/sso_monitor.log` and re-fetched from ANTARES. The oracle was chosen to be independent of the system under test: MPC ephemeris magnitudes (`ztf_ssmagnr`) carried in the ZTF alert packet, plus membership in Gaia DR2/DR3, VSX and ASAS-SN — never the ANTARES `sso_candidates` tag that raised the alert in the first place.
+
+**3 — Result.** Of the 181 alerted loci, **181 are stationary sources, not solar system objects**: 170 variable stars, 2 extragalactic (one an AGN1 with Gaia quasar probability 0.87), 9 stationary but uncatalogued. Against the 194 loci collected since the filter fix, the two populations separate on every independent axis:
+
+| | alerted loci (181) | genuine asteroid detections (194) |
+|---|---|---|
+| Gaia DR2 + DR3 source | 181 | 4 |
+| VSX / ASAS-SN variable catalogues | 114 / 126 | 0 |
+| detections per locus (median) | 601 (max 2194) | 2 |
+| prior detections at that position (`ndethist`) | 698 (max 2945) | 2 |
+| reference-image counterpart (`distnr`) | 0.22″ | 6.7″ |
+| detection history span | 2538 d | 0 d |
+| \|measured − MPC predicted mag\| | **3.90** | **0.30** |
+
+**4 — Root cause: an ANTARES locus is a sky position, not an object.** Alerts within ~1″ are merged into one locus. A variable star sits there permanently and accumulates an 8-year light curve; an asteroid crosses the same position once and contributes only the `sso_candidates` tag. The monitor then read `newest_alert_magnitude` off that locus as though one object produced all of it, so what it measured as "brightening" was the star varying.
+
+The converse is equally fatal: a moving object can never accumulate a light curve at a locus. Asteroid 31521 appears in **361 distinct loci**, RA spread 360°, Dec spread 34° — one or two alerts per night, each at a new position, never returning. Comparing a locus magnitude between scans is therefore meaningless for a mover. **This is not a threshold-tuning problem and no choice of `MAG_THRESHOLD` / `DELTA_MAG_ALERT` fixes it.**
+
+**5 — Differential test of the existing mitigation.** The `.exclude("terms", catalogs=STELLAR_CATALOGS)` clause added around 2026-06-09 catches **181 of 181** historical contaminants. Confirmed by running the query with and without the clause against a known-bad input, `ANT2020xooq` (1081 detections, VSX eclipsing binary `ZTF J190900.29-132623.4`, P = 0.387 d): returned without the clause, dropped with it. Every alert in the log predates that clause; the 61 scans since have produced zero events. So the loci now being collected really are asteroid detections — magnitudes match MPC predictions to 0.30 mag, no counterpart within ~7″, `ndethist` = 2, and 177 of 194 carry `sso_confirmed` (against 1 of 181 in the alerted set).
+
+**6 — Residual risk after the mitigation.** The filter removes the stationary contaminants, but the locus is still the wrong unit. 167 of those 194 loci contain detections from **two or more different asteroids** that crossed the same position years apart — e.g. `ANT20222ko6002pughw` holds asteroid 22564 (2022-09) and 53857 (2026-05). 68 of them differ by more than `DELTA_MAG_ALERT` between their two asteroids, so each is a false "brightened" alert waiting for its next detection.
+
+**7 — What would work instead**, if this is picked up again: the identity of a mover is per-alert, not per-locus — `ztf_ssnamenr` (MPC number), with `ztf_ssdistnr` and `ztf_ssmagnr`. It is searchable via `properties.ztf_ssnamenr`, though the locus-level property keeps only one name so blends must still be filtered alert by alert. The strongest signal needs no state file at all: the residual `ant_mag − ztf_ssmagnr` against the MPC ephemeris separated real asteroid detections from star blends at 0.30 vs 3.90 mag, and an asteroid genuinely brighter than prediction is the interesting event in the first place. Newly discovered movers carry no `ssnamenr` and need a different signature (`ndethist` = 1, no counterpart, no catalogue match).
+
+Remaining minor limitations: `sso_candidates` is ZTF-based, with no LSST equivalent yet in the ANTARES tag system; the magnitude thresholds were arbitrary starting points and were never reached — only 2 of 194 loci ever got brighter than mag 15.
+
+Full per-locus verdict table, committed as the evidence behind every number above: [`reports/sso_audit_2026-08-17.csv`](reports/sso_audit_2026-08-17.csv) — 375 rows, one per locus, with the raw discriminants (`ndethist`, `distnr`, catalogue membership, magnitude residual against the MPC prediction) and the verdict each one supports.
 
 ---
 
