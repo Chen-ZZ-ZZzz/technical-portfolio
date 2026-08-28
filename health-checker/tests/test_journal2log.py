@@ -27,7 +27,7 @@ def test_messages(message, expected):
 
 
 @pytest.mark.parametrize("unit,expected", [
-    ("journal_scan.service",  True),
+    ("checker-journal-scan.service",  True),
     ("sso-monitor.service",   False),
     (None,                    False),
 ])
