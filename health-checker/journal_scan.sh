@@ -39,7 +39,7 @@ main(){
     require_cmd python3
 
     # systemd provides these; fall back for interactive runs
-    local state_dir="${STATE_DIRECTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/checker_journal_scan}"
+    local state_dir="${STATE_DIRECTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/checker-journal-scan}"
     if [[ -n "${RUNTIME_DIRECTORY:-}" ]]; then
         run_dir="$RUNTIME_DIRECTORY"
     else
