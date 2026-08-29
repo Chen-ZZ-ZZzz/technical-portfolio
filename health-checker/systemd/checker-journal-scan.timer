@@ -1,0 +1,10 @@
+[Unit]
+Description=Scan systemd journal periodically
+
+[Timer]
+OnBootSec=16min
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

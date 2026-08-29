@@ -36,6 +36,12 @@ tests/           -- 26 pytest tests, mock data only
 
 ---
 
+## Journal Scanner
+
+Full implementation of a systemd journal scanner. Details under **[systemd/README](systemd/README.md)**.
+
+---
+
 ## Skills Learned
 
 | Area | Details |

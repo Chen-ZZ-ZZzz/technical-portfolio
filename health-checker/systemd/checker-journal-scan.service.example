@@ -1,0 +1,31 @@
+# Copy to ~/.config/systemd/user/, drop the .example suffix,
+# and replace __PROJECT_ROOT__ with your own project path.
+
+[Unit]
+Description=Scan systemd journal periodically
+
+[Service]
+Type=oneshot
+SyslogIdentifier=checker-journal-scan
+WorkingDirectory=__PROJECT_ROOT__
+ExecStart=/usr/bin/bash journal_scan.sh
+
+# hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+StateDirectory=checker-journal-scan
+RuntimeDirectory=checker-journal-scan
+RuntimeDirectoryPreserve=yes
+ReadWritePaths=/data/prog/health_checker
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @privileged @keyring
+SystemCallErrorNumber=EPERM
