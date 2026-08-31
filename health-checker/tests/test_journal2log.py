@@ -52,6 +52,7 @@ class TestConvert:
         out = convert_record(_REAL_RECORD)
         assert out == (
             "2026-08-28 07:41:04.352627 ERROR: "
+            "lightdm[181820]: "
             "pam_systemd(lightdm-greeter:session): Failed to release "
             "session: Transport endpoint is not connected"
         )

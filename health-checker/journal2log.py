@@ -68,10 +68,17 @@ def _msg_conv(msg: str | list[int] | None) -> str | None:
 
 
 def _rt_conv(rt_stamp: str) -> str:
-    """ Convert realtime timestamp to ISO datetime"""
-    rt = int(rt_stamp) / 1000000 # in second
+    """Convert realtime timestamp to ISO datetime"""
+    rt = int(rt_stamp) / 1000000  # in second
     time_obj = datetime.fromtimestamp(rt)
     return f"{time_obj}"
+
+
+def _src_conv(ident: str | None, pid: str | None) -> str:
+    """Emitter label, journalctl short-format style."""
+    if ident is None:
+        return "unknown"
+    return f"{ident}[{pid}]" if pid else ident
 
 
 def _own_out(unit: str | None) -> bool:
@@ -98,19 +105,16 @@ def convert_record(line: str) -> str | None:
         return None
 
     ts = _rt_conv(entry.get("__REALTIME_TIMESTAMP"))
-    return f"{ts} {lvl}: {msg}"
+    src = _src_conv(entry.get("SYSLOG_IDENTIFIER") or entry.get("_COMM"), entry.get("_PID"))
+    return f"{ts} {lvl}: {src}: {msg}"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert journal JSON entry to log-like text for log_scan"
     )
-    parser.add_argument(
-        "jjson", type=Path, help=".json input, from journalctl -o json"
-    )
-    parser.add_argument(
-        "jlog", type=Path, help=".log output"
-    )
+    parser.add_argument("jjson", type=Path, help=".json input, from journalctl -o json")
+    parser.add_argument("jlog", type=Path, help=".log output")
 
     args = parser.parse_args(argv)
     if not args.jjson.exists():
