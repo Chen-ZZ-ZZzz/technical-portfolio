@@ -25,6 +25,7 @@ src/rubin_qa/
     __main__.py        — CLI entry point
 pipeline.py            — thin shim: python pipeline.py [survey] [page_size | oid ...]
 tests/                 — pytest, mock data only (no live API calls)
+    test_antares.py    — ANTARES path end to end; antares_client.py at 100% stmt coverage
 pyproject.toml         — build: hatchling, script: rubin-qa
 ```
 

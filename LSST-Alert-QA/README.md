@@ -26,7 +26,9 @@ The validation patterns include completeness checks, classifier consensus, thres
 
 It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden.
 
-### Bright Solar System Objects (SSO) Monitor
+---
+
+## Bright Solar System Objects (SSO) Monitor
 
 `antares_sso_monitor.py` is a stand-alone script which scans ANTARES daily for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
@@ -34,7 +36,7 @@ It also includes a worked false-positive investigation: the SSO monitor below wa
 
 First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `logs/bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
 
-#### Audit, 2026-08-17
+### Audit, 2026-08-17
 
 **1 — Symptom.** Daily runs from 2026-04-13 raised 208 brightening events across 181 loci. Manual spot-checks kept landing on long-period variables and galaxies rather than asteroids, at a rate high enough to suspect the detector rather than the sky.
 
@@ -300,9 +302,52 @@ pyproject.toml
 
 ```bash
 uv run pytest tests/ -v
+uv run pytest tests/ --cov=rubin_qa --cov-report=term-missing
 ```
 
 All tests use mock data — no live API calls.
+
+| File | Covers |
+|---|---|
+| `test_client.py` | ALeRCE client: retry, dedup, per-field fetch errors |
+| `test_antares.py` | ANTARES broker path, end to end (see below) |
+| `test_validators.py` | completeness tokens, ZTF and LSST |
+| `test_classifier.py` | weighted classifier consensus |
+| `test_reporting.py` | QA row assembly, status tiers |
+| `test_ceilings.py` | request timeout, retry budget, run deadline |
+| `test_main.py` | CLI argument routing, CSV naming, exit codes |
+
+**ANTARES coverage.** The ALeRCE path had unit tests from the start; the ANTARES
+path had only the ceiling and CLI tests, which drive the loop but never the locus
+model inside it. `test_antares.py` closes that: 53 tests taking
+`src/rubin_qa/antares_client.py` from 87% to 100% statement coverage, and covering
+`validate_antares`, `classify_antares`, `build_antares_qa_row` and
+`run_antares_pipeline` alongside it. The cases are chosen where ANTARES *differs*
+from ALeRCE and a wrong answer would be silent rather than loud:
+
+- **ANT vs ZTF id routing** — `get_by_id` and `get_by_ztf_object_id` are not
+  interchangeable, and only the ZTF path reports a missing object as `not_found`.
+- **Upper-limit filtering** — `ztf_upper_limit` alerts sit in `locus.alerts` with no
+  `ant_mag`. Left in, they become detections that never happened.
+- **`num_mag_values` over `len(dets)`** — ANTARES applies quality cuts the raw alert
+  stream does not reflect, so the row count is the *higher*, wrong number. Nothing
+  raises if the wrong one is used; every `ndet` in the report is simply inflated.
+- **Science vs pipeline tags** — a locus tagged `nuclear_transient` +
+  `lc_feature_extractor` + `high_snr` has one classification, not three. Unknown tags
+  are asserted to surface by name rather than vanish into "no classification".
+- **Per-field degradation** — `alerts`, `properties` and `tags` are fetched under
+  separate exception handlers, so one unusable field must cost a column and not the
+  row. Tested with a locus whose attribute access raises, through to the `FLAG` row
+  that comes out the far end.
+- **REVIEW_MINOR is asserted unreachable.** ANTARES consensus is 1/n, so two tags give
+  0.50, under the 0.65 majority threshold — the tier cannot fire. That is a known,
+  accepted dead branch; the test pins it so a threshold change surfaces as a failure
+  instead of a silent behaviour change.
+
+Each new test was checked by mutation: the upper-limit filter, the `num_mag_values`
+preference, the science-tag filter, the pacing delay, the `ImportError` message and
+each degradation handler were broken in turn, and the suite was confirmed to fail on
+every one. A test that passes against broken code is not coverage.
 
 ---
 

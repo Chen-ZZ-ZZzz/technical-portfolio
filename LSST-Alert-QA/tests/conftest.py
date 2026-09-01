@@ -103,3 +103,37 @@ def data_empty():
     import pandas as pd
     empty = pd.DataFrame()
     return {"dets": empty, "ms": empty, "probs": empty, "fetch_errors": []}
+
+
+@pytest.fixture
+def antares_dets():
+    """Locus alerts after the ant_mag.notna() filter — upper limits already dropped."""
+    return pd.DataFrame({
+        "ra":       [153.5, 153.5, 153.5],
+        "dec":      [-3.42, -3.42, -3.42],
+        "ant_mag":  [18.9,  18.4,  18.1],
+        "mjd":      [60000.0, 60005.0, 60012.0],
+    })
+
+
+@pytest.fixture
+def antares_ms():
+    """One-row magstats-shaped summary built from locus.properties."""
+    return pd.DataFrame([{"ndet": 3, "magmin": 18.1, "magmax": 18.9}])
+
+
+@pytest.fixture
+def antares_data(antares_dets, antares_ms):
+    """A complete locus with a single science tag → PASS."""
+    return {
+        "dets": antares_dets,
+        "ms": antares_ms,
+        "tags": ["nuclear_transient", "lc_feature_extractor"],
+        "fetch_errors": [],
+    }
+
+
+@pytest.fixture
+def antares_data_empty():
+    empty = pd.DataFrame()
+    return {"dets": empty, "ms": empty, "tags": [], "fetch_errors": []}
