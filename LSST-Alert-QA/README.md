@@ -1,6 +1,6 @@
 # LSST/ZTF/ANTARES Alert Data Quality Pipeline
 
-A data quality pipeline for ZTF (and eventually LSST) alert data via the [ALeRCE][alerce link] and [ANTARES][antares link] brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
+A data quality pipeline for LSST (and ZTF) alert data via the [ALeRCE][alerce link] and [ANTARES][antares link] brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
 
 ---
 
@@ -12,7 +12,7 @@ The telescope would generate up to 10 millions alerts per night, about objects t
 
 The Zwicky Transient Facility (ZTF) serves as a prototype of the system, generating 1 million alerts per night.
 
-**ALeRCE** (Automatic Learning for the Rapid Classification of Events) is a Chilean-led Community Broker. Its LSST support is currently only included with graceful degradation.
+**ALeRCE** (Automatic Learning for the Rapid Classification of Events) is a Chilean-led Community Broker. Its current support of LSST is clean and mostly full.
 
 **ANTARES** (Arizona-NOIRLab Temporal Analysis and Response to Events System) is an NSF NOIRLab broker that processes ZTF alerts and is approved for the full LSST stream. Unlike ALeRCE's probability-based classifiers, ANTARES uses discrete _tags_ produced by Python filters. Each tag is a science signal (e.g. `nuclear_transient`, `dimmers`) or a pipeline annotation. The search API is open; real-time Kafka streaming requires credentials. ANTARES _started ingesting LSST alerts_ Feb 24, 2026.
 
