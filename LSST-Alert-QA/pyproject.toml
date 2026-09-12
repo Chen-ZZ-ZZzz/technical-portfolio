@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 rubin-qa = "rubin_qa.__main__:main"
+rubin-qa-profile = "rubin_qa.profiler:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rubin_qa"]

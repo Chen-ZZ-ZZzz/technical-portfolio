@@ -179,14 +179,28 @@ def classify_antares(tags: list) -> dict:
     }
 
 
-def _version_score(version_str) -> float:
+def _version_score(version) -> float:
     """
-    Parse a classifier version string into a small recency multiplier [0.90, 1.10].
+    Parse a classifier version into a small recency multiplier [0.90, 1.10].
     Acts only as a tiebreaker — never overrides method or probability weights.
+
+    Accepts whatever the broker puts in the column: ALeRCE ZTF sends strings
+    ("1.0.0"), ALeRCE LSST sends integers (201, 202). An isinstance(str) guard
+    here used to send every LSST version to the neutral 1.0.
+
+    Falsy input (None, "", 0) means "unknown version" and scores neutral rather
+    than penalised; NaN stringifies to "nan", finds no digits, and lands there too.
+
+    NOTE the 0.20 cap saturates at raw >= 10, so any purely integer scheme at or
+    above v10 scores a flat 1.10. Because the score multiplies every classifier's
+    weight and consensus is a ratio of those weights, a value shared by all rows
+    cancels out — so LSST's 201-vs-202 still cannot be told apart. Making integer
+    schemes discriminate means rescaling the cap, which would move ZTF's tuned
+    weights too; left alone deliberately.
     """
-    if not version_str or not isinstance(version_str, str):
+    if not version:
         return 1.0
-    nums = re.findall(r"\d+", version_str)
+    nums = re.findall(r"\d+", str(version))
     if not nums:
         return 1.0
     raw = sum(int(n) / (100 ** i) for i, n in enumerate(nums[:3]))

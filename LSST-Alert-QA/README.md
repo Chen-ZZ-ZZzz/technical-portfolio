@@ -87,7 +87,9 @@ Full per-locus verdict table, committed as the evidence behind every number abov
 
 - **ANTARES tag classification** — maps discrete science tags to the same verdict schema, filtering out pipeline/infrastructure tags before scoring
 
-- **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (early-stage, sparse), with graceful degradation for unimplemented API endpoints
+- **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (early-stage, sparse), with graceful degradation for unimplemented API endpoints, and without letting a structurally-absent endpoint masquerade as a data defect
+
+- **Single-object profiler** — a diagnostic deep-dive on any of the three brokers, deriving per-band photometry where the broker serves no magstats
 
 - **Structured QA reporting** — each object gets a tiered status (PASS / REVIEW_MINOR / REVIEW_MAJOR / FLAG) with detailed flags explaining why
 
@@ -171,15 +173,79 @@ deadline_for(1000, "ztf") / 60       # -> 850 min
 print(df[["oid", "top_class", "consensus", "status"]])
 ```
 
-### Diagnostic profiler (ZTF only)
+### Diagnostic profiler
+
+Deep-dive on a single object, on any of the three brokers. Where the pipeline says an
+object is `FLAG` or `REVIEW_MAJOR`, the profiler says why.
+
+```bash
+# ZTF
+uv run python -m rubin_qa.profiler ztf ZTF17aaaaahl
+
+# LSST
+uv run python -m rubin_qa.profiler lsst 170226393632735260
+
+# ANTARES — locus ID or ZTF object ID
+uv run python -m rubin_qa.profiler antares ANT2026fmcqp4h4xvw4
+
+# via the installed script; several objects in one go
+uv run rubin-qa-profile ztf ZTF17aaaaahl ZTF18abc
+```
 
 ```python
 from rubin_qa.profiler import object_profile
 
-object_profile("ZTF17aaaaahl")
+object_profile("170226393632735260", survey="lsst")
 ```
 
-Prints classification verdict, per-filter magstats, and light curve summary for one object.
+Three sections per object: **classification verdict**, **per-band photometry**, and a
+**light curve summary**.
+
+Per-band photometry is served magstats on ZTF only — ALeRCE has none for LSST and
+ANTARES has none at all, so both are derived from their own detections (grouped by
+band; LSST fluxes converted nJy → AB). The output says which it is, so a derived table
+is never mistaken for a served one.
+
+| | ZTF | LSST | ANTARES |
+|---|---|---|---|
+| Classification | probabilities → weighted consensus | same — and 2 classifiers really do vote | science tags → same verdict schema |
+| Bands | `fid` → g/r/i | `band_name` (u/g/r/i/z/y) | `ant_passband` |
+| Non-detections | upper limits | forced photometry (`non_detections` comes back empty) | `ant_maglim`, in the same frame |
+| Also reports | `magpsf_corr` coverage | `reliability`, `snr` ranges | `ant_mag_corrected` coverage, source surveys |
+
+Real output, LSST object `170226393632735260`:
+
+```
+================================================================
+FULL PROFILE: 170226393632735260   [lsst]
+================================================================
+
+-- Classification (all classifiers, ranking=1) --
+                     classifier_name class_name  probability
+         stamp_classifier_rubin_beta         SN     0.997319
+stamp_classifier_rubin_beta_20260421         SN     0.985418
+
+-- Photometry by band --
+  (derived from detections — ALeRCE serves no LSST magstats)
+band  ndet  magmin  magmax  magmean  magsigma  firstmjd   lastmjd
+   g    13  21.022  23.705   21.785     0.896 61135.003 61178.984
+   i    17  20.990  22.231   21.320     0.291 61136.156 61172.981
+   r    16  20.847  22.699   21.689     0.558 61136.021 61178.002
+   z    14  21.414  21.964   21.643     0.150 61135.042 61172.005
+
+  Verdict:     SN  (best prob 0.997, weighted consensus 100%)
+  Classifiers: 2/2 vote for 'SN'
+
+-- Light curve --
+  Detections:     60 epochs
+  Non-detections: 0 upper limits
+  Forced phot.:   10 epochs
+  MJD range:      61135.0 – 61179.0
+  Bands seen:     ['g', 'i', 'r', 'z']
+  Mag range:      20.85 – 23.70
+  Reliability:    0.500 – 1.000
+  SNR:            10.518 – 68.204
+```
 
 ---
 
@@ -217,7 +283,9 @@ One row per object. Columns:
 
 Note: `REVIEW_MINOR` is currently dormant for ZTF because `lc_classifier` returns no data for most objects, leaving only one classifier voting. It will activate once `lc_classifier` data flows.
 
-**Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats`, `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
+**Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats` (ZTF only — see below), `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
+
+`no_magstats` is deliberately **not** emitted for LSST. ALeRCE raises `NotImplementedError` for every LSST object, so the token fired on 100% of rows — and since any completeness issue forces `FLAG`, it made every LSST object FLAG and hid its actual verdict, including the clean two-classifier `PASS` that LSST probabilities do support. A condition that is always true of a survey describes the survey, not the object. It comes back if ALeRCE ships LSST magstats.
 
 **Classification flag tokens** (appear in `flag` only):
 
@@ -234,7 +302,7 @@ Weighted consensus across all classifiers. Each vote is weighted by:
 
 - **Method** — `lc_classifier` outweighs `stamp_classifier`; the gap widens as `ndet` grows (lc data becomes more informative)
 - **Confidence** — the classifier's own probability for its top class
-- **Recency** — small tiebreaker from classifier version string
+- **Recency** — small tiebreaker from the classifier version (a string on ZTF, `"1.0.0"`; an integer on LSST, `201`)
 
 | Condition | Status |
 |---|---|
@@ -270,11 +338,11 @@ All ANTARES tags are filter outputs, not confirmed classifications — treat eve
 |---|---|---|---|
 | Detections | ✓ | ✓ | ✓ (alerts, upper limits filtered out) |
 | Magstats | ✓ | — (falls back to raw detections) | ✓ (locus properties) |
-| Classifiers | ✓ | — (not yet in API) | ✓ (tag-based, science tags only) |
+| Classifiers | ✓ | ✓ (2 stamp classifiers; `query_classifiers`/`query_classes` still absent) | ✓ (tag-based, science tags only) |
 | `rb`/`drb` scores | ✓ | `reliability` only | — (pre-filtered upstream, rb ≥ 0.55) |
 | Catalog cross-matches | — | — | ✓ (Gaia, Sloan, WISE, Chandra) |
 | Real-time stream | — | — | ✓ (Kafka, requires credentials) |
-| Profiler | ✓ | — | — |
+| Profiler | ✓ | ✓ | ✓ |
 
 ---
 
@@ -289,7 +357,7 @@ src/rubin_qa/
     validators.py      — validate_completeness, validate_antares
     classifier.py      — classify_object (weighted consensus), classify_antares (tags)
     reporting.py       — QA row assembly and pipeline orchestration (ALeRCE + ANTARES)
-    profiler.py        — single-object diagnostic tool (ZTF only)
+    profiler.py        — single-object diagnostic tool (all three surveys, own CLI)
     __main__.py        — CLI entry point
 pipeline.py            — backwards-compatible shim
 tests/                 — pytest, mock data only
@@ -315,7 +383,9 @@ All tests use mock data — no live API calls.
 | `test_classifier.py` | weighted classifier consensus |
 | `test_reporting.py` | QA row assembly, status tiers |
 | `test_ceilings.py` | request timeout, retry budget, run deadline |
-| `test_main.py` | CLI argument routing, CSV naming, exit codes |
+| `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes |
+| `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
+| `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
 
 **ANTARES coverage.** The ALeRCE path had unit tests from the start; the ANTARES
 path had only the ceiling and CLI tests, which drive the loop but never the locus
@@ -386,6 +456,9 @@ the estimate is logged to stderr and the run proceeds rather than hanging the un
 - API returns duplicate oids — deduplicated in `fetch_candidates`
 - LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
 - LSST oids come back as integers from the API — normalized to `str` in `fetch_candidates`
+- LSST `classifier_version` is an integer (201, 202) where ZTF sends a string (`"1.0.0"`); the version tiebreaker parses both
+- LSST `query_lightcurve` returns **three** keys — `detections`, `non_detections`, `forced_photometry` — against ZTF's two, and `non_detections` is empty even for well-sampled objects: Rubin publishes forced photometry where ZTF publishes upper limits. Detections carry fluxes (`psfFlux`, nJy) and `band`/`band_name`, never `magpsf`/`fid`
+- LSST `query_probabilities` works and returns two ranking-1 classifiers, so the consensus path actually engages — but they are the same model at two dates, so their agreement is not independent evidence the way lc-vs-stamp would be
 
 **ANTARES:**
 - Kafka streaming requires credentials (request from ANTARES team); search/fetch API is open
@@ -398,6 +471,7 @@ the estimate is logged to stderr and the run proceeds rather than hanging the un
   - **Run deadline — sized to the job**, at 6× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (ztf 3.7s, lsst 2.4s, antares 1.0s, measured 2026-08-11); broker latency has moved by 4-5× week to week, so the 6× slack is what keeps a slow-but-healthy run from being truncated between re-measurements.
 - The alerce package sets no request timeout anywhere, so `client._force_session_timeout()` wraps all five `requests.Session` objects the Alerce client holds.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
+- `locus.lightcurve` is a separate, tidier 14-column frame holding detections *and* upper limits together: `ant_mag` is null on a non-detection, where `ant_maglim` carries the limit. `ant_mag_corrected` is the `magpsf_corr` analogue, `ant_passband` the `fid` analogue. Also on the locus: `timeseries` (~114 columns), `catalog_objects` (crossmatch), and ~20 precomputed `feature_*` entries in `properties`
 - ANTARES pre-filters alerts to rb ≥ 0.55, fwhm ≤ 5.0 px, elong ≤ 1.2 — objects in ANTARES already pass these; ALeRCE objects may not
 - `antares-client` import is deferred — ALeRCE-only installs are unaffected if the package is absent
 

@@ -21,13 +21,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import statistics
 import sys
 import time
 from typing import Any, Callable
 
+# Importable from a bare checkout, not just an editable install. config.py pulls in
+# nothing but os and pathlib, so this costs no import time and no broker imports.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
+
+from rubin_qa.config import SURVEYS  # noqa: E402
+
+# Which surveys reach ALeRCE rather than ANTARES — a different question from which
+# ones exist, so this one stays a literal here.
 ALERCE_SURVEYS = ("ztf", "lsst")
-ALL_TARGETS = ("ztf", "lsst", "antares")
 OBJECT_CALLS = ("query_detections", "query_magstats", "query_probabilities")
 DEFAULT_SAMPLES = 10
 DEFAULT_PAGE_SIZES = (10, 100)
@@ -166,7 +174,7 @@ def main() -> None:
         description="Measure live broker latency to re-derive SECONDS_PER_OBJECT."
     )
     parser.add_argument(
-        "--targets", nargs="+", default=list(ALL_TARGETS), choices=ALL_TARGETS,
+        "--targets", nargs="+", default=list(SURVEYS), choices=SURVEYS,
         help="Surveys to benchmark (default: all).",
     )
     parser.add_argument(

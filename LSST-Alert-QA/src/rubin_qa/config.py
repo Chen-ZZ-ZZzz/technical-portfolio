@@ -4,6 +4,15 @@ import pathlib
 DEFAULT_SURVEY    = "ztf"
 DEFAULT_PAGE_SIZE = 100
 
+# Every survey the CLI accepts, in help-text order. The CLI validates against this
+# rather than passing any string through: `pipeline.py 50` used to parse 50 as a
+# survey name and reach the broker with it. Keep in step with SECONDS_PER_OBJECT
+# below — a survey here but not there falls back to DEFAULT_SECONDS_PER_OBJECT.
+#
+# Single source of truth for the survey list: __main__ (argparse choices), profiler
+# (same), and both tools/ benchmarks import this rather than restating the tuple.
+SURVEYS = ("ztf", "lsst", "antares")
+
 # Output paths anchor to the project root, never the caller's CWD — the systemd
 # units and manual runs start from arbitrary directories, and a bare relative
 # path scatters reports wherever the run happened to begin.

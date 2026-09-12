@@ -139,3 +139,46 @@ class TestDispatch:
     def test_quiet_is_forwarded(self, tmp_path):
         pipeline = _run_cli(["ztf", "3", "-q"], tmp_path, result=_report(2))
         assert pipeline.call_args.kwargs["quiet"] is True
+
+
+class TestSurveyValidation:
+    """
+    The survey positional used to accept any string, so a bare page size was read
+    as a survey name: `pipeline.py 50` ran ztf's default 100-object page against
+    a broker called "50" and wrote qa_50_*.csv. argparse rejects it now.
+    """
+
+    def test_bare_page_size_is_rejected(self, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            _run_cli(["50"], tmp_path, result=_report(3))
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "invalid choice: '50'" in err
+        assert "ztf" in err and "antares" in err
+        assert _csvs(tmp_path) == []
+
+    def test_unknown_survey_is_rejected(self, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            _run_cli(["ztfff", "10"], tmp_path, result=_report(3))
+        assert exc.value.code == 2
+        assert "invalid choice: 'ztfff'" in capsys.readouterr().err
+        assert _csvs(tmp_path) == []
+
+    def test_bare_oid_without_a_survey_is_rejected(self, tmp_path):
+        """`pipeline.py ZTF123` skipped the survey, so the oid became the survey."""
+        with pytest.raises(SystemExit) as exc:
+            _run_cli(["ZTF21abcdefg"], tmp_path, result=_report(1))
+        assert exc.value.code == 2
+        assert _csvs(tmp_path) == []
+
+    @pytest.mark.parametrize("survey", ["ztf", "lsst", "antares"])
+    def test_every_listed_survey_still_dispatches(self, survey, tmp_path):
+        pipeline = _run_cli([survey, "5"], tmp_path, result=_report(2))
+        assert pipeline.called
+        assert _csvs(tmp_path)[0].name.startswith(f"qa_{survey}_")
+
+    def test_choices_match_the_config_registry(self):
+        """The help text and the accepted set must not drift apart."""
+        from rubin_qa.config import DEFAULT_SURVEY, SURVEYS
+
+        assert DEFAULT_SURVEY in SURVEYS

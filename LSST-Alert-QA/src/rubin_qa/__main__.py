@@ -15,6 +15,7 @@ from .config import (
     DEFAULT_PAGE_SIZE,
     ERROR_PREFIX,
     REPORTS_DIR,
+    SURVEYS,
     WARN_PREFIX,
 )
 from .reporting import deadline_for, estimate_runtime, run_antares_pipeline, run_pipeline
@@ -93,9 +94,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="LSST/ZTF/ANTARES Alert Data Quality Pipeline"
     )
+    # choices= is what stops a bare page size being read as a survey name:
+    # `pipeline.py 50` otherwise parsed 50 as the survey, ran with the default
+    # page size, and wrote a qa_50_*.csv. Rejecting it costs one argparse line.
     parser.add_argument(
-        "survey", nargs="?", default=DEFAULT_SURVEY,
-        help="Broker/survey: ztf (default) | lsst | antares",
+        "survey", nargs="?", default=DEFAULT_SURVEY, choices=SURVEYS,
+        metavar="survey",
+        help=f"Broker/survey: {' | '.join(SURVEYS)} (default: {DEFAULT_SURVEY})",
     )
     parser.add_argument(
         "targets", nargs="*",

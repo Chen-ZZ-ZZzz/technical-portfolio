@@ -39,11 +39,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from bench_latency import (  # noqa: E402
-    ALL_TARGETS,
     bench_antares_objects,
     bench_candidates,
     bench_objects,
 )
+from rubin_qa.config import SURVEYS  # noqa: E402
 
 LOG_PATH = pathlib.Path(__file__).resolve().parents[1] / "logs" / "latency_samples.jsonl"
 SAMPLE_OBJECTS = 5          # per survey; keeps a manual run to ~2.5 min
@@ -85,7 +85,7 @@ def take_sample(n_objects: int, with_candidates: bool) -> dict:
         "constants": dict(SECONDS_PER_OBJECT),
     }
 
-    for survey in ALL_TARGETS:
+    for survey in SURVEYS:
         print(f"  sampling {survey} ...", file=sys.stderr, flush=True)
         try:
             rows = (
@@ -139,7 +139,7 @@ def take_sample(n_objects: int, with_candidates: bool) -> dict:
 def summary_line(record: dict) -> str:
     """One-line digest for unattended runs — the journal does not need the JSON."""
     parts = []
-    for survey in ALL_TARGETS:
+    for survey in SURVEYS:
         entry = record.get("per_object", {}).get(survey, {})
         if "error" in entry:
             parts.append(f"{survey}=ERR")
@@ -239,7 +239,7 @@ def report(path: pathlib.Path, by_hour: bool, exclude_boot: bool) -> None:
     print(f"  pooling every object measured across all {len(records)} run{plural}")
     current = records[-1].get("constants", {})
     delay = _inter_object_delay()
-    for survey in ALL_TARGETS:
+    for survey in SURVEYS:
         # Pool raw timings from every run. Older records predating `raw` fall back
         # to their per-run median so early samples still count for something.
         values: list[float] = []
@@ -273,7 +273,7 @@ def report(path: pathlib.Path, by_hour: bool, exclude_boot: bool) -> None:
     cand = [r for r in records if r.get("candidates")]
     if cand:
         print(f"\nCandidate fetch (page_size={cand[-1].get('candidate_page_size')}):")
-        for survey in ALL_TARGETS:
+        for survey in SURVEYS:
             values = [
                 r["candidates"][survey] for r in cand
                 if r["candidates"].get(survey) is not None

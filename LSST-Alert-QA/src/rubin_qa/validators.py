@@ -12,7 +12,7 @@ def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
 
     Checks (ZTF):
       no_detections       — dets is empty
-      no_magstats         — ms is empty (always fires for LSST; expected)
+      no_magstats         — ms is empty (ZTF only — see below)
       ndet_lt_2           — fewer than 2 detections (unconfirmed)
       coordinates_missing — ra/dec null or absent in dets
       mag_null            — no usable magnitude (magpsf for ZTF, psfFlux for LSST)
@@ -32,7 +32,7 @@ def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
 
     if dets.empty:
         issues.append("no_detections")
-        if ms.empty:
+        if ms.empty and survey != "lsst":
             issues.append("no_magstats")
         if probs.empty:
             issues.append("no_classification")
@@ -42,7 +42,14 @@ def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
     if ndet < 2:
         issues.append("ndet_lt_2")
 
-    if ms.empty:
+    # LSST magstats do not exist to be missing: the multisurvey API raises
+    # NotImplementedError for every object, so this token fired on 100% of LSST
+    # rows. Any issue token makes build_qa_row return FLAG, so it forced every
+    # LSST object to FLAG and hid its real verdict — including the clean
+    # two-classifier PASS that LSST probabilities actually support. A condition
+    # that is always true of a survey describes the survey, not the object.
+    # Drop the "not implemented" case here when ALeRCE ships query_magstats.
+    if ms.empty and survey != "lsst":
         issues.append("no_magstats")
 
     for col in ("ra", "dec"):

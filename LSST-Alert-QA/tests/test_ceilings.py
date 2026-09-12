@@ -267,6 +267,44 @@ class TestForceSessionTimeout:
         assert len(sessions) >= 2
         assert all(getattr(s, "_rubin_qa_timeout", False) for s in sessions)
 
+    def test_no_module_holds_an_unpatched_client(self):
+        """
+        Any module that builds its own Alerce() instead of reusing client._client
+        gets a client the package left with no request timeout, and
+        _force_session_timeout never runs on it. profiler.py did exactly that and
+        went unnoticed because nothing imports it — so scan the whole package
+        rather than the modules we happen to remember.
+        """
+        import importlib
+        import pkgutil
+
+        from alerce.core import Alerce
+
+        import rubin_qa
+
+        found = []
+        for mod in pkgutil.iter_modules(rubin_qa.__path__):
+            module = importlib.import_module(f"rubin_qa.{mod.name}")
+            found += [
+                (f"rubin_qa.{mod.name}.{name}", value)
+                for name, value in vars(module).items()
+                if isinstance(value, Alerce)
+            ]
+
+        assert found, "no Alerce client found anywhere — has client.py moved?"
+        for label, client in found:
+            holders = [client] + [v for v in vars(client).values() if hasattr(v, "__dict__")]
+            sessions = [
+                h.session for h in holders
+                if isinstance(getattr(h, "session", None), requests.Session)
+            ]
+            assert sessions, f"{label}: holds no sessions"
+            unpatched = [s for s in sessions if not getattr(s, "_rubin_qa_timeout", False)]
+            assert not unpatched, (
+                f"{label}: {len(unpatched)}/{len(sessions)} sessions have no timeout — "
+                f"reuse client._client instead of constructing an Alerce here"
+            )
+
 
 class TestRunDeadline:
     """A stalled upstream must cut the run short but still report what it got."""

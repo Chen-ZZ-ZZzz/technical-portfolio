@@ -108,9 +108,30 @@ class TestLSST:
         issues = validate_completeness(_data(dets=dets, probs=probs_clean), survey="lsst")
         assert "rb_absent" in issues
 
-    def test_lsst_no_magstats_always_fires(self, lsst_dets, probs_clean):
-        """ms is always empty for LSST — no_magstats is expected/informational."""
+    def test_lsst_does_not_report_missing_magstats(self, lsst_dets, probs_clean):
+        """
+        ALeRCE raises NotImplementedError for LSST magstats on every object, so
+        this token used to fire on 100% of LSST rows — and because any issue makes
+        build_qa_row return FLAG, it forced every LSST object to FLAG regardless of
+        its classification. A condition always true of a survey is not a finding
+        about an object.
+        """
         issues = validate_completeness(
             _data(dets=lsst_dets, probs=probs_clean), survey="lsst"
         )
+        assert issues == []
+
+    def test_ztf_still_reports_missing_magstats(self, ztf_dets, probs_clean):
+        """The LSST carve-out must not blind the survey where it is a real fault."""
+        issues = validate_completeness(
+            _data(dets=ztf_dets, probs=probs_clean), survey="ztf"
+        )
         assert "no_magstats" in issues
+
+    def test_lsst_with_no_detections_still_reports_the_rest(self, probs_clean):
+        """Suppressing one structural token must not suppress genuine ones."""
+        issues = validate_completeness(
+            _data(dets=pd.DataFrame(), probs=probs_clean), survey="lsst"
+        )
+        assert "no_detections" in issues
+        assert "no_magstats" not in issues
