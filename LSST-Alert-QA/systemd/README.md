@@ -6,12 +6,19 @@ Two things fall out of that: `systemctl --user list-timers 'lsst-*'` and
 `journalctl -t 'lsst-*'` each sweep the whole set, and a tag seen in the journal names
 the unit to inspect without a lookup table.
 
-| unit | identifier |
-|---|---|
-| `lsst-sso-monitor.{service,timer}` | `lsst-sso-monitor` |
-| `lsst-pipeline-alerce.{service,timer}` | `lsst-pipeline-alerce` |
-| `lsst-latency-sample.{service,timer}` | `lsst-latency-sample` |
-| `lsst-pipeline-antares.{service,timer}` | `lsst-pipeline-antares` |
+| unit | identifier | status |
+|---|---|---|
+| `lsst-pipeline-alerce.{service,timer}` | `lsst-pipeline-alerce` | active |
+| `lsst-pipeline-antares.{service,timer}` | `lsst-pipeline-antares` | active |
+| `lsst-sso-monitor.{service,timer}` | `lsst-sso-monitor` | **retired 2026-08-18** |
+| `lsst-latency-sample.{service,timer}` | `lsst-latency-sample` | **retired 2026-09-01** |
+
+The two retired units answered their question and were disabled; only the two
+pipeline timers still fire. Their examples and setup sections are kept below as the
+record of how each was deployed and why it was stopped — treat them as history, not
+as something to enable. Both retirements are covered in the project README: the SSO
+monitor under "Bright Solar System Objects (SSO) Monitor", the sampler under
+"Broker Latency Sampling Campaign".
 
 Hyphens are safe here. The character is only special in path-derived units (`.mount`,
 `.automount`, `.swap`, where it encodes `/`) and in template instance names — none of
@@ -27,9 +34,11 @@ in the journal and hides the runs that produce none — a job that dies before i
 write (`nm-online` timing out, `uv` failing, a bad import, a full disk) leaves an
 empty log and no other trace.
 
-`lsst-sso-monitor` is the deliberate exception: it is the one unit running as a
-production service, and its `logs/sso_monitor.log` is read directly as the record of
-what the monitor saw each night, independent of journal retention.
+`lsst-sso-monitor` was the deliberate exception while it ran: its
+`logs/sso_monitor.log` was read directly as the record of what the monitor saw each
+night, independent of journal retention. That log is now a closed record — it is the
+source the 2026-08-17 audit reconstructed its test population from, since the loci
+that alerted were absent from the state file.
 
 ---
 
@@ -77,9 +86,16 @@ Things that catch people out:
 
 ---
 
-# Bright SSO Monitor Setup
+# Bright SSO Monitor Setup — retired 2026-08-18
 
-Implementation of daily systemd user timer that runs `antares_sso_monitor.py` and logs brightness alerts.
+> **Retired.** The unit ran daily from 2026-04-13 to 2026-08-17 (115 scans) and is
+> disabled. Its purpose is fulfilled: the monitor's premise was falsified rather than
+> retuned, and the audit that did so is the deliverable. Nothing further is learned by
+> continuing to run it, and the alerts it produced are known false positives. The
+> section below is kept as the deployment record. See "Bright Solar System Objects
+> (SSO) Monitor" in the project README for the finding.
+
+Implementation of daily systemd user timer that ran `antares_sso_monitor.py` and logged brightness alerts.
 
 ## Files
 
@@ -113,18 +129,31 @@ journalctl --user -u lsst-sso-monitor.service -n 50
 - `Persistent=true` runs a missed job on next boot.
 - `ExecStartPre=/bin/sleep 60` lets the network settle before the ANTARES query.
 - State file: `logs/bright_sso_state.json`, resolved against the script's own directory (not the CWD).
-- **The monitor is a documented negative result** — an ANTARES locus is a sky position, not an object, so it cannot track a mover, and every alert it raised was a stationary variable star or galaxy. See "Bright Solar System Objects (SSO) Monitor" in the project README before acting on anything this unit logs. It is left running as an experiment, not as a detector.
+- **The monitor is a documented negative result** — an ANTARES locus is a sky position, not an object, so it cannot track a mover, and every alert it raised was a stationary variable star or galaxy. See "Bright Solar System Objects (SSO) Monitor" in the project README before acting on anything this unit logged. It was run as an experiment, never as a detector, and the experiment is over.
 - `pipeline.py` confirms before long scans, but only on a TTY. Under systemd there is no stdin, so it logs the estimate to stderr and proceeds — the unit will not hang waiting for input. Pass `-y` if you want the prompt skipped when running the same command by hand.
 - Each run carries a deadline of 6× its own estimated duration. A run that stops early logs `WARN: ... Upstream or network is stalled` and still writes a partial CSV, so a truncated report in the log means the broker was unwell, not that the job was misconfigured.
 
 ---
 
-# Broker Latency Sampling Setup
+# Broker Latency Sampling Setup — retired 2026-09-01
 
-Hourly systemd user timer that runs `tools/sample_latency.py` and appends one record
-to `logs/latency_samples.jsonl`. Feeds the `SECONDS_PER_OBJECT` constants in
+> **Retired.** The timer ran from 2026-08-11 to 2026-09-01 and is disabled. Its
+> purpose is fulfilled: the campaign settled the `SECONDS_PER_OBJECT` constants
+> (each sits at or above its survey's p95, so no change was needed) and showed the
+> 17.0s ZTF figure that prompted the sampling to have been an episode, not a
+> baseline. Latency proved flat by hour and by weekday, so further hourly sampling
+> buys nothing. The section below is kept as the deployment record; re-enable the
+> pair only to re-measure after a broker change, and expect to run it for weeks
+> rather than days. See "Broker Latency Sampling Campaign" in the project README for
+> the numbers.
+
+Hourly systemd user timer that ran `tools/sample_latency.py` and appended one record
+to `logs/latency_samples.jsonl`. Fed the `SECONDS_PER_OBJECT` constants in
 `config.py`, which drive the runtime estimate, the run deadline, and the long-run
 confirm prompt.
+
+`tools/sample_latency.py` itself is **not** retired — `--report` still reads the
+collected `logs/latency_samples.jsonl`, and a manual run still appends to it.
 
 ## Files
 

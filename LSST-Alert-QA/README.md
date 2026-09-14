@@ -1,4 +1,4 @@
-# LSST/ZTF/ANTARES Alert Data Quality Pipeline
+# LSST Alert Data Quality Pipeline
 
 A data quality pipeline for LSST (and ZTF) alert data via the [ALeRCE][alerce link] and [ANTARES][antares link] brokers. Fetches objects, validates completeness, and produces a QA report with weighted classifier consensus.
 
@@ -24,17 +24,19 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
 
-It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden.
+It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden. Both of the investigative jobs in this repo — that monitor and the broker-latency sampler — have since been retired on purpose: each was run until it answered its question, then stopped rather than left ticking.
 
 ---
 
 ## Bright Solar System Objects (SSO) Monitor
 
-`antares_sso_monitor.py` is a stand-alone script which scans ANTARES daily for SSO loci that have suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
+> **Retired 2026-08-18** — ran daily for 115 scans, 2026-04-13 to 2026-08-17 (the last scan logged just after midnight on the 18th); the systemd timer is disabled. The audit below is the reason: the premise was falsified, so there was nothing left to learn from another night of scanning. Kept in the repo as the investigation, not as a running detector.
+
+`antares_sso_monitor.py` is a stand-alone script which scanned ANTARES daily for SSO loci that had suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
 > **Negative result — and the reason it is in this portfolio.** The premise does not hold: an ANTARES locus is a sky position, not an object, so it cannot track a moving target. Every alert this monitor raised was a stationary variable star or galaxy. The script is kept unfixed because the investigation is the deliverable: a production false-positive rate traced to an invalid design assumption, tested against independent ground truth, with the residual risk quantified instead of tuned away.
 
-First run defaults to 7-day look-back with empty magnitudes. Daily deployment automated by systemd user timer. Magnitude states of SSO loci from daily scan are stored in `logs/bright_sso_state.json`. Stores daily service log to `logs/sso_monitor.log`.
+First run defaults to 7-day look-back with empty magnitudes. Daily deployment was automated by a systemd user timer (`lsst-sso-monitor`, now disabled). Magnitude states of SSO loci from each scan were stored in `logs/bright_sso_state.json`, and the daily service log in `logs/sso_monitor.log` — the log the audit below had to reconstruct its test population from.
 
 ### Audit, 2026-08-17
 
@@ -427,25 +429,101 @@ every one. A test that passes against broken code is not coverage.
 named `lsst-<role>` so `systemctl --user list-timers 'lsst-*'` and
 `journalctl -t 'lsst-*'` sweep the whole set:
 
-| Unit | Cadence | Runs |
-|---|---|---|
-| `lsst-sso-monitor` | daily | `antares_sso_monitor.py` |
-| `lsst-pipeline-antares` | daily | `pipeline.py antares 256 -q` |
-| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 100` |
-| `lsst-latency-sample` | hourly, randomized | `tools/sample_latency.py --quick --quiet` |
+| Unit | Cadence | Runs | Status |
+|---|---|---|---|
+| `lsst-pipeline-antares` | daily | `pipeline.py antares 256 -q` | active |
+| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 100` | active |
+| `lsst-sso-monitor` | daily | `antares_sso_monitor.py` | **retired 2026-08-18** |
+| `lsst-latency-sample` | hourly, randomized | `tools/sample_latency.py --quick --quiet` | **retired 2026-09-01** |
+
+The two investigative units are done and disabled — the monitor because its premise
+was falsified, the sampler because it settled the constants it was collected for.
+Their `.example` files and setup instructions stay in `systemd/` as the deployment
+record; the scripts behind them still run by hand. Nothing in the repo re-enables
+them.
 
 Install: copy the pair, drop the `.example` suffix, replace `/path/to/...`, then
 `systemctl --user daemon-reload && systemctl --user enable --now <unit>.timer`.
 
 Every service carries the same sandboxing block (`ProtectSystem=strict` +
 `ReadWritePaths` on the project directory, syscall filter, no new privileges). Output
-goes to the journal; `lsst-sso-monitor` is the one exception, keeping its own
-`logs/sso_monitor.log` as the production record. See [`systemd/README.md`](systemd/README.md)
+goes to the journal; `lsst-sso-monitor` was the one exception, keeping its own
+`logs/sso_monitor.log` as the production record for as long as it ran. See
+[`systemd/README.md`](systemd/README.md)
 for per-unit rationale, the directive-by-directive breakdown, and the gotchas
 (`ReadWritePaths` is mandatory under `strict`; `ProtectHome` must stay unset for `uv`).
 
 The long-run confirm prompt only fires on a TTY — under systemd there is no stdin, so
 the estimate is logged to stderr and the run proceeds rather than hanging the unit.
+
+---
+
+## Broker Latency Sampling Campaign
+
+> **Concluded 2026-09-01** — 329 samples over 21 days; the hourly timer is retired. The constants it was collected to check turned out to be right, so nothing changed. That is the result, not the absence of one.
+
+`SECONDS_PER_OBJECT` drives the runtime estimate, the run deadline and the long-run
+confirm prompt. It was seeded on 2026-08-06 from a single afternoon's measurement,
+which put ZTF at 17.0s per object. A constant sized off one sitting is a guess; the
+campaign was run to find out whether it was a baseline or an episode.
+
+**Method.** `tools/sample_latency.py` appends one record per run to
+`logs/latency_samples.jsonl`, timing each client call directly with no retry wrapper.
+Collection was hourly with `RandomizedDelaySec=3600`, so each sample landed somewhere
+inside its hour rather than at the same minute of every hour — a fixed offset cannot
+separate time-of-day from load. Every individual object timing is kept, so `--report`
+pools across runs and sample size does not depend on how often anyone remembers to
+run it. Each record also stores the constants in force when it was taken, so changing
+them mid-campaign does not corrupt the history. Broker failures are recorded as
+samples rather than aborting the run.
+
+**Result — the constants stand.** Per-run medians, including the inter-object delay,
+which is what the constant has to cover:
+
+| survey | p50 | p95 | p99 | worst | `SECONDS_PER_OBJECT` |
+|---|---|---|---|---|---|
+| ztf | 3.38s | 3.76s | 3.84s | 4.31s | **3.7s** |
+| lsst | 2.19s | 2.38s | 2.50s | 2.71s | **2.4s** |
+| antares | 0.93s | 1.36s | 1.45s | 1.53s | **1.0s** |
+
+Each constant sits at or above its survey's p95, so a typical run finishes inside its
+own estimate and the deadline only trips on something genuinely stuck. **No change
+was made.**
+
+**The 17.0s figure was an episode.** It never recurred in 21 days of hourly sampling.
+It survives only as `DEFAULT_SECONDS_PER_OBJECT`, the fallback for a survey with no
+measurement — kept deliberately pessimistic, since an unmeasured broker is likelier
+to be slow than fast, and now explicitly a judgement call rather than a measurement.
+
+**Three hypotheses tested and dropped.** Latency is flat by hour (3.19-3.61s across
+the 19 hours sampled), flat by weekday, and free of collection bias (timer runs 3.34s
+vs. manual 3.41s) — so the hourly cadence, which existed to catch a diurnal pattern,
+was measuring something that is not there. Hours 02-06 are empty because the machine
+is off overnight and no run is ever issued then; that is a property of the schedule,
+not a gap in the result.
+
+**What the campaign did find** is that the broker swings on its own timetable: 12
+failed fetches across 329 runs. Eleven are ZTF `ReadTimeout` at the full 60s
+`REQUEST_TIMEOUT` — about 3.4% of ZTF runs — clustered 08-12→08-16 and 08-31 rather
+than spread evenly; the twelfth is a 2026-08-13 event where ZTF *and* LSST both
+returned `APIError: 500`, the only broker-wide blip in the window. At that rate a
+failure is a normal Tuesday, which is the argument for ceilings that degrade rather
+than abort: a run has to survive one and still write its CSV.
+
+It also priced the call that `SECONDS_PER_OBJECT` does not model at all — the one-off
+candidate fetch, the slowest single query in the system. ZTF `query_objects` runs a
+median 19.3s against the 60s `REQUEST_TIMEOUT`, with a worst case of 45.4s, and is no
+faster at `page_size=10` than at 100: server-side variance dominates and page size
+barely matters. That call, not the per-object ones, is what keeps `REQUEST_TIMEOUT`
+at 60s.
+
+**Re-measuring.** The unit examples are kept in `systemd/`; re-enable the pair after a
+broker change or when a fourth survey is added, and let it run for weeks rather than
+days — the useful signal here was the failure clustering, which a short run would have
+missed entirely. `uv run tools/sample_latency.py --report` still reads the collected
+log; `--by-hour` and `--exclude-boot` break it down. Note `logs/` is gitignored, so
+the samples are local-only. For a one-off, `tools/bench_latency.py` times 10 objects
+per survey over two rounds without the retry wrapper.
 
 ---
 
@@ -468,7 +546,7 @@ the estimate is logged to stderr and the run proceeds rather than hanging the un
 - Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines. All degrade rather than abort — a short CSV still gets written:
   - **Per request (60s)** — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own.
   - **Retry sleep (300s per run)** — shared budget; once spent, calls stop waiting between attempts.
-  - **Run deadline — sized to the job**, at 6× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (ztf 3.7s, lsst 2.4s, antares 1.0s, measured 2026-08-11); broker latency has moved by 4-5× week to week, so the 6× slack is what keeps a slow-but-healthy run from being truncated between re-measurements.
+  - **Run deadline — sized to the job**, at 6× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (ztf 3.7s, lsst 2.4s, antares 1.0s), each confirmed at or above its survey's p95 by the 2026-08/09 sampling campaign above. The 6× slack is not there for drift — latency proved stable — but to absorb one pathological object: the retry budget caps retry *sleep*, not socket time, so a worst-case ZTF object can block 3 calls × 4 attempts × 60s = 720s with only this deadline to stop it.
 - The alerce package sets no request timeout anywhere, so `client._force_session_timeout()` wraps all five `requests.Session` objects the Alerce client holds.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
 - `locus.lightcurve` is a separate, tidier 14-column frame holding detections *and* upper limits together: `ant_mag` is null on a non-detection, where `ant_maglim` carries the limit. `ant_mag_corrected` is the `magpsf_corr` analogue, `ant_passband` the `fid` analogue. Also on the locus: `timeseries` (~114 columns), `catalog_objects` (crossmatch), and ~20 precomputed `feature_*` entries in `properties`
