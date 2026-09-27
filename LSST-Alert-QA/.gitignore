@@ -35,3 +35,5 @@ htmlcov/
 # out by the sync script, not by git.
 # logs/ also covers bright_sso_state.json, which lives there
 logs/
+# on-demand catalogue tiles (Legacy Surveys DR10); static, re-downloadable
+cache/

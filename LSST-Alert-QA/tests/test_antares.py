@@ -19,7 +19,7 @@ import pytest
 import requests
 from antares_client.exceptions import AntaresException
 
-from rubin_qa.antares_client import (
+from rubin_qa.antares_api import (
     _api_call,
     _search,
     fetch_antares_candidates,
@@ -87,7 +87,7 @@ def patch_search(**attrs):
     mock = MagicMock()
     for name, value in attrs.items():
         setattr(mock, name, value)
-    return patch("rubin_qa.antares_client._search", return_value=mock), mock
+    return patch("rubin_qa.antares_api._search", return_value=mock), mock
 
 
 class TestApiCall:
@@ -100,7 +100,7 @@ class TestApiCall:
     def test_requests_exception_retries_then_fails(self, capsys):
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
             result, err = _api_call(fn, "ANT1")
         assert result is None
         assert "timed out" in err
@@ -113,7 +113,7 @@ class TestApiCall:
         """A missing ANT id answers 500, not 404 — indistinguishable from a fault."""
         fn = MagicMock(side_effect=AntaresException("500 server error"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_client.time.sleep"):
+        with patch("rubin_qa.antares_api.time.sleep"):
             result, err = _api_call(fn, "ANT_NOPE")
         assert result is None
         assert "500" in err
@@ -136,7 +136,7 @@ class TestFetchAntaresCandidates:
         fn = MagicMock(side_effect=requests.exceptions.ConnectionError("down"))
         fn.__name__ = "get_random_locus_ids"
         patcher, _ = patch_search(get_random_locus_ids=fn)
-        with patcher, patch("rubin_qa.antares_client.time.sleep"):
+        with patcher, patch("rubin_qa.antares_api.time.sleep"):
             result = fetch_antares_candidates(page_size=10)
         assert result == []
         assert "ERROR: fetch_antares_candidates" in capsys.readouterr().err
@@ -224,7 +224,7 @@ class TestFetchAntaresLocus:
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
         patcher, _ = patch_search(get_by_id=fn)
-        with patcher, patch("rubin_qa.antares_client.time.sleep"):
+        with patcher, patch("rubin_qa.antares_api.time.sleep"):
             data = fetch_antares_locus("ANT1")
         assert data["fetch_errors"][0].startswith("locus:")
         assert data["ms"].empty
@@ -258,13 +258,13 @@ class TestDeferredImport:
 
     def test_import_happens_at_call_time_not_module_import(self):
         """
-        rubin_qa.antares_client must import cleanly without the broker package,
+        rubin_qa.antares_api must import cleanly without the broker package,
         or importing reporting.py would break the ALeRCE path too.
         """
         import importlib
 
         with patch.dict(sys.modules, {"antares_client": None}):
-            importlib.reload(importlib.import_module("rubin_qa.antares_client"))
+            importlib.reload(importlib.import_module("rubin_qa.antares_api"))
 
 
 class TestFetchAntaresLocusDegradation:
@@ -510,10 +510,10 @@ class TestRunAntaresPipeline:
         }
 
     def test_one_row_per_locus_with_full_schema(self):
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         with patch.object(
-            antares_client, "fetch_antares_locus",
+            antares_api, "fetch_antares_locus",
             lambda lid: self._locus_data(["nuclear_transient"]),
         ):
             df = run_antares_pipeline(
@@ -526,25 +526,25 @@ class TestRunAntaresPipeline:
         assert set(df["status"]) == {"PASS"}
 
     def test_explicit_ids_skip_the_candidate_fetch(self):
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         fetch = MagicMock()
-        with patch.object(antares_client, "fetch_antares_candidates", fetch), \
+        with patch.object(antares_api, "fetch_antares_candidates", fetch), \
              patch.object(
-                 antares_client, "fetch_antares_locus",
+                 antares_api, "fetch_antares_locus",
                  lambda lid: self._locus_data(["dimmers"]),
              ):
             run_antares_pipeline(locus_ids=["ANT1"], inter_object_delay=0, quiet=True)
         fetch.assert_not_called()
 
     def test_candidate_fetch_used_when_no_ids_given(self):
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         with patch.object(
-            antares_client, "fetch_antares_candidates",
+            antares_api, "fetch_antares_candidates",
             MagicMock(return_value=["ANT7", "ANT8"]),
         ), patch.object(
-            antares_client, "fetch_antares_locus",
+            antares_api, "fetch_antares_locus",
             lambda lid: self._locus_data(["extragalactic"]),
         ):
             df = run_antares_pipeline(page_size=2, inter_object_delay=0, quiet=True)
@@ -556,10 +556,10 @@ class TestRunAntaresPipeline:
         writes no CSV and exits 1 on an empty frame, and a bare DataFrame() would
         break the column check on the way there.
         """
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         with patch.object(
-            antares_client, "fetch_antares_candidates", MagicMock(return_value=[])
+            antares_api, "fetch_antares_candidates", MagicMock(return_value=[])
         ):
             df = run_antares_pipeline(page_size=10, inter_object_delay=0, quiet=True)
         assert df.empty
@@ -567,7 +567,7 @@ class TestRunAntaresPipeline:
 
     def test_one_bad_locus_does_not_abort_the_run(self):
         """A 500 on one locus costs one FLAG row, not the whole daily report."""
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         def flaky(lid):
             if lid == "ANT2":
@@ -577,7 +577,7 @@ class TestRunAntaresPipeline:
                 }
             return self._locus_data(["nuclear_transient"])
 
-        with patch.object(antares_client, "fetch_antares_locus", flaky):
+        with patch.object(antares_api, "fetch_antares_locus", flaky):
             df = run_antares_pipeline(
                 locus_ids=["ANT1", "ANT2", "ANT3"],
                 inter_object_delay=0, quiet=True,
@@ -588,10 +588,10 @@ class TestRunAntaresPipeline:
 
     def test_inter_object_delay_paces_the_loop(self):
         """Rate-limit pacing is per locus, and 0 must mean no sleep at all."""
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         with patch.object(
-            antares_client, "fetch_antares_locus",
+            antares_api, "fetch_antares_locus",
             lambda lid: self._locus_data(["nuclear_transient"]),
         ), patch("rubin_qa.reporting.time.sleep") as mock_sleep:
             run_antares_pipeline(
@@ -605,10 +605,10 @@ class TestRunAntaresPipeline:
             mock_sleep.assert_not_called()
 
     def test_progress_output_suppressed_by_quiet(self, capsys):
-        from rubin_qa import antares_client
+        from rubin_qa import antares_api
 
         with patch.object(
-            antares_client, "fetch_antares_locus",
+            antares_api, "fetch_antares_locus",
             lambda lid: self._locus_data(["nuclear_transient"]),
         ):
             run_antares_pipeline(locus_ids=["ANT1"], inter_object_delay=0, quiet=True)

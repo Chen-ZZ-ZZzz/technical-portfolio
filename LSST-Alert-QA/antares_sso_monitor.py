@@ -6,7 +6,6 @@ since the last scan.
 State is stored in logs/bright_sso_state.json between runs.
 """
 
-import datetime
 import json
 import time
 from pathlib import Path
@@ -15,11 +14,12 @@ from requests.exceptions import ConnectionError, Timeout
 from elasticsearch.dsl import Search
 from antares_client.search import search
 
+from rubin_qa.config import now_mjd
+
 MAG_THRESHOLD = 15.0  # flag if brighter than this. adjust based on your interest
 DELTA_MAG_ALERT = (
     1.0  # flag if brightened by this much since last scan. 1 mag = ~ 2.5x flux increase
 )
-MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
 # Anchored to this script's directory, not the CWD: a run started elsewhere
 # would find no state, silently re-baseline to a 7-day look-back, and re-report
 # every known locus as new.
@@ -32,13 +32,6 @@ STELLAR_CATALOGS = {
     "tns_public_objects",        # astronomical transients, mostly supernovae
     "2mass_xsc",                 # 2MASS Extended Source Catalog
 }
-
-
-def now_mjd() -> float:
-    """Return the MJD of current time"""
-    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    return MJD_J2000 + (now - epoch).total_seconds() / 86400  # 86400s = 1 day
 
 
 def _load_state() -> dict:

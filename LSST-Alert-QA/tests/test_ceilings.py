@@ -196,23 +196,23 @@ class TestBudgetBoundsClientRetries:
         assert len(mock_sleep.call_args_list) == RETRY_ATTEMPTS - 1
 
     def test_antares_backoff_capped_by_budget(self):
-        from rubin_qa.antares_client import _api_call as antares_api_call
+        from rubin_qa.antares_api import _api_call as antares_api_call
 
         retry_budget.reset(12.0)
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
             for _ in range(5):
                 antares_api_call(fn, "ANT1")
         total = sum(c.args[0] for c in mock_sleep.call_args_list)
         assert total == pytest.approx(12.0)
 
     def test_antares_does_not_retry_programming_errors(self):
-        from rubin_qa.antares_client import _api_call as antares_api_call
+        from rubin_qa.antares_api import _api_call as antares_api_call
 
         fn = MagicMock(side_effect=ValueError("bug, not a fault"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
             result, err = antares_api_call(fn, "ANT1")
         mock_sleep.assert_not_called()
         assert fn.call_count == 1
@@ -409,7 +409,7 @@ class TestRunDeadline:
         assert len(df) == 40
 
     def test_antares_run_stops_at_deadline(self):
-        from rubin_qa import antares_client, reporting
+        from rubin_qa import antares_api, reporting
 
         clock = FakeClock(step=10.0)
 
@@ -418,7 +418,7 @@ class TestRunDeadline:
             return _empty_antares_data()
 
         with patch.object(reporting.time, "monotonic", clock), \
-             patch.object(antares_client, "fetch_antares_locus", slow_locus):
+             patch.object(antares_api, "fetch_antares_locus", slow_locus):
             df = reporting.run_antares_pipeline(
                 locus_ids=[f"ANT{i}" for i in range(50)],
                 inter_object_delay=0,
@@ -428,7 +428,7 @@ class TestRunDeadline:
         assert 0 < len(df) < 50
 
     def test_antares_derives_deadline_from_deduplicated_count(self):
-        from rubin_qa import antares_client, reporting
+        from rubin_qa import antares_api, reporting
 
         # 4 loci → below the floor, so the derived deadline is DEADLINE_FLOOR.
         clock = FakeClock(step=DEADLINE_FLOOR / 2)
@@ -438,7 +438,7 @@ class TestRunDeadline:
             return _empty_antares_data()
 
         with patch.object(reporting.time, "monotonic", clock), \
-             patch.object(antares_client, "fetch_antares_locus", slow_locus):
+             patch.object(antares_api, "fetch_antares_locus", slow_locus):
             df = reporting.run_antares_pipeline(
                 locus_ids=[f"ANT{i}" for i in range(4)],
                 inter_object_delay=0,

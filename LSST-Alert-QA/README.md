@@ -355,11 +355,14 @@ src/rubin_qa/
     config.py          — constants and thresholds
     retry_budget.py    — run-wide retry sleep budget, shared by both clients
     client.py          — ALeRCE API wrapper with retry
-    antares_client.py  — ANTARES API wrapper
+    antares_api.py     — ANTARES API wrapper
     validators.py      — validate_completeness, validate_antares
     classifier.py      — classify_object (weighted consensus), classify_antares (tags)
     reporting.py       — QA row assembly and pipeline orchestration (ALeRCE + ANTARES)
     profiler.py        — single-object diagnostic tool (all three surveys, own CLI)
+    photometry.py      — broker-neutral photometry records (ANTARES, ALeRCE)
+    sky_catalog.py     — Legacy Surveys DR10 crossmatch, cached tiles
+    transient_monitor.py — new-transient scan of a sky cone (own CLI)
     __main__.py        — CLI entry point
 pipeline.py            — backwards-compatible shim
 tests/                 — pytest, mock data only
@@ -392,7 +395,7 @@ All tests use mock data — no live API calls.
 **ANTARES coverage.** The ALeRCE path had unit tests from the start; the ANTARES
 path had only the ceiling and CLI tests, which drive the loop but never the locus
 model inside it. `test_antares.py` closes that: 53 tests taking
-`src/rubin_qa/antares_client.py` from 87% to 100% statement coverage, and covering
+`src/rubin_qa/antares_api.py` from 87% to 100% statement coverage, and covering
 `validate_antares`, `classify_antares`, `build_antares_qa_row` and
 `run_antares_pipeline` alongside it. The cases are chosen where ANTARES *differs*
 from ALeRCE and a wrong answer would be silent rather than loud:

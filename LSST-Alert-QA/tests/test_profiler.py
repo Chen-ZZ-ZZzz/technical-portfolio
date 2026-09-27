@@ -173,8 +173,8 @@ class TestProfileAntares:
         search = MagicMock()
         search.get_by_id.return_value = locus
         search.get_by_ztf_object_id.return_value = locus
-        with patch("rubin_qa.antares_client._search", return_value=search), \
-             patch("rubin_qa.antares_client._api_call",
+        with patch("rubin_qa.antares_api._search", return_value=search), \
+             patch("rubin_qa.antares_api._api_call",
                    lambda fn, *a, **k: (fn(*a, **k), None)):
             profiler.object_profile(locus_id, survey="antares")
         return search
@@ -222,8 +222,8 @@ class TestProfileAntares:
 
     def test_missing_locus_is_reported_not_raised(self, capsys):
         search = MagicMock()
-        with patch("rubin_qa.antares_client._search", return_value=search), \
-             patch("rubin_qa.antares_client._api_call",
+        with patch("rubin_qa.antares_api._search", return_value=search), \
+             patch("rubin_qa.antares_api._api_call",
                    lambda fn, *a, **k: (None, "locus:500")):
             profiler.object_profile("ANT1", survey="antares")
         assert "Locus unavailable: locus:500" in capsys.readouterr().out

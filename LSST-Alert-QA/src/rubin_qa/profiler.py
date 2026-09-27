@@ -166,7 +166,7 @@ def _profile_alerce(oid: str, survey: str) -> None:
 
 def _profile_antares(locus_id: str) -> None:
     """ANTARES keeps detections, upper limits and corrected mags in one frame."""
-    from .antares_client import _api_call as _antares_call, _search
+    from .antares_api import _api_call as _antares_call, _search
 
     search = _search()
     fetch = (

@@ -1,3 +1,4 @@
+import datetime
 import os
 import pathlib
 
@@ -22,6 +23,17 @@ PROJECT_ROOT = pathlib.Path(
     os.environ.get("RUBIN_QA_ROOT") or pathlib.Path(__file__).resolve().parents[2]
 )
 REPORTS_DIR  = PROJECT_ROOT / "reports"
+
+# Time reference shared by the ANTARES monitors (antares_sso_monitor.py,
+# antares_sn_monitor.py), whose queries and state files are in MJD.
+MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
+
+
+def now_mjd() -> float:
+    """Return the MJD of current time"""
+    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return MJD_J2000 + (now - epoch).total_seconds() / 86400  # 86400s = 1 day
 
 # Classification QA thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.90   # weighted consensus → clean label, no flag

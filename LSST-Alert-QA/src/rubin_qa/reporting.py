@@ -271,7 +271,7 @@ def run_antares_pipeline(
                      job. Retry backoff is capped separately by the retry budget.
     Returns a DataFrame (one row per locus) with the same schema as run_pipeline.
     """
-    from .antares_client import fetch_antares_candidates, fetch_antares_locus
+    from .antares_api import fetch_antares_candidates, fetch_antares_locus
 
     retry_budget.reset()
 
