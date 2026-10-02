@@ -1,0 +1,119 @@
+# Host-matching validation - tools/host_match_check.py report, 2026-10-01T09:59:39+00:00
+# Catalogues: ls_dr10+sga2020. Settings: HOST_DLR_MAX 4, ATLAS_RADIUS sma_moment, search 30", atlas margin 1 deg, gap radius 30"
+# Scores 'known': 2026-10-01T09:55:21+00:00
+# Scores 'randoms': 2026-10-01T09:59:37+00:00
+# Fingerprint (sha256, 12 hex) of what decides the scores:
+#   sky_catalog.py                       df62dfa8e3e9
+#   host_match_check.py                  94549afda805
+#   transient_monitor.py (footprints)    a0873b818b0a
+#   sne.jsonl (TNS sample)               f4d3efd0131d
+#   DES-SN5YR_DES_HEAD.FITS.gz           4396d427c1a1
+
+Catalogue gap (DR10 BAILOUT within the 30" step-1 area, or no brick), excluded from every score:
+  DES pairs: C 0/28, D 0/0, ecdfs 4/144
+  TNS pairs: C 0/1, D 0/17, ecdfs 0/3
+  random:    C 0/1000, D 0/1000, ecdfs 0/1000
+  no DR10 source within 15" yet no BAILOUT: 1, against 3.1 expected by chance from each position's own density (chance voids, not catalogue faults)
+    C (34.90939, -9.44692): 15 sources within 30", maskbits none set
+
+Suspect record, excluded from every score: TNS 2021adwh - TNS host redshift 0.0066 vs SN redshift 0.15; reported host 14.7" away, point-like in DR10
+Known-host pairs by status (only ok* are scored; host_not_in_legacy for DES = below Legacy depth, catalogue_hole_at_host = DR10 hole, not depth):
+  DES: ok 145, host_is_point_source 14, host_not_in_legacy 8, ok_atlas_piece 1
+  TNS: ok 20
+Self-check against sky_catalog.best_host: 0 disagreements over 3188 positions
+
+step 1 only, 30" (before the fix)
+  d_DLR <=   DES: agree  other  none   TNS: ok wrong orph   random gets a host:      C       D   ecdfs     all
+       1.0          33%     6%   61%        13     0    7                        0.7%    0.7%    1.6%    1.0%
+       1.5          55%     9%   36%        17     0    3                        1.6%    1.9%    3.0%    2.2%
+       2.0          72%    11%   17%        18     0    2                        3.3%    3.3%    3.7%    3.4%
+       2.5          78%    11%   11%        18     0    2                        5.2%    6.2%    5.7%    5.7%
+       3.0          84%    12%    5%        18     0    2                        7.2%    8.2%    7.7%    7.7%
+       4.0          86%    12%    1%        18     0    2                       10.7%   15.2%   14.2%   13.4%
+       5.0          88%    12%    0%        18     0    2                       18.0%   23.0%   21.6%   20.9%
+       6.0          88%    12%    0%        18     0    2                       24.6%   29.5%   27.5%   27.2%
+       8.0          88%    12%    0%        18     0    2                       38.8%   42.1%   40.1%   40.3%
+
+two-step, atlas radius sma_moment
+  d_DLR <=   DES: agree  other  none   TNS: ok wrong orph   random gets a host:      C       D   ecdfs     all
+       1.0          33%     6%   61%        15     0    5                        0.8%    0.7%    1.6%    1.0%
+       1.5          55%     9%   36%        19     0    1                        2.2%    1.9%    3.0%    2.4%
+       2.0          72%    11%   17%        20     0    0                        4.4%    3.4%    3.7%    3.8%
+       2.5          78%    11%   11%        20     0    0                        6.5%    6.5%    5.9%    6.3%
+       3.0          84%    12%    5%        20     0    0                        9.0%    8.6%    7.9%    8.5%
+       4.0          86%    12%    1%        20     0    0                       13.5%   16.1%   14.9%   14.8%
+       5.0          88%    12%    0%        20     0    0                       21.7%   24.4%   24.3%   23.5%
+       6.0          88%    12%    0%        20     0    0                       29.1%   31.2%   30.9%   30.4%
+       8.0          88%    12%    0%        20     0    0                       44.2%   45.3%   45.5%   45.0%
+
+two-step, atlas radius shape_r
+  d_DLR <=   DES: agree  other  none   TNS: ok wrong orph   random gets a host:      C       D   ecdfs     all
+       1.0          32%     6%   62%        12     0    8                        0.5%    0.6%    1.6%    0.9%
+       1.5          54%     9%   37%        17     0    3                        1.5%    1.7%    2.7%    2.0%
+       2.0          71%    11%   18%        18     0    2                        3.0%    3.1%    3.3%    3.1%
+       2.5          77%    11%   12%        20     0    0                        5.0%    5.7%    5.1%    5.3%
+       3.0          83%    12%    5%        20     0    0                        7.1%    7.7%    7.0%    7.3%
+       4.0          86%    13%    1%        20     0    0                       11.1%   14.7%   13.8%   13.2%
+       5.0          87%    13%    0%        20     0    0                       19.2%   22.6%   21.2%   21.0%
+       6.0          87%    13%    0%        20     0    0                       26.0%   29.4%   27.4%   27.6%
+       8.0          87%    13%    0%        20     0    0                       40.5%   42.2%   40.2%   41.0%
+
+What step 2 changes, at d_DLR <= 4 (baseline: step 1 only, 30" (before the fix); the baseline sets nothing):
+  footprint  rescued  broken  other    random newly hosted (cost)
+  C                0       0      0            28 of  1000 (2.8%)
+  D                0       0      0             9 of  1000 (0.9%)
+  ecdfs            2       0      0             7 of  1000 (0.7%)
+    rescued  TNS ecdfs  2025zi     orphan  -> correct  pick sep 123.46" d_DLR 0.703 (atlas galaxy)
+    rescued  TNS ecdfs  2023cr     orphan  -> correct  pick sep 35.6" d_DLR 0.75 (atlas galaxy)
+
+point_source before host, at d_DLR <= 4: known-host pairs whose label changes (a star-free PSF within 1")
+  4 of 166 scored pairs
+    DES ecdfs 1289973: was correct
+    DES ecdfs 1332279: was correct
+    DES ecdfs 1336662: was correct
+    DES ecdfs 1340454: was correct
+  random positions with a star-free PSF as the nearest source within 1": C 1.40%, D 2.60%, ecdfs 2.10%
+
+If host ran before point_source: of the 12 PSF-typed hosts within 1", 4 would get an extended galaxy as DLR host (a wrong host); point_source first keeps them, and relabels the 4 above
+    DES ecdfs 1323773: PSF host at 0.71", DLR pick at 3.23" d_DLR 1.874
+    DES ecdfs 1933271: PSF host at 0.57", DLR pick at 7.57" d_DLR 3.266
+    DES ecdfs 1289656: PSF host at 0.78", DLR pick at 3.67" d_DLR 1.768
+    DES ecdfs 1334879: PSF host at 0.44", DLR pick at 6.14" d_DLR 1.968
+
+Compact-host rule (measured, dropped from production), at d_DLR <= 4:
+  hit side: 14 reported hosts typed PSF in DR10, separations: 0.1", 0.3", 0.3", 0.4", 0.4", 0.5", 0.5", 0.6", 0.7", 0.8", 0.9", 0.9", 1.3", 3.9"
+    r_c  PSF hosts within  picked as compact host  random: compact host      C        D    ecdfs
+   1.5"         13/14                   0/14                       2.0%   1.8%     1.9%     2.3%
+   2.0"         13/14                   0/14                       4.5%   4.2%     4.2%     5.2%
+   2.5"         13/14                   0/14                       7.5%   6.7%     7.6%     8.1%
+   3.0"         13/14                   0/14                      10.4%   9.0%    10.8%    11.4%
+   4.0"         14/14                   1/14                      16.8%  14.6%    18.3%    17.6%
+   5.0"         14/14                   1/14                      25.8%  21.3%    28.0%    28.0%
+  all known-host pairs with the (dropped) compact rule at r_c = 3" (scored pairs plus PSF-typed hosts):
+    DES: correct 121, wrong 19, point_source 16, orphan 3, stellar 1
+    TNS: correct 20
+
+DES hosts: our d_DLR (production variant) against DES's HOSTGAL_DDLR
+  n=143  ratio ours/DES median 1.39 (16-84%: 0.84-3.12)
+
+TNS hosts, production variant:
+  C      2022xjk    NGC0873                      ok                     true d_DLR  0.083  pick d  0.083 = host
+  D      2020aciz   SDSS J100321.72+025020.2     ok                     true d_DLR  0.554  pick d  0.554 = host
+  D      2021bwv    UGC05487                     ok                     true d_DLR   0.21  pick d   0.21 = host
+  D      2023dyl    PGC029118                    ok                     true d_DLR  0.233  pick d  0.233 = host
+  D      2024xnt    PGC1153651                   ok                     true d_DLR   0.92  pick d   0.92 = host
+  D      2025aot    PGC1240454                   ok                     true d_DLR  1.117  pick d  1.117 = host
+  D      2025aqn    SDSS J095249.59+033143.7     ok                     true d_DLR  1.323  pick d  1.323 = host
+  D      2025mbp    LEDA 1186323                 ok                     true d_DLR  0.341  pick d  0.341 = host
+  D      2025znk    PGC1152964                   ok                     true d_DLR  0.635  pick d  0.635 = host
+  D      2026euq    SDSS J095520.96+031245.4     ok                     true d_DLR   1.49  pick d   1.49 = host
+  D      2026evy    PGC1152964                   ok                     true d_DLR  0.401  pick d  0.401 = host
+  D      2026ezw    SDSS J095832.59+011610.2     ok                     true d_DLR  0.854  pick d  0.854 = host
+  D      2026fbm    SDSS J100007.69+030126.8     ok                     true d_DLR  1.509  pick d  1.509 = host
+  D      2026fgl    2MASXJ09565234%2B0328119     ok                     true d_DLR  0.065  pick d  0.065 = host
+  D      2026gzf    PGC1165398                   ok                     true d_DLR  0.135  pick d  0.135 = host
+  D      2026ivl    SDSS J095353.78+014308.4     ok                     true d_DLR  0.922  pick d  0.922 = host
+  D      2026mza    SDSS J100439.08+023025.9     ok                     true d_DLR  1.184  pick d  1.184 = host
+  ecdfs  2020acmi   WISEA J033840.45-271150.1    ok                     true d_DLR  0.914  pick d  0.914 = host
+  ecdfs  2023cr     ESO419-003                   ok                     true d_DLR   0.75  pick d   0.75 = host
+  ecdfs  2025zi     NGC1398                      ok                     true d_DLR  0.703  pick d  0.703 = host

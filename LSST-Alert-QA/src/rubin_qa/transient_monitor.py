@@ -21,12 +21,18 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
   rapid_rise >= 1 mag within 3 days, any age; an old object doing it is
              re_brightening. Ordinary SNe are slower: that is what rising is for.
   unbracketed  recent onset, nothing to bracket it: parked, re-judged each run
-  classify   DR10 locally (sky_catalog.py): host -> new_candidate,
-             AGN -> agn_flare, nothing -> orphan, point-like -> point_source
+  classify   DR10 locally (sky_catalog.py). The sky context alone decides the
+             category, whatever the path: host -> host, nothing -> orphan,
+             point-like within 1" -> point_source, Gaia star -> stellar, catalogue
+             gap or no catalogue -> unchecked; WISE AGN colours on the matched
+             source within 1" -> agn, on a host farther out -> a context note.
+             The path (bracketed, rising, rapid_rise, re_brightening) is the
+             confidence label: a report reads "host · rising"
   report     broker tags, classifications, catalogue matches and TNS are
              printed, never filtered on
 
-Each survey object is reported once per condition it reaches. State is keyed
+Each survey object is reported again whenever its (category, path) pair is
+new: a new path, or a new category (unchecked becoming a real verdict). State is keyed
 on survey IDs, in logs/transient_monitor_<footprint>.json.
 
     python -m rubin_qa.transient_monitor --footprint D --as-of 2026-04-15 --dry-run
@@ -80,6 +86,12 @@ MIN_DETECTIONS = 3  # per survey object; filters noise, NOT asteroids (MIN_SPAN_
 # replace the ID check: the 61st locus was two different asteroids crossing
 # 8 days apart, which only the ID catches.
 # Evidence: reports/asteroid_probe_20260927.csv, via tools/asteroid_probe.py.
+# Since 2026-10-01 this is a precondition of every path to a report (new, rising,
+# rapid rise), not only of "new": rising could pass on one night of detections plus
+# brighter forced photometry, and rapid_rise on two detections the same night. The
+# cost is a genuine transient reported on its second night instead of its first. It
+# also makes the replay's candidate cut (detection span) lossless by definition: the
+# span only grows, so an object below it today was below it at every replayed date.
 MIN_SPAN_DAYS = 0.5
 MIN_ABS_GAL_LAT = 20.0  # |b| below this: dust, crowding, stellar variables
 RAPID_RISE_MAG = 1.0  # kilonova-like: >= 1 mag brighter within RAPID_RISE_DAYS
@@ -111,14 +123,28 @@ NOT_NEW_REASON = {
     "too_few_detections": "too_few_detections",
     "single_night": "single_night",
 }
-NEW_CATEGORY = {
-    "host": "new_candidate", "agn": "agn_flare", "none": "orphan",
-    "point_source": "point_source", "stellar": "stellar_flare", "unavailable": "unchecked",
+# The decision table (user's design, 2026-10-01). Two separate axes:
+#   sky context - what the object sits on: decides the category, whatever the path
+#   path        - why it is believed new (bracketed, rising, rapid_rise) or that an old
+#                 object woke up (re_brightening): the confidence label, Candidate.conditions
+# Every sky context leads to a visible category: no "dropped" cell, since a silently
+# dropped object (a real transient wrongly matched to a foreground star) cannot be audited.
+# A verdict/flag combination missing here raises instead of falling through; the tests
+# enumerate every (path, sky context) pair. Names claim only the sky: "new_candidate",
+# "agn_flare" and "stellar_flare" claimed a path too (the stars it caught rose over up
+# to two weeks: stellar variability, not flares).
+SKY_CATEGORY = {
+    "host": "host",
+    "host+agn_host": "host",  # AGN colours of a host farther than 1": a note; an SN in an AGN host's disk is no AGN event
+    "host+agn_nuclear": "agn",
+    "point_source": "point_source",
+    "point_source+agn_nuclear": "agn",
+    "none": "orphan",
+    "stellar": "stellar",
+    "unavailable": "unchecked",
 }
-CATEGORY_ORDER = (
-    "new_candidate", "agn_flare", "orphan", "point_source", "stellar_flare", "unchecked",
-    "rising", "re_brightening",
-)
+CATEGORY_ORDER = ("host", "agn", "orphan", "point_source", "stellar", "unchecked")
+PATHS = ("bracketed", "rising", "rapid_rise", "re_brightening")
 
 
 @dataclass
@@ -143,7 +169,7 @@ class Rise:
 class Candidate:
     obj: SurveyObject
     gal_b: float
-    category: str  # one of CATEGORY_ORDER
+    category: str  # one of CATEGORY_ORDER: the sky context
     conditions: list[str]
     onset: NewVerdict
     rise: Rise | None
@@ -208,6 +234,11 @@ def detections(points: list[PhotPoint]) -> list[PhotPoint]:
     return sorted((p for p in points if p.detected and _finite(p.flux)), key=lambda p: p.mjd)
 
 
+def spans_nights(first_det_mjd: float, last_det_mjd: float) -> bool:
+    """Detections on more than one night: required for every report, and the replay's candidate cut."""
+    return last_det_mjd - first_det_mjd >= MIN_SPAN_DAYS
+
+
 def quiet_points(points: list[PhotPoint]) -> list[tuple[float, float]]:
     """(mjd, depth) of epochs where the source was not detected; depth = QUIET_SIGMA * flux_err."""
     out = []
@@ -255,7 +286,7 @@ def judge_new(
         v.code = "old"
     elif len(dets) < min_detections:
         v.code = "too_few_detections"
-    elif dets[-1].mjd - first.mjd < MIN_SPAN_DAYS:
+    elif not spans_nights(first.mjd, dets[-1].mjd):
         v.code = "single_night"
     if v.code:
         return v
@@ -353,6 +384,14 @@ def history_context(obj: SurveyObject, associates: list[SurveyObject], since_mjd
     return flags
 
 
+def sky_context(match: sky_catalog.Crossmatch) -> str:
+    """The decision table's sky key: the verdict plus any AGN flag on the assigned source."""
+    key = match.verdict + "".join(f"+{f}" for f in match.flags if f.startswith("agn_"))
+    if key not in SKY_CATEGORY:
+        raise ValueError(f"sky context missing from the decision table: {match.verdict!r} with flags {match.flags}")
+    return key
+
+
 def evaluate(
     obj: SurveyObject,
     now: float,
@@ -369,8 +408,11 @@ def evaluate(
         return Evaluation(reason="galactic_plane")
     if obj.sso_id:
         return Evaluation(reason="solar_system")
-    if not detections(obj.points):
+    dets = detections(obj.points)
+    if not dets:
         return Evaluation(reason="no_photometry" if obj.fetch_errors else "no_detections")
+    if not spans_nights(dets[0].mjd, dets[-1].mjd):  # every path, rising and rapid rise included
+        return Evaluation(reason="single_night")
 
     old_ids = [obj.survey_object_id] if obj.survey == "ztf" and ztf_id_is_old(obj.survey_object_id, since_mjd) else []
     extra = [q for a in associates if a.survey == "ztf" for q in quiet_points(a.points)] if obj.survey == "lsst" else None
@@ -384,20 +426,20 @@ def evaluate(
     if v.status == NOT_NEW and not moving:
         return Evaluation(reason=NOT_NEW_REASON.get(v.code, v.code))
 
-    match = classify(obj.ra, obj.dec)
-    if match.verdict == "stellar" and not moving:
-        return Evaluation(reason="stellar")
     parked = v if v.status == UNBRACKETED else None
     if v.status == UNBRACKETED and not moving:
         return Evaluation(reason="unbracketed", parked=parked)
 
+    match = classify(obj.ra, obj.dec)
+    category = SKY_CATEGORY[sky_context(match)]
     context = history_context(obj, associates, since_mjd)
+    if "agn_host" in match.flags:
+        context.append("host has WISE AGN colours")
+    moves = (["rising"] if rise else []) + (["rapid_rise"] if rapid_hit else [])
     if v.status == NEW:
-        category = NEW_CATEGORY[match.verdict]
-        conditions = [category] + (["rising"] if rise else []) + (["rapid_rise"] if rapid_hit else [])
+        conditions = ["bracketed"] + moves
     else:
-        category = "rising" if recent else "re_brightening"
-        conditions = ((["rising"] if rise else []) + (["rapid_rise"] if rapid_hit else [])) if recent else ["re_brightening"]
+        conditions = moves if recent else ["re_brightening"]
         if parked:
             context.append(f"onset not bracketed ({parked.code}), parked")
     return Evaluation(
@@ -488,8 +530,8 @@ def gather(cone: Cone, now: float, since_mjd: float, until_mjd: float | None, mi
 # ------------------------------------------------------------------ state + report
 
 
-def state_file(name: str, replay: bool) -> Path:
-    return STATE_DIR / f"transient_monitor_{name}{'_replay' if replay else ''}.json"
+def state_file(name: str) -> Path:
+    return STATE_DIR / f"transient_monitor_{name}.json"
 
 
 def _load_state(path) -> dict:
@@ -535,7 +577,7 @@ def update_parked(prev: dict, parked_now: dict, seen: set[str], since_mjd: float
 
 def _print_candidate(c: Candidate, new_conditions: list[str]) -> None:
     o, v = c.obj, c.onset
-    print(f"{o.key}  [{', '.join(c.conditions)}]  new: {', '.join(new_conditions)}")
+    print(f"{o.key}  {c.category} · {', '.join(c.conditions)}  new: {', '.join(new_conditions)}")
     print(f"  ra={o.ra:.5f}  dec={o.dec:.5f}  b={c.gal_b:.1f}")
     onset = f"first detection {_date(v.first_det_mjd)} (MJD {v.first_det_mjd:.2f}), {v.n_det} detections"
     if v.status == NEW:
@@ -569,39 +611,130 @@ def _add_tns(c: Candidate) -> None:
             c.obj.fetch_errors.append(f"tns: {e}")
 
 
+def footprint_classifier(cone: Cone):
+    """
+    sky_catalog.classify bound to the footprint's Siena Galaxy Atlas (step 2 of the host
+    search), loaded on the first DR10 lookup: one query per footprint and catalogue
+    version, then from the cache, with the footprint's DR10 brick list for the
+    catalogue-gap check. If either cannot be loaded the run goes on without it: it says
+    so once, and every crossmatch made without it says so too, so an orphan from an
+    outage is never mistaken for a real one.
+    """
+    loaded: dict = {}
+
+    def classify(ra: float, dec: float):
+        if "atlas" not in loaded:
+            try:
+                loaded["atlas"] = sky_catalog.footprint_atlas(cone)
+            except sky_catalog.CatalogError as e:
+                loaded["atlas"] = None
+                print(f"{WARN_PREFIX}Siena Galaxy Atlas unavailable ({e}): hosts searched within "
+                      f'{sky_catalog.SEARCH_RADIUS_ARCSEC:g}" only this run', file=sys.stderr)
+            try:
+                loaded["bricks"] = sky_catalog.footprint_bricks(cone)
+            except sky_catalog.CatalogError as e:
+                loaded["bricks"] = None
+                print(f"{WARN_PREFIX}DR10 brick list unavailable ({e}): catalogue gaps not checked this run",
+                      file=sys.stderr)
+        bricks = loaded["bricks"]
+        coverage = (lambda r, d: sky_catalog.catalogue_gap(r, d, bricks)) if bricks is not None else None
+        xm = sky_catalog.classify(ra, dec, atlas=loaded["atlas"], coverage=coverage)
+        if loaded["atlas"] is None:
+            xm.evidence.append("atlas unavailable: large hosts not searched")
+        if bricks is None:
+            xm.evidence.append("catalogue gaps not checked")
+        return xm
+
+    return classify
+
+
+@dataclass
+class DayResult:
+    """One judged day: what is new to report, and what the state now holds."""
+    candidates: list[Candidate]
+    alerts: list[tuple[Candidate, list[str]]]  # (candidate, paths not reported before under its category)
+    rejected: Counter
+    parked: dict
+    newly_parked: list[str]
+    resolved: list[str]
+    expired: list[str]
+
+
+def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, classify,
+              bracket_days: float = BRACKET_DAYS, min_detections: int = MIN_DETECTIONS,
+              context: list[SurveyObject] = ()) -> DayResult:
+    """
+    Judge every survey object as of `now`, against and into `state` ({"reported", "parked"}).
+    The live scan runs it once per run; the replay once per simulated day, on light curves
+    sliced to that day, so both judge with the same code. `context` objects take part in
+    association only (the replay's ZTF neighbours, there to bracket LSST onsets) and are
+    never judged themselves.
+    """
+    links = associate(list(objs) + list(context))
+    candidates: list[Candidate] = []
+    parked_now: dict = {}
+    rejected: Counter = Counter()
+    for o in objs:
+        ev = evaluate(o, now, since, links[o.key], bracket_days, min_detections, classify)
+        if ev.parked is not None:
+            parked_now[o.key] = {"survey": o.survey, "first_det_mjd": ev.parked.first_det_mjd,
+                                 "code": ev.parked.code}
+        if ev.candidate is None:
+            rejected[ev.reason] += 1
+        else:
+            candidates.append(ev.candidate)
+
+    prev_parked = state["parked"]
+    parked, resolved, expired = update_parked(prev_parked, parked_now, {o.key for o in objs}, since, now)
+    reported = state["reported"]
+    alerts = []
+    for c in candidates:
+        k = c.obj.key
+        if k in resolved:
+            c.context.append(f"was parked since {_date(prev_parked[k]['parked_mjd'])}")
+        prev = reported.get(k, {})
+        # reported again when either axis changes: a new path, or a new category
+        seen = {tuple(p) for p in prev.get("pairs", [])}
+        new_conditions = [x for x in c.conditions if (c.category, x) not in seen]
+        if new_conditions:
+            alerts.append((c, new_conditions))
+        reported[k] = {"first_reported_mjd": prev.get("first_reported_mjd", now), "category": c.category,
+                       "pairs": sorted(seen | {(c.category, x) for x in c.conditions})}
+    newly_parked = sorted(k for k in parked_now if k not in prev_parked)
+    state["parked"] = parked
+    return DayResult(candidates, alerts, rejected, parked, newly_parked, resolved, expired)
+
+
 def scan(
     name: str,
     cone: Cone,
     lookback_days: float = LOOKBACK_DAYS,
     min_detections: int = MIN_DETECTIONS,
     bracket_days: float = BRACKET_DAYS,
-    as_of_mjd: float | None = None,
     dry_run: bool = False,
     use_alerce: bool = True,
 ) -> int:
     """
     Scan the cone once, report survey objects reaching a condition not reported
-    before, park those whose onset cannot be bracketed yet. --as-of replays a
-    past date: nothing observed after it is used. Returns a process exit code.
+    before, park those whose onset cannot be bracketed yet. Past dates are not
+    scanned here but replayed (replay.py). Returns a process exit code.
     """
-    path = state_file(name, as_of_mjd is not None)
+    path = state_file(name)
     state = _load_state(path)
-    reported = state["reported"]
-    now = as_of_mjd if as_of_mjd is not None else now_mjd()
+    now = now_mjd()
     since = now - lookback_days
     retry_budget.reset()  # ALeRCE calls draw on it
 
     ra, dec, radius = cone
-    replay = f"  REPLAY as of {_date(now - 1e-6)}" if as_of_mjd is not None else ""
-    print(f"\n\nFootprint {name}: cone RA {ra:g} Dec {dec:g} radius {radius:g} deg{replay}")
+    print(f"\n\nFootprint {name}: cone RA {ra:g} Dec {dec:g} radius {radius:g} deg")
     print(f"Active since MJD {since:.1f} ({lookback_days:g} d); new = first detection within "
           f"{lookback_days:g} d, quiet point within {bracket_days:g} d before it")
-    print(f"Previously reported: {len(reported)}  parked: {len(state['parked'])}\n")
+    print(f"Previously reported: {len(state['reported'])}  parked: {len(state['parked'])}\n")
 
     for attempt in range(MAX_RETRIES):
         stats: dict = {}
         try:
-            objs = gather(cone, now, since, as_of_mjd, min_detections, use_alerce, stats)
+            objs = gather(cone, now, since, None, min_detections, use_alerce, stats)
             break
         except NETWORK_ERRORS as e:
             if attempt < MAX_RETRIES - 1:
@@ -613,35 +746,7 @@ def scan(
                       "State not updated - will retry next run.", file=sys.stderr)
                 return 1
 
-    links = associate(objs)
-    candidates: list[Candidate] = []
-    parked_now: dict = {}
-    rejected: Counter = Counter()
-    for o in objs:
-        ev = evaluate(o, now, since, links[o.key], bracket_days, min_detections)
-        if ev.parked is not None:
-            parked_now[o.key] = {"survey": o.survey, "first_det_mjd": ev.parked.first_det_mjd,
-                                 "code": ev.parked.code}
-        if ev.candidate is None:
-            rejected[ev.reason] += 1
-        else:
-            candidates.append(ev.candidate)
-
-    prev_parked = state["parked"]
-    parked, resolved, expired = update_parked(prev_parked, parked_now, {o.key for o in objs}, since, now)
-
-    alerts = []
-    for c in candidates:
-        k = c.obj.key
-        if k in resolved:
-            c.context.append(f"was parked since {_date(prev_parked[k]['parked_mjd'])}")
-        prev = reported.get(k, {})
-        seen = set(prev.get("conditions", []))
-        new_conditions = [x for x in c.conditions if x not in seen]
-        if new_conditions:
-            alerts.append((c, new_conditions))
-        reported[k] = {"first_reported_mjd": prev.get("first_reported_mjd", now), "category": c.category,
-                       "conditions": sorted(seen | set(c.conditions))}
+    day = judge_day(objs, now, since, state, footprint_classifier(cone), bracket_days, min_detections)
 
     by_survey = Counter(o.survey for o in objs)
     print(f"ANTARES loci: {stats.get('loci', 0)}  (skipped at |b| < {MIN_ABS_GAL_LAT:g}: "
@@ -650,21 +755,20 @@ def scan(
         print(f"LSST photometry from ALeRCE: fetched {stats.get('lsst_fetched', 0)}, "
               f"not needed {stats.get('lsst_not_fetched', 0)}, failed {stats.get('lsst_fetch_errors', 0)}")
     print(f"Survey objects: {len(objs)} ({', '.join(f'{s} {n}' for s, n in sorted(by_survey.items()))})  "
-          f"kept: {len(candidates)}")
-    for reason, n in sorted(rejected.items()):
+          f"kept: {len(day.candidates)}")
+    for reason, n in sorted(day.rejected.items()):
         print(f"  rejected {reason}: {n}")
-    newly_parked = sorted(k for k in parked_now if k not in prev_parked)
-    print(f"Parked, onset not bracketed: {len(parked)}  "
-          f"(new {len(newly_parked)}, resolved {len(resolved)}, expired unbracketed {len(expired)})")
-    for k in newly_parked:
-        info = parked_now[k]
+    print(f"Parked, onset not bracketed: {len(day.parked)}  "
+          f"(new {len(day.newly_parked)}, resolved {len(day.resolved)}, expired unbracketed {len(day.expired)})")
+    for k in day.newly_parked:
+        info = day.parked[k]
         print(f"  {k}  first detection {_date(info['first_det_mjd'])}  {info['code']}")
     print()
 
-    if alerts:
-        print(f"=== {len(alerts)} TRANSIENT ALERTS ===\n")
+    if day.alerts:
+        print(f"=== {len(day.alerts)} TRANSIENT ALERTS ===\n")
         for category in CATEGORY_ORDER:
-            group = [a for a in alerts if a[0].category == category]
+            group = [a for a in day.alerts if a[0].category == category]
             if not group:
                 continue
             print(f"--- {category} ({len(group)}) ---")
@@ -676,11 +780,11 @@ def scan(
         print("No new transient alerts.")
 
     cutoff = now - STATE_RETENTION_DAYS
-    reported = {k: v for k, v in reported.items() if v["first_reported_mjd"] >= cutoff}
+    reported = {k: v for k, v in state["reported"].items() if v["first_reported_mjd"] >= cutoff}
     if dry_run:
         print("\n(dry run: state not saved)")
     else:
-        _save_state(path, {"last_mjd": now, "reported": reported, "parked": parked})
+        _save_state(path, {"last_mjd": now, "reported": reported, "parked": day.parked})
     return 0
 
 
@@ -695,7 +799,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     where.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS"),
                        help="cone in degrees")
     parser.add_argument("--radius", type=float, help=f"override a footprint's radius (default {DEFAULT_RADIUS_DEG:g} deg)")
-    parser.add_argument("--as-of", metavar="YYYY-MM-DD", help="replay: judge as of the end of this UTC date")
+    parser.add_argument("--replay", nargs=2, metavar=("FIRST_DAY", "LAST_DAY"),
+                        help="replay these past days (YYYY-MM-DD, inclusive) from cached light curves; see replay.py")
+    parser.add_argument("--no-cuts", action="store_true",
+                        help="with --replay: list every object first detected in the window (no lossless span cut)")
+    parser.add_argument("--estimate", action="store_true",
+                        help="with --replay: list the candidates and print the time estimate, fetch nothing")
+    parser.add_argument("--compare-cuts", action="store_true",
+                        help="with --replay: run with and without the cut and require identical alerts")
     parser.add_argument("--lookback-days", type=float, default=LOOKBACK_DAYS,
                         help=f"N: a first detection this recent can be new (default {LOOKBACK_DAYS:g})")
     parser.add_argument("--bracket-days", type=float, default=BRACKET_DAYS,
@@ -727,19 +838,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--lookback-days and --bracket-days must be positive")
     if args.min_detections < 1:
         parser.error("--min-detections must be at least 1")
-    args.as_of_mjd = None
-    if args.as_of:
+    if (args.no_cuts or args.compare_cuts or args.estimate) and not args.replay:
+        parser.error("--no-cuts, --compare-cuts and --estimate go with --replay")
+    if args.replay:
         try:
-            args.as_of_mjd = date_to_mjd(args.as_of)
+            first, last = (date_to_mjd(d) for d in args.replay)
         except ValueError:
-            parser.error("--as-of must be YYYY-MM-DD")
+            parser.error("--replay days must be YYYY-MM-DD")
+        if last < first:
+            parser.error("--replay: the last day comes before the first")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     a = _parse_args(argv)
-    return scan(a.name, a.cone, a.lookback_days, a.min_detections, a.bracket_days, a.as_of_mjd,
-                a.dry_run, not a.no_alerce)
+    if a.replay:
+        from . import replay
+        if a.compare_cuts:
+            return replay.compare_cuts(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections)
+        replay.run(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections, cut=not a.no_cuts,
+                   estimate_only=a.estimate)
+        return 0
+    return scan(a.name, a.cone, a.lookback_days, a.min_detections, a.bracket_days, a.dry_run, not a.no_alerce)
 
 
 if __name__ == "__main__":

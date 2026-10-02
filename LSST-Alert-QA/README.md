@@ -361,10 +361,17 @@ src/rubin_qa/
     reporting.py       — QA row assembly and pipeline orchestration (ALeRCE + ANTARES)
     profiler.py        — single-object diagnostic tool (all three surveys, own CLI)
     photometry.py      — broker-neutral photometry records (ANTARES, ALeRCE)
-    sky_catalog.py     — Legacy Surveys DR10 crossmatch, cached tiles
+    sky_catalog.py     — Legacy Surveys DR10 + Siena Galaxy Atlas host matching, cached per catalogue version
     transient_monitor.py — new-transient scan of a sky cone (own CLI)
+    replay.py          — the monitor replayed day by day over past dates (transient_monitor --replay)
     __main__.py        — CLI entry point
 pipeline.py            — backwards-compatible shim
+tools/                 — on-demand measurement scripts, outside the monitor's imports:
+    host_match_check.py  — host-matching validation (known hosts vs random positions)
+    pa_from_pixels.py    — galaxy position angles from cutout pixels (source of the ellipse fixtures)
+    atlas_query_contract.py — checks the test fake's q3c reading and the atlas join against Data Lab
+    lsst_box_census.py   — every LSST object at ALeRCE per test box, 2026-02-15 → 07-14
+    replay_tns_check.py  — a replay's alerts against TNS, per survey (throttle-aware lookups)
 tests/                 — pytest, mock data only
 pyproject.toml
 ```
@@ -391,6 +398,12 @@ All tests use mock data — no live API calls.
 | `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes |
 | `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
 | `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
+| `test_photometry.py` | broker-neutral fetch layer: survey objects, ANTARES locus splitting, ALeRCE fallback |
+| `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, state, footprint atlas loading and its outage flags |
+| `test_replay.py` | replay: listing in chunks, light-curve cache (failures never cached), day slicing (the future never leaks into a day), the span cut's equivalence on synthetic data, catalogue prefetch, suspend-aware stage timer |
+| `test_sky_catalog.py` | DR10 host matching: ellipse conventions pinned to pixel-measured fixtures, atlas pieces (NGC 873), two-step candidates and the margin (with a q3c-reading fake TAP service, `tests/fake_tap.py`), catalogue gaps, cache rules (no failure or empty answer ever cached) |
+| `test_host_match_check.py` | `tools/host_match_check.py` — every fetch-failure path fed its failure (empty TNS record, Sesame down, tile and atlas errors) must come back as "fetch error" or pending, never "no host"; the TNS throttle rule against a simulated throttled service at every window phase; truth mapping; mixed-version detection |
+| `test_asteroid_probe.py` | `tools/asteroid_probe.py` — the evidence behind the monitor's asteroid rules |
 
 **ANTARES coverage.** The ALeRCE path had unit tests from the start; the ANTARES
 path had only the ceiling and CLI tests, which drive the loop but never the locus
@@ -527,6 +540,128 @@ missed entirely. `uv run tools/sample_latency.py --report` still reads the colle
 log; `--by-hour` and `--exclude-boot` break it down. Note `logs/` is gitignored, so
 the samples are local-only. For a one-off, `tools/bench_latency.py` times 10 objects
 per survey over two rounds without the retry wrapper.
+
+---
+
+## Replay Box Census (transient monitor)
+
+> **2026-10-01** — the LSST alert stream stopped on 2026-07-14, so the monitor's Rubin path can only be exercised by replaying past dates. Before choosing where and when to replay, every LSST object ALeRCE holds for each candidate box was counted, 2026-02-15 → 07-14. Summary per box and month: [`reports/lsst_box_census_20261001.csv`](reports/lsst_box_census_20261001.csv).
+
+**Method.** ALeRCE only searches cones, so each box was fetched in 2.5° cells, each as the cone around it trimmed to the cell. Queries were cut into one-week chunks by first detection, checkpointed, and resumable. Two properties of the listing were checked before trusting the counts:
+- It returns one row per object *per classifier*. Filtering to one classifier gives one row each, with 0 objects missing in four test windows.
+- Its paging is deterministic. Two walks and an oid-ordered walk of the same query returned identical sets.
+
+Every object is kept, so any other tiling is a re-read, not a refetch (`tools/lsst_box_census.py`).
+
+**Result — box D (COSMOS) stays, replayed in March–May; RA 240–255, Dec −25..−15 is rejected.**
+
+| box | Feb 15–28 | Mar | Apr | May | Jun | Jul 1–14 |
+|---|---|---|---|---|---|---|
+| D: new objects | 322,900 | 1,992 | 4,926 | 2,722 | 547 | 0 |
+| D: ≥ 3 detections over > 1 night | 41,687 | 57 | 175 | 92 | 5 | 0 |
+| RA 240–255 (6 tiles): new objects | 0 | 0 | 0 | 119,625 | 150,492 | 187,358 |
+
+- *Box D has a first-look burst.* On the first nights of the COSMOS season (02-16 → 02-25) everything already variable in the field became a "new" object at once: 323k in two weeks, mostly classed bogus, variable star or AGN. A replay date inside that burst would drown in it; March–May is the quiet, usable part. Rubin covered only a ~1.75° disc of the box, the deep-drilling pointing, about 10 of its 25 deg².
+- *The 240–255 region looked dense, for the wrong reasons.* Rubin was only there May–July. Five of its six tiles lie partly or mostly inside the monitor's own |b| < 20° cut, and its multi-detection objects are Galactic variables by the thousand per tile-month (50–58% classed variable star in May).
+
+---
+
+## Host Matching Validation (transient monitor)
+
+> **2026-10-01** — the Legacy Surveys DR10 host matcher behind the monitor's `host` / `orphan` split, validated in two directions. The threshold was set from the measurement, not copied from DES. Full report, fingerprinted with the code and inputs that produced it: [`reports/host_match_validation_20261001.txt`](reports/host_match_validation_20261001.txt).
+
+The monitor labels each transient by what DR10 shows at its position: a host galaxy, a point source, a star, or nothing (an orphan). The host decision uses the directional light radius, d_DLR (Sullivan et al. 2006, Gupta et al. 2016): the separation divided by the galaxy's radius in the transient's direction, read from its fitted ellipse.
+
+**1 — Conventions checked against the pixels, not the documentation.** The DR10 catalogue page gives the ellipse position angle as PA = 180 − ϕ, and the Siena Galaxy Atlas describes its own `pa` as "clockwise from North". Both are the mirror image of the sky. The code's convention (PA = ½·atan2(e2, e1), North through East) was confirmed four independent ways: second moments of the FITS cutout pixels with the WCS orientation (60 random galaxies: 92% within 15°, against 2% for the documented formula), cutouts by eye, the Tractor source (`EllipseE.getRaDecBasis`), and 609 HyperLeda position angles. The test fixtures take their expected angles from the pixels (`tools/pa_from_pixels.py`), so a "fix" that follows the docs fails 5 tests.
+
+**2 — Faults the validation exposed in the design, and the fixes.**
+- *Big galaxies.* DR10 breaks an atlas galaxy into pieces (~4–7 each, up to ~75 near a big one), and each piece competed as a host. A piece is any row inside the atlas ellipse (maskbit 12), including point-like nuclei with no reference tag: NGC 873's nucleus is a separate PSF 1.3″ from the model centre. Pieces now belong to their galaxy in every rule.
+- *Hosts beyond the search radius.* SN 2025zi sits 123″ from NGC 1398, beyond the 30″ search. Candidates are now collected in two steps: Tractor sources within 30″, plus every atlas galaxy whose ellipse, scaled by the threshold, reaches the transient.
+- *Catalogue gaps.* Where DR10's fitting gave up (maskbit BAILOUT; brick 0532m280 at the CDFS centre is 49% BAILOUT) no sources exist, so empty sky there says nothing. A position with BAILOUT in its 30″ search area is "unavailable", never an orphan.
+- *AGN check.* The WISE colour check used to read whichever source sat nearest, before any host was known. It is now a flag on the source actually assigned, applied only when both WISE bands have S/N ≥ 5, with Stern's 0.8 Vega cut converted to 0.16 AB.
+
+**3 — Test populations and oracles.**
+- *Known hosts.* 21 classified TNS supernovae with a reported host (records via ALeRCE's TNS service, host positions from survey J-names or CDS Sesame), plus 172 DES-SN5YR spectroscopic supernovae with the host DES chose by the same method. DES measures **agreement, not truth**: its radii come from deeper stacks, and our d_DLR runs 1.39× theirs (median), so its cut does not carry over.
+- *Excluded and counted, never scored as misses.* 4 pairs in catalogue gaps, 8 DES hosts below Legacy depth, 14 hosts that DR10 types as point-like, and 1 TNS record whose host redshift contradicts the SN's.
+- *Random positions.* 1000 per footprint, giving the chance-host rate.
+- *Self-check.* The tool's fast scoring against the production `best_host`: 0 disagreements over 3188 positions.
+
+**4 — Result: threshold d_DLR ≤ 4** (two-step candidates, atlas radius `sma_moment`):
+
+| d_DLR ≤ | DES agrees | DES: no host | TNS correct (of 20) | random positions given a host |
+|---|---|---|---|---|
+| 2 | 72% | 17% | 20 | 3.8% |
+| 3 | 84% | 5% | 20 | 8.5% |
+| **4** | **86%** | **1%** | **20** | **14.8%** |
+| 5 | 88% | 0% | 20 | 23.5% |
+
+The two error rates apply to populations of very different size. Hosted supernovae outnumber hostless ones about 20:1 at Legacy depth, so per 100 transients the orphan bucket is about 80% pure at 4 and about 50% at 3. A chance host only relabels the rare hostless case, which is still reported. Treat 4 as the knee plus a margin rather than a precise optimum: 1% of 146 is one or two objects. From 2.5 upward DES picks a different galaxy in a flat 11–12% of pairs, which is disagreement about *which* galaxy, not a threshold effect.
+
+**5 — What the two-step search buys.** At threshold 4 it rescues 2 known hosts (SN 2025zi on NGC 1398, at 123″; SN 2023cr on ESO 419-003, at 36″), breaks 0, and costs 0.7–2.8% of random positions a new host.
+
+**6 — Negative results, kept with their evidence.**
+- *A compact-host rule (a point-like source 1–3″ away taken as host) was measured and dropped.* It gained 0 of 14 point-like hosts, 12 of which sit within 1″ where the point-source label already keeps them out of the orphan bucket, and it gave 10.4% of random positions a host at 3″.
+- *Point source before host costs more than estimated.* About 2% of random positions (1.4–2.6%) have a star-free point source within 1″, not 0.1%. It relabels 4 correct hosts; the reverse order would instead give 4 of the 12 point-like hosts a wrong galaxy. On that tie the point source stays first: a wrong host asserts something false, while the point-source label only withholds a host, the transient is reported either way, and a faint variable star beyond Gaia's reach cannot pass as SN-like. (The 4 relabelled DES supernovae may be the SNe themselves, since DR10's stacks include DES epochs; that cannot happen for new Rubin transients.)
+- *Data defects found by auditing the inputs.* ALeRCE's TNS service answers with an empty record once its quota of 10 requests a minute is spent (see Replay Validation below; at one call a second the sampler spent it itself, which first looked like intermittent faults). Before the fix, 14 of 44 supernovae were saved as "no host"; refetching recovered 8 real hosts. One host name came back URL-encoded (`2MASXJ09565234%2B0328119`) and silently failed to resolve. Every fetch-failure path now has an injected-failure test, and failed supernovae go on a pending list that the next run retries first.
+- *A bug in the validator itself.* Its truth mapping first took NGC 873's point-like nucleus, 0.18″ from the Sesame position, as the host of SN 2022xjk, while the matcher had correctly chosen the galaxy (d_DLR 0.08). A named host now resolves to the atlas galaxy at that position, ahead of any nucleus or piece.
+- *One position with no DR10 source within 15″ and no mask bit set:* 1 observed against 3.1 expected by chance from each position's own source density. A chance void, not a catalogue fault.
+
+**Provenance.** Each scoring stage writes a sidecar with the SHA-256 of the code and inputs it ran on. The report prints those fingerprints in its header and opens with a MIXED VERSIONS banner if its stages disagree with each other or with the current files. That guard exists because one run did mix versions: the code was edited between its known-host and random-position stages. The published report was then rescored from the cache in a single version.
+
+Tools: `tools/host_match_check.py` (sample, evaluate, randoms, report), `tools/pa_from_pixels.py`, `tools/atlas_query_contract.py` (the test fake's q3c reading agrees with Data Lab's: 1173 = 1173 atlas IDs, edge cut exact; the atlas join misses no atlas galaxy in any footprint).
+
+---
+
+## Replay Validation (transient monitor)
+
+> **2026-10-01** — the monitor's first end-to-end run on real data. Box D (COSMOS), 2026-03-12 → 05-15, judged day by day as the live monitor would have judged it, then checked against TNS.
+
+**Method.** A replay may filter only on what cannot change afterwards:
+- *Candidates* are every LSST and ZTF object first detected in the window (plus the 14-day lookback), listed once at ALeRCE in week-long chunks.
+- *The span cut.* Only objects whose detections span more than one night are kept. The cut is lossless because every monitor path now requires detections on two nights. That rule was made explicit for all paths when this design exposed `rising` and `rapid_rise` passing on a single night. An `n_det ≥ 3` cut would not have been lossless.
+- *Fetching.* Each candidate's light curve is fetched once and cached. Every DR10 tile and brick the crossmatch can need is fetched before judging.
+- *Judging.* Each simulated day is judged by the live code (`judge_day`) on light curves sliced to that day, with no API calls.
+- *Estimate first.* The time is estimated before running, from the census counts × the measured 1.13 s per light-curve call.
+
+A first attempt was discarded. It judged from a cold catalogue cache, fetching tiles inside the day loop, while Data Lab was slow and then down and the machine was suspended for at least an hour. Each failed lookup became "unavailable" for the rest of the run. The redo prefetches the catalogue and times every stage against a clock that excludes suspend.
+
+**Run.** 477 candidates (381 LSST, 96 ZTF).
+- Fetching was estimated at 17.7 min and took 14.3 min, plus 2.2 min of catalogue fetches.
+- 0 fetch errors, 0 crossmatches unavailable, 0 s suspended.
+- A rerun from the cache judges all 65 days in about a minute.
+
+**Equivalence test** (`--compare-cuts`, 04-05 → 04-06). The same window was replayed with and without the span cut: 48 candidates against 2,200, and identical alerts. The evidence is narrow: one alert, and 2,152 objects removed by the cut, none of which would have alerted. The uncut side took 46 min against an estimated 52.
+
+**Result — 46 alerts in 65 days** (the first day, 03-12, includes warm-up: the state starts empty). Each cell gives the TNS matches over the alerts checked; the 3 stars marked * appeared after the check.
+
+| category · path | LSST | ZTF |
+|---|---|---|
+| host · bracketed (± rising) | — | 6 / 6 |
+| host · rising | 18 / 22 | 0 / 1 |
+| agn · rising | 2 / 6 | — |
+| orphan · rising / rapid_rise | 1 / 2 | 0 / 2 (incl. 1 bracketed) |
+| point_source · rising | 1 / 1 | — |
+| stellar · any path | 0 / 2, plus 3* | 0 / 1 |
+
+- *ZTF matched as expected.* All 6 ZTF objects bracketed on a host are in TNS. Five list our own ZTF ID among their internal names.
+- *LSST matched far more than expected (22 of 32), and the reason is the reporting, not the selection.* TNS records every one of the 22 as discovered from Rubin data. They were reported by SGLF (15), Lasair (5) and ALeRCE (1), and 21 carry our diaObjectId as `LSST-AP-DO-<id>`. Brokers were reporting COSMOS Rubin transients systematically that spring, so the rate measures that practice.
+- *TNS mostly came first.* TNS discovery preceded the alert by a median of 4.5 days, because the monitor waits for a second night and a measurable rise. Two alerts came first: SN 2026kfw by 5 days, AT 2026khr by 1.
+- *The categories separate.* 18 of 22 host risers are in TNS, against 2 of 6 AGN-coloured risers and none of the stars.
+
+**The oracle had a fault of its own, kept with its evidence.** ALeRCE's TNS service answers 10 requests per 60 s window. Once those are spent it returns empty records until the window turns, which looks exactly like "not in TNS".
+- *Measured.* At one call a second, answers came back full for about 20 s and empty for about 40 s, every minute; paced at 7 calls a minute, every answer was full. The windows turned at :23 past the minute.
+- *The rule.* The check never relies on that phase, since a restart can move it. It accepts an empty answer only when two (empty answer → full known-object canary) pairs fall within 60 s. At most one window turn fits in that span, so one pair shares a window, and within a window answers only go from full to empty.
+- *The test.* A simulated throttled service swept over 120 window phases × 21 moments at which other users spend the quota never fools the rule. A one-pair rule and a wall-clock-minute rule both fail the sweep. So does the real rule against a window shorter than its assumed 60 s (27 of 2,520 cases at 25 s), which makes its one assumption visible.
+- *The limit.* A free TNS account removes the ambiguity, through its own API key or the daily public-objects CSV used as a local snapshot. It is worth it only if TNS becomes more than display context.
+
+**What the run changed in the monitor: the decision table.** The run surfaced a combination nobody had written down. Rising objects on Gaia stars, on AGN and on point sources were all reported as `rising`, mixed with supernova candidates.
+- *Two axes.* The sky context alone now decides the category: `host`, `agn`, `orphan`, `point_source`, `stellar` or `unchecked`. The photometric path is the confidence label: `bracketed`, `rising`, `rapid_rise` or `re_brightening`. A report reads `host · rising`.
+- *Visible names.* The old names `new_candidate`, `agn_flare` and `stellar_flare` claimed a path as well. The "flaring" stars rose over up to two weeks, which is stellar variability.
+- *Nothing dropped.* The table has no "dropped" cell. The old rule dropped Gaia stars that did not rise, and in this window it had silently hidden 3 objects.
+- *Tested.* A test runs all 5 path cases × 8 sky contexts through the monitor. An unmapped context raises an error.
+- *Re-reporting.* A report is repeated when either axis changes, so an `unchecked` object is reported again once the catalogue gives a verdict.
+
+Tools: `python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]`, `tools/replay_tns_check.py`. Results are kept locally in `logs/` (replay JSON and log, TNS rows with reporting groups).
 
 ---
 

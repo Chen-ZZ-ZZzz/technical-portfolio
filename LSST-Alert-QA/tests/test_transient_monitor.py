@@ -3,6 +3,7 @@
 import json
 import math
 
+import pandas as pd
 import pytest
 from requests.exceptions import ConnectionError
 
@@ -41,7 +42,7 @@ RAPID = [det(NOW - 2.0, 20.0), det(NOW - 0.3, 18.7)]  # 1.3 mag in 1.7 d
 
 
 def xm(verdict, *evidence):
-    return lambda ra, dec: Crossmatch(verdict, list(evidence))
+    return lambda ra, dec, **kw: Crossmatch(verdict, list(evidence))
 
 
 def boom(ra, dec):
@@ -225,25 +226,64 @@ def test_cheap_rejections_do_not_consult_the_catalogue():
     assert mon.evaluate(obj(NEW_ZTF, oid="ZTF19x"), NOW, SINCE, classify=boom).reason == "preexisting_ztf_object"
 
 
-@pytest.mark.parametrize("verdict,category", [
-    ("host", "new_candidate"), ("agn", "agn_flare"), ("none", "orphan"),
-    ("point_source", "point_source"), ("unavailable", "unchecked"),
+# --- the decision table: sky context -> category, path -> confidence label ---------------
+
+LSST_RISER = [det(FIRST, 24.5, survey="lsst", oid="1706"), det(FIRST + 1.0, 24.4, survey="lsst", oid="1706"),
+              forced(FIRST + 2, 800.0, 60.0), forced(NOW - 1, 1500.0, 70.0)]
+PATH_CASES = {  # one light curve per path combination evaluate can produce, with the labels it must carry
+    "bracketed": (obj(NEW_ZTF), ["bracketed"]),
+    "bracketed, rising, rapid_rise": (obj([lim(NOW - 4, 21.5), det(NOW - 3, 20.5)] + RAPID), ["bracketed", "rising", "rapid_rise"]),
+    "rising": (obj(LSST_RISER, survey="lsst", oid="1706"), ["rising"]),
+    "rising, rapid_rise": (obj([det(NOW - 3.5, 20.6), det(NOW - 2.0, 20.0), det(NOW - 0.3, 18.7)]), ["rising", "rapid_rise"]),
+    "re_brightening": (obj([det(NOW - 900, 20.0)] + RAPID, oid="ZTF18old"), ["re_brightening"]),
+}
+SKY_CASES = {  # one crossmatch per decision-table key
+    "host": Crossmatch("host", ['EXP r=21.0 sep=2.0" d_DLR=0.8']),
+    "host+agn_host": Crossmatch("host", ['EXP r=19.0 sep=6.0" d_DLR=1.2'], flags=["agn_host"]),
+    "host+agn_nuclear": Crossmatch("host", ['EXP r=19.0 sep=0.5" d_DLR=0.1'], flags=["nuclear", "agn_nuclear"]),
+    "point_source": Crossmatch("point_source", ['PSF r=22.0 at 0.3"']),
+    "point_source+agn_nuclear": Crossmatch("point_source", ['PSF r=21.0 at 0.3"'], flags=["agn_nuclear"]),
+    "none": Crossmatch("none"),
+    "stellar": Crossmatch("stellar", ["Gaia parallax 8 sigma"]),
+    "unavailable": Crossmatch("unavailable", ["tile 1501,920: ReadTimeout"]),
+}
+
+
+def test_the_cases_cover_the_whole_table():
+    assert set(SKY_CASES) == set(mon.SKY_CATEGORY)
+    assert set(mon.SKY_CATEGORY.values()) == set(mon.CATEGORY_ORDER)  # every category reachable, and printed
+    assert {x for _, labels in PATH_CASES.values() for x in labels} == set(mon.PATHS)
+
+
+@pytest.mark.parametrize("sky", SKY_CASES)
+@pytest.mark.parametrize("path", PATH_CASES)
+def test_every_path_and_sky_context_leads_to_one_visible_category(path, sky):
+    """Category from the sky alone, whatever the path; the path is the label; nothing is dropped."""
+    o, labels = PATH_CASES[path]
+    ev = mon.evaluate(o, NOW, SINCE, classify=lambda ra, dec, **kw: SKY_CASES[sky])
+    assert ev.candidate is not None, f"{path} on {sky}: dropped ({ev.reason})"
+    assert (ev.candidate.category, ev.candidate.conditions) == (mon.SKY_CATEGORY[sky], labels)
+
+
+@pytest.mark.parametrize("match", [
+    Crossmatch("point_source", flags=["agn_host"]),  # a point source within 1" cannot be a host farther out
+    Crossmatch("stellar", flags=["agn_nuclear"]),  # the star verdict carries no colour flag today
+    Crossmatch("galaxy"),  # a verdict sky_catalog does not have
 ])
-def test_new_object_category_from_dr10(verdict, category):
-    ev = mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm(verdict, "e"))
-    assert (ev.candidate.category, ev.candidate.conditions, ev.parked) == (category, [category], None)
+def test_a_sky_context_nobody_mapped_raises_instead_of_falling_through(match):
+    with pytest.raises(ValueError, match="missing from the decision table"):
+        mon.sky_context(match)
 
 
-def test_star_rejected_unless_moving():
-    assert mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm("stellar", "Gaia")).reason == "stellar"
-    moving = [lim(NOW - 4, 21.5), det(NOW - 3, 20.5)] + RAPID
-    c = mon.evaluate(obj(moving), NOW, SINCE, classify=xm("stellar", "Gaia")).candidate
-    assert c.conditions == ["stellar_flare", "rising", "rapid_rise"]  # fast risers pass the slower test too
+def test_a_star_is_reported_as_stellar_on_every_path():
+    """No drop: a real transient wrongly matched to a foreground star must show up, not vanish (2026-10-01)."""
+    c = mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm("stellar", "Gaia")).candidate
+    assert (c.category, c.conditions) == ("stellar", ["bracketed"])
 
 
 def test_old_object_rapidly_rising_is_re_brightening():
     c = mon.evaluate(obj([det(NOW - 900, 20.0)] + RAPID, oid="ZTF18old"), NOW, SINCE, classify=xm("host", "EXP")).candidate
-    assert (c.category, c.conditions, c.rapid) == ("re_brightening", ["re_brightening"], pytest.approx(1.3))
+    assert (c.category, c.conditions, c.rapid) == ("host", ["re_brightening"], pytest.approx(1.3))
 
 
 def test_unbracketed_and_flat_is_parked():
@@ -253,19 +293,36 @@ def test_unbracketed_and_flat_is_parked():
 
 def test_lsst_rising_tier_without_a_bracket():
     """The main LSST path: no pre-onset photometry exists, the rise shows in forced photometry."""
-    pts = [det(FIRST, 24.5, survey="lsst", oid="1706"), det(FIRST + 0.02, 24.5, survey="lsst", oid="1706"),
-           forced(FIRST + 2, 800.0, 60.0), forced(NOW - 1, 1500.0, 70.0)]
-    ev = mon.evaluate(obj(pts, survey="lsst", oid="1706"), NOW, SINCE, classify=xm("host", "EXP"))
+    ev = mon.evaluate(obj(LSST_RISER, survey="lsst", oid="1706"), NOW, SINCE, classify=xm("host", "EXP"))
     c = ev.candidate
-    assert (c.category, c.conditions) == ("rising", ["rising"])
+    assert (c.category, c.conditions) == ("host", ["rising"])
     assert ev.parked is None  # too few detections to be judged new at all: nothing to park
     assert c.onset.code == "too_few_detections"
+
+
+@pytest.mark.parametrize("points,survey,oid", [
+    # rising on one night of detections plus brighter forced photometry on later nights
+    ([det(FIRST, 24.5, survey="lsst", oid="1706"), det(FIRST + 0.02, 24.5, survey="lsst", oid="1706"),
+      forced(FIRST + 2, 800.0, 60.0), forced(NOW - 1, 1500.0, 70.0)], "lsst", "1706"),
+    # a rapid rise between two detections the same night
+    ([det(NOW - 0.40, 20.0), det(NOW - 0.30, 18.7)], "ztf", "ZTF26aaa"),
+    # three detections in one night with a deep quiet point before them: bracketed, yet one night
+    ([lim(NOW - 3, 22.0), det(NOW - 1.0), det(NOW - 0.98), det(NOW - 0.96)], "ztf", "ZTF26aaa"),
+])
+def test_every_path_needs_detections_on_more_than_one_night(points, survey, oid):
+    """The precondition of every report (2026-10-01); it is what makes the replay's span cut lossless."""
+    ev = mon.evaluate(obj(points, survey=survey, oid=oid), NOW, SINCE, classify=boom)
+    assert (ev.candidate, ev.reason) == (None, "single_night")
+
+
+def test_spans_nights_is_the_shared_definition():
+    assert mon.spans_nights(100.0, 100.0 + mon.MIN_SPAN_DAYS) and not mon.spans_nights(100.0, 100.49)
 
 
 def test_lsst_rising_and_unbracketed_is_reported_and_parked():
     pts = LSST_ONSET + [forced(NOW - 0.5, mag_to_njy(20.5), 60.0)]
     ev = mon.evaluate(obj(pts, survey="lsst", oid="1706"), NOW, SINCE, classify=xm("none"))
-    assert (ev.candidate.category, ev.candidate.conditions) == ("rising", ["rising"])
+    assert (ev.candidate.category, ev.candidate.conditions) == ("orphan", ["rising"])
     assert ev.parked.code == "no_quiet_point"
     assert "onset not bracketed (no_quiet_point), parked" in ev.candidate.context
 
@@ -274,7 +331,7 @@ def test_lsst_bracketed_by_associated_ztf_limit():
     ztf = obj([lim(FIRST - 2, 22.5), det(NOW - 300, 21.0)], oid="ZTF26z")
     ev = mon.evaluate(obj(LSST_ONSET, survey="lsst", oid="1706"), NOW, SINCE, associates=[ztf], classify=xm("host", "EXP"))
     c = ev.candidate
-    assert (c.category, c.onset.code) == ("new_candidate", "bracketed_by_ztf")
+    assert (c.category, c.conditions, c.onset.code) == ("host", ["bracketed", "rising"], "bracketed_by_ztf")
     assert c.context == ["recurrent: ztf:ZTF26z detected here since 2025-12-01"]
 
 
@@ -365,6 +422,43 @@ def test_gather_without_alerce(sources):
     assert [o.key for o in mon.gather((150, 12, 1), NOW, SINCE, None, 3, False, {})] == ["ztf:ZTF26aaa"]
 
 
+# --- footprint atlas for the DR10 host search ----------------------------------------------
+
+
+def test_footprint_classifier_loads_the_atlas_once_on_first_use(monkeypatch):
+    loads, seen = [], []
+    the_atlas = pd.DataFrame({"ref_id": [7]})
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", lambda cone: loads.append(cone) or the_atlas)
+    monkeypatch.setattr(mon.sky_catalog, "footprint_bricks", lambda cone: loads.append("bricks") or pd.DataFrame())
+    monkeypatch.setattr(mon.sky_catalog, "classify", lambda ra, dec, atlas, coverage: seen.append(atlas) or Crossmatch("none"))
+    classify = mon.footprint_classifier((150.1, 2.5, 2.82))
+    assert loads == []  # nothing fetched until a DR10 lookup happens
+    classify(150.0, 2.0)
+    classify(150.2, 2.1)
+    assert loads == [(150.1, 2.5, 2.82), "bricks"]
+    assert all(a is the_atlas for a in seen) and len(seen) == 2
+
+
+def test_footprint_classifier_atlas_outage_warns_once_and_runs_step_1(monkeypatch, capsys):
+    loads, seen = [], []
+
+    def down(cone):
+        loads.append(cone)
+        raise mon.sky_catalog.CatalogError("atlas for cone 150.1 2.5 2.82: ReadTimeout")
+
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", down)
+    monkeypatch.setattr(mon.sky_catalog, "footprint_bricks", lambda cone: pd.DataFrame())
+    monkeypatch.setattr(mon.sky_catalog, "classify", lambda ra, dec, atlas, coverage: seen.append(atlas) or Crossmatch("none"))
+    classify = mon.footprint_classifier((150.1, 2.5, 2.82))
+    classify(150.0, 2.0)
+    classify(150.2, 2.1)
+    assert len(loads) == 1 and seen == [None, None]
+    # a "none" made without the atlas is flagged, never a plain orphan
+    assert classify(150.0, 2.0).evidence == ["atlas unavailable: large hosts not searched"]
+    err = capsys.readouterr().err
+    assert err.count("WARN: Siena Galaxy Atlas unavailable") == 1 and 'within 30" only this run' in err
+
+
 # --- scan: state, reporting, retry ------------------------------------------------------------
 
 
@@ -374,26 +468,28 @@ def env(tmp_path, monkeypatch, sources):
     monkeypatch.setattr(mon, "now_mjd", lambda: NOW)
     monkeypatch.setattr(mon.time, "sleep", lambda s: None)
     monkeypatch.setattr(mon.sky_catalog, "classify", xm("host", 'EXP r=21.0 sep=1.0" d_DLR=0.8'))
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", lambda cone: pd.DataFrame())
+    monkeypatch.setattr(mon.sky_catalog, "footprint_bricks", lambda cone: pd.DataFrame(columns=["brickname"]))
     monkeypatch.setattr(mon, "antares_tns", lambda locus: ["2026abc SN Ia"])
     return sources
 
 
-def state(name="D", replay=False):
-    return json.loads(mon.state_file(name, replay).read_text())
+def state(name="D"):
+    return json.loads(mon.state_file(name).read_text())
 
 
 def test_first_scan_reports_keyed_on_survey_ids(env, capsys):
     env["antares"] = [obj(NEW_ZTF, broker_refs={"antares": "ANT_1"}, broker_matches=["tns_public_objects"])]
     assert mon.scan("D", (150, 12, 1)) == 0
     out = capsys.readouterr().out
-    assert "1 TRANSIENT ALERTS" in out and "--- new_candidate (1) ---" in out
-    assert "ztf:ZTF26aaa  [new_candidate]  new: new_candidate" in out
+    assert "1 TRANSIENT ALERTS" in out and "--- host (1) ---" in out
+    assert "ztf:ZTF26aaa  host · bracketed  new: bracketed" in out
     assert "  onset: first detection 2026-09-22 (MJD 61305.00), 3 detections, bracketed by a quiet point 1.0 d before" in out
     assert '  DR10: host - EXP r=21.0 sep=1.0" d_DLR=0.8' in out
     assert "  brokers: antares ANT_1" in out and "  TNS: 2026abc SN Ia" in out
     s = state()
-    assert s["reported"] == {"ztf:ZTF26aaa": {"first_reported_mjd": NOW, "category": "new_candidate",
-                                              "conditions": ["new_candidate"]}}
+    assert s["reported"] == {"ztf:ZTF26aaa": {"first_reported_mjd": NOW, "category": "host",
+                                              "pairs": [["host", "bracketed"]]}}
     assert s["parked"] == {}
 
 
@@ -403,10 +499,24 @@ def test_second_scan_does_not_repeat_but_new_condition_does(env, capsys):
     mon.scan("D", (150, 12, 1))
     mon.scan("D", (150, 12, 1))
     runs = capsys.readouterr().out.split("Footprint D")
-    assert "new: new_candidate" in runs[1] and "No new transient alerts." in runs[2]
+    assert "new: bracketed" in runs[1] and "No new transient alerts." in runs[2]
     env["antares"] = [obj(flat + [det(NOW - 0.3, 19.0)])]
     mon.scan("D", (150, 12, 1))
     assert "new: rising, rapid_rise" in capsys.readouterr().out
+
+
+def test_a_new_category_is_reported_again_unchecked_becoming_a_verdict(env, capsys, monkeypatch):
+    """Re-reporting keys on the (category, path) pair: either axis changing is news."""
+    env["antares"] = [obj(NEW_ZTF)]
+    monkeypatch.setattr(mon.sky_catalog, "classify", xm("unavailable", "tile 1501,920: ReadTimeout"))
+    mon.scan("D", (150, 12, 1))
+    assert "ztf:ZTF26aaa  unchecked · bracketed  new: bracketed" in capsys.readouterr().out
+    monkeypatch.setattr(mon.sky_catalog, "classify", xm("host", 'EXP r=21.0 sep=1.0" d_DLR=0.8'))
+    mon.scan("D", (150, 12, 1))
+    assert "ztf:ZTF26aaa  host · bracketed  new: bracketed" in capsys.readouterr().out
+    assert state()["reported"]["ztf:ZTF26aaa"]["pairs"] == [["host", "bracketed"], ["unchecked", "bracketed"]]
+    mon.scan("D", (150, 12, 1))
+    assert "No new transient alerts." in capsys.readouterr().out
 
 
 def test_parked_object_resolves_when_bracketed(env, capsys):
@@ -424,22 +534,13 @@ def test_parked_object_resolves_when_bracketed(env, capsys):
 
 
 def test_parked_object_expires(env, capsys):
-    path = mon.state_file("D", False)
+    path = mon.state_file("D")
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"last_mjd": NOW - 1, "reported": {}, "parked": {
         "lsst:1": {"survey": "lsst", "first_det_mjd": NOW - 15, "code": "no_quiet_point", "parked_mjd": NOW - 13}}}))
     mon.scan("D", (150, 12, 1))
     assert "expired unbracketed 1" in capsys.readouterr().out
     assert state()["parked"] == {}
-
-
-def test_replay_uses_its_own_state_and_the_replay_date(env, capsys, monkeypatch):
-    monkeypatch.setattr(mon, "now_mjd", lambda: pytest.fail("replay must not read the clock"))
-    env["antares"] = [obj([lim(61140.0, 20.5), det(61141.0), det(61143.0), det(61145.0)])]
-    assert mon.scan("D", (150, 12, 1), as_of_mjd=61146.0) == 0
-    out = capsys.readouterr().out
-    assert "REPLAY as of 2026-04-15" in out and "1 TRANSIENT ALERTS" in out
-    assert mon.state_file("D", True).exists() and not mon.state_file("D", False).exists()
 
 
 def test_rejections_and_sources_are_counted(env, capsys):
@@ -453,13 +554,13 @@ def test_rejections_and_sources_are_counted(env, capsys):
 def test_dry_run_saves_nothing(env):
     env["antares"] = [obj(NEW_ZTF)]
     mon.scan("D", (150, 12, 1), dry_run=True)
-    assert not mon.state_file("D", False).exists()
+    assert not mon.state_file("D").exists()
 
 
 def test_old_reported_entries_are_pruned(env):
-    path = mon.state_file("D", False)
+    path = mon.state_file("D")
     path.parent.mkdir(parents=True)
-    old = {"first_reported_mjd": NOW - 100, "category": "orphan", "conditions": ["orphan"]}
+    old = {"first_reported_mjd": NOW - 100, "category": "orphan", "pairs": [["orphan", "bracketed"]]}
     path.write_text(json.dumps({"last_mjd": NOW - 1, "reported": {"ztf:old": old}}))
     mon.scan("D", (150, 12, 1))
     assert state()["reported"] == {}
@@ -491,7 +592,7 @@ def test_network_failure_retries_then_exits_1_without_state(env, monkeypatch, ca
     err = capsys.readouterr().err
     assert calls["n"] == mon.MAX_RETRIES
     assert err.startswith("WARN: network error (attempt 1/3)") and "ERROR: network error after 3 attempts" in err
-    assert not mon.state_file("D", False).exists()
+    assert not mon.state_file("D").exists()
 
 
 def test_update_parked_lifecycle():
@@ -510,8 +611,7 @@ def test_update_parked_lifecycle():
 
 
 def test_state_file_names():
-    assert mon.state_file("ecdfs", False) == PROJECT_ROOT / "logs" / "transient_monitor_ecdfs.json"
-    assert mon.state_file("D", True).name == "transient_monitor_D_replay.json"
+    assert mon.state_file("ecdfs") == PROJECT_ROOT / "logs" / "transient_monitor_ecdfs.json"
 
 
 # --- CLI ---------------------------------------------------------------------------------------
@@ -544,6 +644,70 @@ def test_bad_arguments(argv):
 def test_main_passes_arguments(monkeypatch):
     seen = {}
     monkeypatch.setattr(mon, "scan", lambda *a: seen.setdefault("args", a) and 0)
-    mon.main(["--cone", "150", "2", "1.5", "--as-of", "2026-04-15", "--lookback-days", "7",
+    mon.main(["--cone", "150", "2", "1.5", "--lookback-days", "7",
               "--min-detections", "4", "--bracket-days", "5", "--no-alerce", "--dry-run"])
-    assert seen["args"] == ("cone_150_2_1.5", (150.0, 2.0, 1.5), 7.0, 4, 5.0, 61146.0, True, False)
+    assert seen["args"] == ("cone_150_2_1.5", (150.0, 2.0, 1.5), 7.0, 4, 5.0, True, False)
+
+
+def test_main_routes_a_replay_and_never_scans(monkeypatch):
+    from rubin_qa import replay
+    seen = {}
+    monkeypatch.setattr(mon, "scan", lambda *a: pytest.fail("a replay must not run the live scan"))
+    monkeypatch.setattr(replay, "run", lambda *a, **kw: seen.setdefault("run", (a, kw)) and [])
+    monkeypatch.setattr(replay, "compare_cuts", lambda *a: seen.setdefault("compare", a) and 0)
+    assert mon.main(["--footprint", "D", "--replay", "2026-04-01", "2026-04-30", "--no-cuts"]) == 0
+    args, kw = seen["run"]
+    assert args[:4] == ("D", mon.FOOTPRINTS["D"][0], "2026-04-01", "2026-04-30") and kw == {"cut": False, "estimate_only": False}
+    assert mon.main(["--footprint", "D", "--replay", "2026-04-08", "2026-04-10", "--compare-cuts"]) == 0
+    assert seen["compare"][2:4] == ("2026-04-08", "2026-04-10")
+
+
+@pytest.mark.parametrize("argv", [
+    ["--footprint", "D", "--replay", "2026-04-30", "2026-04-01"],  # backwards
+    ["--footprint", "D", "--replay", "April", "2026-04-30"],       # not a date
+    ["--footprint", "D", "--no-cuts"],                              # needs --replay
+])
+def test_replay_arguments_are_checked(argv):
+    with pytest.raises(SystemExit):
+        mon._parse_args(argv)
+
+
+def test_footprint_classifier_brick_list_outage_flags_every_crossmatch(monkeypatch, capsys):
+    """Without the brick list the gap check cannot run: say so on the run and on each crossmatch, never a bare orphan."""
+    def down(cone):
+        raise mon.sky_catalog.CatalogError("bricks for cone 53.1 -27.8 2.82: HTTP 502")
+
+    coverages = []
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", lambda cone: pd.DataFrame())
+    monkeypatch.setattr(mon.sky_catalog, "footprint_bricks", down)
+    monkeypatch.setattr(mon.sky_catalog, "classify",
+                        lambda ra, dec, atlas, coverage: coverages.append(coverage) or Crossmatch("none"))
+    classify = mon.footprint_classifier((53.1, -27.8, 2.82))
+    assert classify(53.0, -27.9).evidence == ["catalogue gaps not checked"]
+    classify(53.2, -27.7)
+    assert coverages == [None, None]
+    assert capsys.readouterr().err.count("WARN: DR10 brick list unavailable") == 1
+
+
+def test_footprint_classifier_passes_the_gap_check_bound_to_the_bricks(monkeypatch):
+    bricks = pd.DataFrame({"brickname": ["0532m280"]})
+    calls = []
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", lambda cone: pd.DataFrame())
+    monkeypatch.setattr(mon.sky_catalog, "footprint_bricks", lambda cone: bricks)
+    monkeypatch.setattr(mon.sky_catalog, "catalogue_gap", lambda ra, dec, b: calls.append(b is bricks) or "gap")
+    monkeypatch.setattr(mon.sky_catalog, "classify", lambda ra, dec, atlas, coverage: Crossmatch("unavailable", [coverage(ra, dec)]))
+    assert mon.footprint_classifier((53.1, -27.8, 2.82))(53.25, -28.05).evidence == ["gap"]
+    assert calls == [True]
+
+
+def test_agn_colours_on_the_matched_source_within_1_arcsec_is_agn():
+    xm_agn = lambda ra, dec, **kw: Crossmatch("point_source", ["PSF r=21.0 at 0.3\""], flags=["agn_nuclear"])
+    ev = mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm_agn)
+    assert ev.candidate.category == "agn"
+
+
+def test_agn_colours_of_a_host_farther_out_is_a_note_not_a_category():
+    """An SN in the disk of an AGN host is not an AGN flare."""
+    xm_host = lambda ra, dec, **kw: Crossmatch("host", ['EXP r=19.0 sep=6.0" d_DLR=1.2'], flags=["agn_host"])
+    ev = mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm_host)
+    assert ev.candidate.category == "host" and "host has WISE AGN colours" in ev.candidate.context
