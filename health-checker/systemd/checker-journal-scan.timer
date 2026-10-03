@@ -2,7 +2,7 @@
 Description=Scan systemd journal periodically
 
 [Timer]
-OnBootSec=16min
+OnBootSec=9min
 OnCalendar=hourly
 Persistent=true
 
