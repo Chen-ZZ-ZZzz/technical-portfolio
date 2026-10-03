@@ -2,6 +2,7 @@
 
 import json
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,8 @@ NOW0 = mon.date_to_mjd(DAY0)  # end of 04-08
 def tmp_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(replay, "CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(replay, "REPORT_DIR", tmp_path / "logs")
+    monkeypatch.setattr(mon, "STATE_DIR", tmp_path / "state")  # the point-source watch file
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: pytest.fail("TNS asked in a test that set no answer"))
     return tmp_path
 
 
@@ -181,7 +184,7 @@ def test_the_span_cut_changes_nothing_reported(world):
     add(world, "ZTF26flash", [lim(NOW0 - 3.0), det(NOW0 - 1.40, 20.0), det(NOW0 - 1.35, 18.7), det(NOW0 - 1.30, 18.5)])
     cut = replay.alert_set(replay.run("D", CONE, "2026-04-06", "2026-04-10", cut=True, classify=HOST, quiet=True))
     uncut = replay.alert_set(replay.run("D", CONE, "2026-04-06", "2026-04-10", cut=False, classify=HOST, quiet=True))
-    assert cut == uncut and {k for _, k, _, _ in cut} == {"ztf:ZTF26sn"}
+    assert cut == uncut and {k for _, k, _, _, _ in cut} == {"ztf:ZTF26sn"}
 
 
 def test_the_replay_writes_its_alerts_with_the_window_and_the_cut(world, tmp_dirs):
@@ -255,3 +258,93 @@ def test_stage_timer_separates_suspended_time_from_work():
     assert t.mark("listing") == {"stage": "listing", "awake_s": 10.0, "suspended_s": 0.0}
     assert t.mark("judging") == {"stage": "judging", "awake_s": 2.0, "suspended_s": 3600.0}
     assert t.summary() == "listing 10s, judging 2s; suspended 3600s (excluded above)"
+
+
+# --- pricing before fetching, and the cost gate (2026-10-02, after an aborted --compare-cuts) ---
+
+
+def test_compare_cuts_prices_both_sides_before_either_fetches(world, monkeypatch, capsys):
+    """The uncut side is the expensive one: its price must be known, and confirmed, before anything is fetched."""
+    add(world, "ZTF26sn", [lim(NOW0 - 4.0), det(NOW0 - 2.4), det(NOW0 - 1.4), det(NOW0 - 0.4)])
+    for k in range(1000):  # one-night objects: only the uncut side lists them
+        add(world, f"ZTF26n{k}", [det(NOW0 - 1.0), det(NOW0 - 0.98)])
+    monkeypatch.setattr(replay, "is_cached", lambda survey, oid: False)
+    monkeypatch.setattr(replay, "light_curve", lambda *a: pytest.fail("fetched before the cost was confirmed"))
+    monkeypatch.setattr(replay.mon, "footprint_classifier", lambda cone: HOST)
+    monkeypatch.setattr(replay.sys, "stdin", None)  # no terminal: no one to ask
+    with pytest.raises(replay.Declined, match="no terminal to confirm on"):
+        replay.compare_cuts("D", CONE, "2026-04-06", "2026-04-10")
+    out = capsys.readouterr().out
+    assert "Equivalence test: ~0 min with the cut + ~19 min without it" in out
+
+
+@pytest.mark.parametrize("answer,goes", [("y", True), ("n", False), ("", False)])
+def test_on_a_terminal_a_long_replay_asks_first(monkeypatch, answer, goes):
+    monkeypatch.setattr(replay.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", lambda prompt: answer)
+    if goes:
+        replay.confirm_cost(replay.CONFIRM_THRESHOLD_SECONDS + 1, False, "replay D")
+    else:
+        with pytest.raises(replay.Declined, match="declined"):
+            replay.confirm_cost(replay.CONFIRM_THRESHOLD_SECONDS + 1, False, "replay D")
+
+
+def test_a_short_replay_or_yes_needs_no_confirmation(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("asked"))
+    monkeypatch.setattr(replay.sys, "stdin", None)
+    replay.confirm_cost(replay.CONFIRM_THRESHOLD_SECONDS, False, "replay D")  # at the threshold: short enough
+    replay.confirm_cost(10 * replay.CONFIRM_THRESHOLD_SECONDS, True, "replay D")
+
+
+# --- cache files: atomic writes, checked reads ---------------------------------------------
+
+
+@pytest.mark.parametrize("text", ['{"points": [{"survey": "ztf", "mjd": 1', "", '{"points": [], "x": 1}', "[1, 2]"])
+def test_a_damaged_light_curve_is_fetched_again_not_read(capsys, text):
+    path = replay._lc_path("ztf", "ZTF26aaa")
+    path.parent.mkdir(parents=True)
+    path.write_text(text)  # what an aborted, non-atomic write could leave
+    calls = []
+    points, sso, err = replay.light_curve("ztf", "ZTF26aaa", fetch=lambda s, o: calls.append(o) or ([det(NOW0)], None, None))
+    assert calls == ["ZTF26aaa"] and err is None and len(points) == 1
+    assert "damaged cache file" in capsys.readouterr().err
+    assert replay.light_curve("ztf", "ZTF26aaa", fetch=lambda s, o: pytest.fail("refetched a good file"))[0] == points
+
+
+def test_damaged_candidate_and_neighbour_files_are_listed_again(capsys, monkeypatch):
+    lo, hi = 61121.0, 61137.0
+    path = replay.CACHE_DIR / "candidates" / f"D_ztf_{lo:.1f}_{hi:.1f}_cut.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('[{"survey": "ztf", "oid": "ZTF26a"')  # truncated mid-row
+    good = [{"survey": "ztf", "oid": "ZTF26a", "ra": 1.0, "dec": 2.0, "first": lo, "last": lo + 1, "ndet": 3}]
+    monkeypatch.setattr(replay, "list_candidates", lambda *a, **k: good)
+    assert replay.cached_candidates("D", "ztf", CONE, lo, hi, True, []) == good
+    nb = replay._neighbours_path("1706")
+    nb.parent.mkdir(parents=True)
+    nb.write_text('{"oid"')
+    out = replay.ztf_neighbours({"oid": "1706", "ra": 1.0, "dec": 2.0}, query=lambda ra, dec, r: [])
+    assert out == [] and capsys.readouterr().err.count("damaged cache file") == 2
+
+
+def test_cache_writes_go_through_a_temp_file(monkeypatch):
+    """The file only ever appears complete: written to a temp name, then renamed."""
+    renames = []
+    real = replay.Path.rename
+    monkeypatch.setattr(replay.Path, "rename", lambda self, target: renames.append((self.name, target.name)) or real(self, target))
+    replay.light_curve("ztf", "ZTF26aaa", fetch=lambda s, o: ([det(NOW0)], None, None))
+    assert renames == [("ZTF26aaa.json.tmp", "ZTF26aaa.json")]
+    assert not list(replay.CACHE_DIR.rglob("*.tmp"))
+
+
+def test_the_replay_feeds_its_point_source_alerts_to_the_watch(world, monkeypatch, capsys):
+    add(world, "ZTF26ps", [lim(NOW0 - 4.0), det(NOW0 - 2.4), det(NOW0 - 1.4), det(NOW0 - 0.4)])
+    psf = lambda ra, dec: Crossmatch("point_source", ['PSF r=26.1 at 0.2"'])
+    monkeypatch.setattr(mon.tns, "tns_lookup",
+                        lambda ra, dec: {"objname": "2026kfw", "name_prefix": "SN", "object_type": {"id": 3, "name": "SN Ia"},
+                                         "radeg": ra, "decdeg": dec})
+    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: 6.3)
+    replay.run("D", CONE, "2026-04-06", "2026-04-10", classify=psf)
+    out = capsys.readouterr().out
+    assert "spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)" in out
+    watched = json.loads((mon.STATE_DIR / mon.PS_WATCH_FILE).read_text())["objects"]
+    assert watched["ztf:ZTF26ps"]["source"] == "replay D 2026-04-06..2026-04-10"

@@ -1,4 +1,4 @@
-"""CLI entry point: python -m rubin_qa [survey] [page_size | oid oid ...]
+"""CLI entry point: uv run python -m rubin_qa [survey] [page_size | oid oid ...]
 
   survey: ztf (default) | lsst | antares
 """

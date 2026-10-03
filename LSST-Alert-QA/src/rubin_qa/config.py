@@ -24,8 +24,19 @@ PROJECT_ROOT = pathlib.Path(
 )
 REPORTS_DIR  = PROJECT_ROOT / "reports"
 
-# Time reference shared by the ANTARES monitors (antares_sso_monitor.py,
-# antares_sn_monitor.py), whose queries and state files are in MJD.
+
+def from_root(path: str | os.PathLike) -> pathlib.Path:
+    """
+    A path as the docs write it, relative to the repo root (reports/x.csv,
+    logs/replay_D_....json); absolute and ~ paths pass through. For paths given on
+    the command line: the current directory never decides where a file is read or
+    written, so a documented example works from any directory.
+    """
+    p = pathlib.Path(path).expanduser()
+    return p if p.is_absolute() else PROJECT_ROOT / p
+
+# Time reference shared by the transient monitor and the retired SSO monitor
+# (antares_sso_monitor.py), whose queries and state files are in MJD.
 MJD_J2000 = 51544.5  # MJD of J2000.0 epoch reference (2000-01-01 12:00 UTC)
 
 

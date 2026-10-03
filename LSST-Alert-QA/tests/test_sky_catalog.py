@@ -134,6 +134,76 @@ def test_a_response_cut_short_raises_and_is_not_cached(tmp_path, monkeypatch):
     assert not list(tmp_path.iterdir())
 
 
+def _truncated_tile(tmp_path, keep=0.7):
+    """A cached tile cut short, as a disk fault (or a pre-atomic write) could leave it."""
+    import gzip
+
+    whole = gzip.compress(("\n".join([TILE_HEADER] + [TILE_ROW] * 400) + "\n").encode())
+    path = tmp_path / "1_1.csv.gz"
+    path.write_bytes(whole[: int(len(whole) * keep)])
+    return path
+
+
+def test_a_damaged_cached_tile_is_fetched_again_never_read_or_crashing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sc, "CACHE_DIR", tmp_path)
+    path = _truncated_tile(tmp_path)
+    assert not sc.tile_is_cached(1, 1)  # its header still reads: only the whole file can tell
+    assert not path.exists() and "damaged cache file" in capsys.readouterr().err
+    _truncated_tile(tmp_path)
+    calls = []
+
+    def good(url, params, timeout):
+        calls.append(1)
+        return SimpleNamespace(status_code=200, text=f"{TILE_HEADER}\n{TILE_ROW}\n")
+
+    assert len(sc.fetch_tile(1, 1, get=good)) == 1 and calls == [1]
+    assert sc.tile_is_cached(1, 1)  # replaced by the complete answer
+
+
+def _maskbits_file():
+    import io as _io
+
+    from astropy.io import fits
+
+    buf = _io.BytesIO()
+    fits.HDUList([fits.PrimaryHDU(), fits.CompImageHDU(np.full((64, 64), 1 << sc.BAILOUT_BIT, dtype=np.int32),
+                                                        name="MASKBITS")]).writeto(buf)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("keep,cached", [
+    (1.0, True),
+    (2880, False),   # only the empty primary header survives: trivially "complete" without the image check
+    (0.6, False),    # cut inside the image
+    (0.999, False),  # a few bytes short
+])
+def test_maskbits_is_cached_only_for_a_complete_file_and_deletes_a_short_one(tmp_path, monkeypatch, keep, cached):
+    monkeypatch.setattr(sc, "MASKBITS_CACHE_DIR", tmp_path)
+    whole = _maskbits_file()
+    path = tmp_path / "0532m280.fits.fz"
+    path.write_bytes(whole[: keep if isinstance(keep, int) else int(len(whole) * keep)])
+    assert sc.maskbits_is_cached("0532m280") is cached
+    assert path.exists() is cached  # a short file is deleted, so the prefetch fetches it again
+
+
+def test_a_damaged_cached_maskbits_file_is_fetched_again(tmp_path, monkeypatch, capsys):
+    import io as _io
+
+    from astropy.io import fits
+
+    monkeypatch.setattr(sc, "MASKBITS_CACHE_DIR", tmp_path)
+    buf = _io.BytesIO()
+    fits.HDUList([fits.PrimaryHDU(), fits.CompImageHDU(np.full((64, 64), 1 << sc.BAILOUT_BIT, dtype=np.int32),
+                                                        name="MASKBITS")]).writeto(buf)
+    whole = buf.getvalue()
+    (tmp_path / "0532m280.fits.fz").write_bytes(whole[: len(whole) // 3])  # cut inside the image
+    calls = []
+    image, _ = sc.fetch_maskbits("0532m280", get=lambda url, timeout: calls.append(url) or SimpleNamespace(
+        status_code=200, content=whole))
+    assert calls and image[0, 0] == 1 << sc.BAILOUT_BIT
+    assert "damaged cache file" in capsys.readouterr().err
+
+
 def test_an_empty_answer_is_returned_but_never_cached(tmp_path, monkeypatch):
     """A tile genuinely empty (inside a bright-star mask) costs a refetch; a glitch cannot become a permanent hole."""
     monkeypatch.setattr(sc, "CACHE_DIR", tmp_path)
@@ -308,7 +378,7 @@ def test_within_1_arcsec_a_point_source_is_point_source():
 # --- ellipse conventions, anchored to the image ---------------------------------------
 # Expected major-axis PAs come from the pixels, never from a catalogue (2026-10-01):
 # measured with tools/pa_from_pixels.py (r-band FITS cutout, second moments, orientation
-# from the WCS), reproduce with `python tools/pa_from_pixels.py --radius R RA DEC`, R =
+# from the WCS), reproduce with `uv run tools/pa_from_pixels.py --radius R RA DEC`, R =
 # shape_r (Tractor rows) or sma_moment (atlas rows). Each was also confirmed by eye on the
 # Legacy viewer cutout against neutral 45/135 deg guides. Convention errors are gross (a
 # 90 deg swap or an east-west mirror both move a diagonal by ~90 deg), so the tolerance is
@@ -670,9 +740,21 @@ def test_fetch_maskbits_caches_a_fits_file(tmp_path, monkeypatch):
                     "legacysurvey-0532m280-maskbits.fits.fz"]
 
 
-def test_footprint_bricks_query_covers_the_cone_and_margin():
+def test_footprint_bricks_query_is_one_cone_with_the_margin():
     q = sc.footprint_bricks_query((53.1, -27.8, 2.82))
-    assert q.startswith("SELECT brickname, ra1, ra2, dec1, dec2 FROM ls_dr10.bricks WHERE dec2 > -31.620000 AND dec1 < -23.980000")
+    assert q == ("SELECT brickname, ra1, ra2, dec1, dec2 FROM ls_dr10.bricks AS t "
+                 "WHERE 't' = q3c_radial_query(t.ra, t.dec, 53.100000, -27.800000, 3.820000)")
+
+
+def test_footprint_bricks_across_ra_zero(tmp_path, monkeypatch):
+    """A cone needs no wrap handling: bricks on both sides of RA 0 are in, by angular distance alone."""
+    monkeypatch.setattr(sc, "BRICKS_CACHE_DIR", tmp_path)
+    centres = {"west": (359.0, -30.0), "east": (1.5, -30.0), "south": (0.5, -33.7),  # 0.87, 0.87, 3.7 deg
+               "too_south": (0.5, -34.0), "too_east": (5.0, -30.0)}  # 4.0, 3.9 deg: beyond 2.82 + 1
+    sky = pd.DataFrame([{"brickname": n, "ra": ra, "dec": dec, "ra1": ra - 0.14, "ra2": ra + 0.14,
+                         "dec1": dec - 0.125, "dec2": dec + 0.125} for n, (ra, dec) in centres.items()])
+    got = sc.footprint_bricks((0.5, -30.0, 2.82), get=q3c_tap(sky))
+    assert sorted(got["brickname"]) == ["east", "south", "west"]
 
 
 def test_nmgy_to_mag():

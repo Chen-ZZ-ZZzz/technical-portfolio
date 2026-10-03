@@ -27,13 +27,20 @@ Method, and why each step:
   - lastmjd is ALeRCE's current value; since the stream stopped on 07-14 it is final.
 
 Every object is kept (oid, position, first/last MJD, n_det, n_forced, stamp class) in
-logs/lsst_census/<box>.jsonl, so a different tiling is a --report away, not a refetch.
+cache/lsst_census/<box>.jsonl, so a different tiling is a --report away, not a refetch.
 
 Usage:
-    python tools/lsst_box_census.py                 # fetch (resumes), cell by cell
-    python tools/lsst_box_census.py --report        # counts per box, month and cell
-    python tools/lsst_box_census.py --report --map  # plus 1x1 deg maps
-    python tools/lsst_box_census.py --csv reports/lsst_box_census_20261001.csv  # per box and month
+    uv run tools/lsst_box_census.py                 # fetch (resumes), cell by cell
+    uv run tools/lsst_box_census.py --report        # counts per box, month and cell
+    uv run tools/lsst_box_census.py --report --map  # plus 1x1 deg maps
+    uv run tools/lsst_box_census.py --csv reports/lsst_box_census_20261001.csv  # per box and month
+    uv run tools/lsst_box_census.py --boxes D T240-20 --workers 2  # only these boxes, 2 requests at a time
+
+  --boxes NAME [NAME ...]  which boxes (default: all): D (COSMOS) and the six region tiles
+                           T240-25 T245-25 T250-25 T240-20 T245-20 T250-20 (named by their lower
+                           RA, Dec corner). Applies to fetching, --report and --csv alike.
+  --workers N              week chunks fetched in parallel, i.e. ALeRCE requests in flight
+                           (default 3). Fetching only; --report and --csv use no network.
 """
 
 from __future__ import annotations
@@ -50,12 +57,19 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
+
+from rubin_qa.config import PROJECT_ROOT, from_root  # noqa: E402
+
 URL = "https://api-lsst.alerce.online/object_api/list_objects"
 CLASSIFIER = "stamp_classifier_rubin_beta"
 PAGE_SIZE = 1000
 REQUEST_TIMEOUT = 120
 RETRY_WAITS = (15, 30, 60)
-OUT_DIR = pathlib.Path(__file__).resolve().parents[1] / "logs" / "lsst_census"
+# cache, not logs: the rows can be fetched again (the stream stopped 07-14, so ALeRCE's answers are
+# final), only at a cost of hours. done.jsonl (the resume checkpoint) stays with the <box>.jsonl rows
+# it vouches for: a rerun with only the rows left would append every chunk again
+OUT_DIR = PROJECT_ROOT / "cache" / "lsst_census"
 WARN_PREFIX = "WARN: "
 
 WINDOW_MJD = (61086, 61236)  # 2026-02-15 .. 2026-07-14 inclusive: the stream's last night
@@ -340,11 +354,15 @@ def print_map(box: Box, rows: list[dict]) -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--boxes", nargs="+", choices=list(BOXES), default=list(BOXES))
-    p.add_argument("--workers", type=int, default=3)
+    p.add_argument("--boxes", nargs="+", choices=list(BOXES), default=list(BOXES), metavar="NAME",
+                   help=f"boxes to fetch or report (default all: {' '.join(BOXES)}); "
+                        "T<ra><dec> tiles are named by their lower RA, Dec corner")
+    p.add_argument("--workers", type=int, default=3,
+                   help="week chunks fetched in parallel, i.e. ALeRCE requests in flight (default 3; fetching only)")
     p.add_argument("--report", action="store_true", help="read back the fetched objects, no network")
     p.add_argument("--map", action="store_true", help="with --report: 1x1 deg maps of eligible new objects")
-    p.add_argument("--csv", metavar="PATH", help="write the per-box, per-month summary as CSV (no network)")
+    p.add_argument("--csv", metavar="PATH", type=from_root,
+                   help="write the per-box, per-month summary as CSV (no network; relative to the repo root)")
     args = p.parse_args()
     if args.csv:
         return write_csv(args.boxes, args.csv)

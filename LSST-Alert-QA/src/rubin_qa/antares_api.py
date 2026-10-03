@@ -16,6 +16,43 @@ from .config import (
 )
 
 
+# ANTARES helpers shared by everything in the repo that still reads ANTARES: this module's
+# pipeline, tools/asteroid_probe.py and tools/host_match_check.py. One definition each
+# (2026-10-03): two copies drift apart, and a fix made in one quietly misses the other.
+# The retired SSO monitor keeps its own self-built code, a frozen artifact.
+
+
+def antares_errors() -> tuple[type[BaseException], ...]:
+    """
+    What an ANTARES call can raise that is a broker fault, not a bug: requests exceptions
+    (ANTARES imposes a 60 s read timeout of its own) and AntaresException (non-404 4xx,
+    all 5xx). Imported lazily: antares-client is optional for ALeRCE-only installs.
+    """
+    from antares_client.exceptions import AntaresException
+
+    return (requests.exceptions.RequestException, AntaresException)
+
+
+def is_solar_system(props: dict) -> bool:
+    """ZTF matched this alert (or locus) to a known asteroid. ANTARES stores the string "null" when it did not."""
+    return props.get("ztf_ssnamenr") not in (None, "", "null")
+
+
+def locus_survey_ids(props: dict) -> dict[str, list[str]]:
+    """The survey object IDs on an ANTARES locus (a place, not an object: it can hold several)."""
+    s = props.get("survey") or {}
+    ztf = list((s.get("ztf") or {}).get("id") or [])
+    if not ztf and props.get("ztf_object_id"):
+        ztf = [props["ztf_object_id"]]
+    return {"ztf": ztf, "lsst": [str(x) for x in (s.get("lsst") or {}).get("dia_object_id") or []]}
+
+
+def sky_distance_clause(cone: tuple[float, float, float]) -> dict:
+    """ANTARES's own cone filter, built by hand (elasticsearch-dsl cannot)."""
+    ra, dec, radius = cone
+    return {"sky_distance": {"distance": f"{radius} degree", "htm16": {"center": f"{ra} {dec}"}}}
+
+
 def _search():
     try:
         from antares_client import search
@@ -42,14 +79,13 @@ def _api_call(fn, *args, **kwargs):
     The ZTF path is better behaved — get_by_ztf_object_id returns None for an
     unknown object, which surfaces immediately as locus:not_found.
     """
-    from antares_client.exceptions import AntaresException
-
+    errors = antares_errors()
     last_err = None
     name = getattr(fn, "__name__", str(fn))
     for attempt in range(RETRY_ATTEMPTS):
         try:
             return fn(*args, **kwargs), None
-        except (requests.exceptions.RequestException, AntaresException) as e:
+        except errors as e:
             last_err = str(e)
             if attempt < RETRY_ATTEMPTS - 1:
                 granted = retry_budget.consume(RETRY_DELAY * (2 ** attempt))

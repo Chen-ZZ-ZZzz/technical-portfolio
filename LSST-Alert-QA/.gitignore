@@ -33,7 +33,11 @@ htmlcov/
 # reports/ is deliberately NOT ignored: the audit CSVs are evidence for claims in
 # the README and should travel with the repo. Routine daily-scan output is kept
 # out by the sync script, not by git.
-# logs/ also covers bright_sso_state.json, which lives there
+# One line per directory (see CLAUDE.md, "Runtime directories"):
+# logs/: run output; can be deleted at any time
 logs/
-# on-demand catalogue tiles (Legacy Surveys DR10); static, re-downloadable
+# state/: anything that can't be recreated (monitor state, the point-source watch,
+# pending TNS lookups, latency samples); deleting it loses information
+state/
+# cache/: anything that can be fetched again; deleting it only costs time
 cache/

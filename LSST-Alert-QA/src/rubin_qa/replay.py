@@ -3,7 +3,7 @@ replay.py - run the transient monitor over past days, from data that cannot chan
 
 The live scan filters on summary fields that keep changing (ANTARES's newest alert,
 ALeRCE's last detection), and those are read as of today, not as of the replayed date:
-a replay of box D as of 2026-04-15 would have fetched 8,105 LSST light curves, 6,453 of
+a replay of footprint D as of 2026-04-15 would have fetched 8,105 LSST light curves, 6,453 of
 them only because of detections after that date. So a replay filters only on what
 cannot change afterwards (design: the user, 2026-10-01):
 
@@ -30,7 +30,7 @@ old objects). A rise is a pure function of the light curve; unit tests on synthe
 light curves cover it.
 
 ALeRCE's LSST listing can answer a heavy query with an empty result instead of an
-error (2026-10-01: a 30-day first-detection window over box D returned 0 objects,
+error (2026-10-01: a 30-day first-detection window over footprint D returned 0 objects,
 although the census holds thousands for it). An empty chunk is therefore asked again
 day by day; data in any day marks the chunk's answer as a failure.
 """
@@ -48,7 +48,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import sky_catalog as sc
 from . import transient_monitor as mon
-from .config import PROJECT_ROOT, WARN_PREFIX
+from .config import CONFIRM_THRESHOLD_SECONDS, PROJECT_ROOT, WARN_PREFIX
 from .photometry import PhotPoint, SurveyObject, fetch_alerce_lsst, fetch_alerce_ztf, truncate
 
 CACHE_DIR = PROJECT_ROOT / "cache" / "replay"
@@ -57,7 +57,7 @@ LISTING_CHUNK_DAYS = 7
 PAGE_SIZE = 1000
 MAX_PAGES = 200
 LSST_CLASSIFIER = "stamp_classifier_rubin_beta"  # one row per object (the listing repeats rows per classifier)
-# measured 2026-10-01: ALeRCE query_lightcurve, 10 box-D LSST objects, median 1.13 s (max 2.47 s);
+# measured 2026-10-01: ALeRCE query_lightcurve, 10 footprint-D LSST objects, median 1.13 s (max 2.47 s);
 # a neighbour cone query costs about the same
 SECONDS_PER_CALL = 1.13
 # a DR10 tile from Data Lab when it is healthy (~3 s each, 2026-10-01); it has also taken
@@ -165,22 +165,69 @@ def list_candidates(survey: str, cone, lo: float, hi: float, cut: bool = True, q
     return sorted(out, key=lambda r: r["first"])
 
 
+# ------------------------------------------------------------------ cache files
+# Every cache file is written to a temp file and renamed, so an aborted run (Ctrl-C, a
+# suspend, a crash) leaves either the old file or none, never half of one; and every
+# read checks the file, so a damaged one is fetched again instead of crashing the run
+# or passing as data (2026-10-02, after an aborted --compare-cuts).
+
+CANDIDATE_KEYS = {"survey", "oid", "ra", "dec", "first", "last", "ndet"}
+
+
+def _candidates_ok(d) -> bool:
+    return isinstance(d, list) and all(isinstance(r, dict) and CANDIDATE_KEYS <= set(r) for r in d)
+
+
+def _light_curve_ok(d) -> bool:
+    if not (isinstance(d, dict) and isinstance(d.get("points"), list) and "sso_id" in d):
+        return False
+    try:
+        [PhotPoint(**pt) for pt in d["points"]]
+    except TypeError:
+        return False
+    return True
+
+
+def _write_json(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj))
+    tmp.rename(path)
+
+
+def _read_json(path: Path, valid):
+    """A cached file's content, or None when it is absent or damaged (then deleted, to be fetched again)."""
+    if not path.exists():
+        return None
+    try:
+        d = json.loads(path.read_text())
+        if valid(d):
+            return d
+        why = "unexpected content"
+    except (ValueError, UnicodeDecodeError) as e:
+        why = f"{type(e).__name__}: {e}"
+    print(f"{WARN_PREFIX}damaged cache file {path} ({why}); deleted, fetched again", file=sys.stderr)
+    path.unlink()
+    return None
+
+
 def cached_candidates(name: str, survey: str, cone, lo: float, hi: float, cut: bool, notes: list[str]) -> list[dict]:
     """The candidate list, from the cache or listed once: first detections in a past window do not change."""
     path = CACHE_DIR / "candidates" / f"{name}_{survey}_{lo:.1f}_{hi:.1f}_{'cut' if cut else 'all'}.json"
-    if path.exists():
-        return json.loads(path.read_text())
+    rows = _read_json(path, _candidates_ok)
+    if rows is not None:
+        return rows
     rows = list_candidates(survey, cone, lo, hi, cut, notes=notes)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(rows))
+    _write_json(path, rows)
     return rows
 
 
 def ztf_neighbours(row: dict, query=None) -> list[dict]:
     """ZTF objects of any age at an LSST candidate's position (cached per object: positions do not change)."""
-    path = CACHE_DIR / "neighbours" / f"{row['oid']}.json"
-    if path.exists():
-        return json.loads(path.read_text())
+    path = _neighbours_path(row["oid"])
+    cached = _read_json(path, lambda d: isinstance(d, list) and all(isinstance(i, dict) and "oid" in i for i in d))
+    if cached is not None:
+        return cached
     if query is None:
         from .client import _api_call, _client
 
@@ -193,9 +240,12 @@ def ztf_neighbours(row: dict, query=None) -> list[dict]:
     items = query(row["ra"], row["dec"], mon.ASSOC_RADIUS_ARCSEC)
     out = [{"survey": "ztf", "oid": str(i["oid"]), "ra": float(i["meanra"]), "dec": float(i["meandec"]),
             "first": float(i["firstmjd"]), "last": float(i["lastmjd"]), "ndet": int(i.get("ndet") or 0)} for i in items]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(out))
+    _write_json(path, out)
     return out
+
+
+def _neighbours_path(oid: str) -> Path:
+    return CACHE_DIR / "neighbours" / f"{oid}.json"
 
 
 # ------------------------------------------------------------------ light curves
@@ -216,16 +266,13 @@ def fetch_light_curve(survey: str, oid: str) -> tuple[list[PhotPoint], str | Non
 def light_curve(survey: str, oid: str, fetch=None) -> tuple[list[PhotPoint], str | None, str | None]:
     """(points, sso_id, error) from the cache or one fetch; only a successful fetch is cached."""
     path = _lc_path(survey, oid)
-    if path.exists():
-        d = json.loads(path.read_text())
+    d = _read_json(path, _light_curve_ok)
+    if d is not None:
         return [PhotPoint(**p) for p in d["points"]], d["sso_id"], None
     points, sso, err = (fetch or fetch_light_curve)(survey, oid)
     if err is not None:
         return [], None, err
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"points": [asdict(p) for p in points], "sso_id": sso}))
-    tmp.rename(path)
+    _write_json(path, {"points": [asdict(p) for p in points], "sso_id": sso})
     return points, sso, None
 
 
@@ -253,7 +300,7 @@ def catalogue_needs(rows: list[dict], cone) -> tuple[list[tuple[int, int]], list
                      & (bricks["dec1"] < r["dec"] + rad) & (bricks["dec2"] > r["dec"] - rad)]
         names |= set(hit["brickname"])
     return ([t for t in tiles if not sc.tile_is_cached(*t)],
-            sorted(b for b in names if not (sc.MASKBITS_CACHE_DIR / f"{b}.fits.fz").exists()))
+            sorted(b for b in names if not sc.maskbits_is_cached(b)))
 
 
 def _retrying(fn, *args):
@@ -298,44 +345,79 @@ def window(first_day: str, last_day: str, lookback_days: float) -> tuple[float, 
     return mon.date_to_mjd(first_day) - 1.0 - lookback_days, mon.date_to_mjd(last_day), days
 
 
-def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = mon.LOOKBACK_DAYS,
-        bracket_days: float = mon.BRACKET_DAYS, min_detections: int = mon.MIN_DETECTIONS, cut: bool = True,
-        classify=None, quiet: bool = False, estimate_only: bool = False) -> list[dict]:
+class Declined(Exception):
+    """A replay above the cost threshold that was not confirmed."""
+
+
+def confirm_cost(seconds: float, yes: bool, what: str) -> None:
     """
-    Replay first_day..last_day; returns the alerts as records and writes them to logs/.
-    estimate_only: list the candidates (cheap, cached), print the time estimate, fetch nothing.
+    Go ahead under CONFIRM_THRESHOLD_SECONDS or with yes; otherwise ask on a terminal.
+    Without a terminal, refuse: a replay is never scheduled, so a non-interactive start
+    of a many-hour job is a mistake, not a timer (unlike the QA pipeline's units).
     """
-    say = (lambda *a, **k: None) if quiet else print
-    timer = StageTimer()
+    if seconds <= CONFIRM_THRESHOLD_SECONDS or yes:
+        return
+    msg = f"{what}: ~{seconds / 60:.0f} min estimated"
+    if sys.stdin is None or not sys.stdin.isatty():
+        raise Declined(f"{msg}; not started - no terminal to confirm on (pass --yes to run it anyway)")
+    if input(f"{msg}. Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+        raise Declined(f"{msg}; declined")
+
+
+def price(name: str, cone, first_day: str, last_day: str, lookback_days: float, cut: bool, say=print,
+          notes: list[str] | None = None) -> tuple[list[dict], list, list, dict]:
+    """
+    List the candidates (cached after the first time) and estimate the fetching, printing
+    it. Returns (rows, tiles, bricks, estimate); estimate["seconds"] is the total.
+    """
+    notes = [] if notes is None else notes
     lo, hi, days = window(first_day, last_day, lookback_days)
-    notes: list[str] = []
     say(f"\nReplay {name}: {first_day} .. {last_day} ({len(days)} days), candidates first detected MJD {lo:.1f}-{hi:.1f}"
         f"{'' if cut else ', NO CUT'}", flush=True)
-
     rows = []
     for survey in ("lsst", "ztf"):
         got = cached_candidates(name, survey, cone, lo, hi, cut, notes)
         say(f"  {survey}: {len(got)} candidates", flush=True)
         rows += got
-    timer.mark("listing")
     lsst = [r for r in rows if r["survey"] == "lsst"]
-    todo_nb = [r for r in lsst if not (CACHE_DIR / "neighbours" / f"{r['oid']}.json").exists()]
+    todo_nb = [r for r in lsst if not _neighbours_path(r["oid"]).exists()]
     todo_lc = [r for r in rows if not is_cached(r["survey"], r["oid"])]
     calls = len(todo_nb) + len(todo_lc)
     sc.footprint_atlas(cone)  # one query each, cached; the brick list also sizes the maskbits need
     tiles, bricks = catalogue_needs(rows, cone)
     cat_min = len(tiles) * SECONDS_PER_TILE / CATALOGUE_WORKERS / 60
     estimate = {"calls": calls, "calls_min": round(calls * SECONDS_PER_CALL / 60, 1),
-                "tiles": len(tiles), "bricks": len(bricks), "catalogue_min": round(cat_min, 1)}
+                "tiles": len(tiles), "bricks": len(bricks), "catalogue_min": round(cat_min, 1),
+                "seconds": round(calls * SECONDS_PER_CALL + cat_min * 60)}
     say(f"  to fetch: {len(todo_lc)} light curves, {len(todo_nb)} ZTF neighbour lookups "
         f"(~{calls * SECONDS_PER_CALL / 60:.0f} min at {SECONDS_PER_CALL} s per call, plus the neighbours' own light curves); "
         f"{len(tiles)} DR10 tiles and {len(bricks)} maskbits bricks (~{cat_min:.0f} min at {SECONDS_PER_TILE:g} s per tile "
         f"over {CATALOGUE_WORKERS} workers, healthy Data Lab; much longer when it is slow)", flush=True)
+    return rows, tiles, bricks, estimate
+
+
+def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = mon.LOOKBACK_DAYS,
+        bracket_days: float = mon.BRACKET_DAYS, min_detections: int = mon.MIN_DETECTIONS, cut: bool = True,
+        classify=None, quiet: bool = False, estimate_only: bool = False, yes: bool = True) -> list[dict]:
+    """
+    Replay first_day..last_day; returns the alerts as records and writes them to logs/.
+    estimate_only: list the candidates (cheap, cached), print the time estimate, fetch nothing.
+    yes=False: above CONFIRM_THRESHOLD_SECONDS, ask before fetching (raises Declined).
+    """
+    say = (lambda *a, **k: None) if quiet else print
+    timer = StageTimer()
+    lo, hi, days = window(first_day, last_day, lookback_days)
+    notes: list[str] = []
+    rows, tiles, bricks, estimate = price(name, cone, first_day, last_day, lookback_days, cut, say, notes)
+    timer.mark("listing")
+    lsst = [r for r in rows if r["survey"] == "lsst"]
     if estimate_only:
         return []
+    confirm_cost(estimate["seconds"], yes, f"replay {name} {first_day}..{last_day}{'' if cut else ' without the cut'}")
     timer.mark("estimate")
     if tiles or bricks:
         failed = prefetch_catalogue(tiles, bricks, say)
+
         if failed:
             print(f"{WARN_PREFIX}{len(failed)} catalogue fetches failed; their crossmatches will be counted as "
                   f"unavailable: {', '.join(failed[:3])}{' ...' if len(failed) > 3 else ''}", file=sys.stderr)
@@ -377,12 +459,16 @@ def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = m
         today = _as_of(objs, now, need_detection=True)
         result = mon.judge_day(today, now, since, state, classify, bracket_days, min_detections,
                                context=_as_of(context, now, need_detection=False))
-        for c, new_conditions in result.alerts:
-            records.append({"day": day, "key": c.obj.key, "category": c.category, "conditions": new_conditions,
+        for c, new_conditions, anchor in [(c, n, None) for c, n in result.alerts] + result.notes:
+            records.append({"day": day, "key": c.obj.key, "ra": c.obj.ra, "dec": c.obj.dec,
+                            "category": c.category, "conditions": new_conditions,
                             "onset": c.onset.code if c.onset else None,
-                            "crossmatch": c.match.verdict, "evidence": c.match.evidence})
+                            "crossmatch": c.match.verdict, "evidence": c.match.evidence,
+                            **({"note_on": anchor} if anchor else {})})
         say(f"  {day}: {len(today):5d} objects, {len(result.alerts)} alerts"
-            + "".join(f"\n      {c.category:13s} {c.obj.key}  {', '.join(n)}" for c, n in result.alerts), flush=True)
+            + (f", {len(result.notes)} notes" if result.notes else "")
+            + "".join(f"\n      {c.category:13s} {c.obj.key}  {', '.join(n)}" for c, n in result.alerts)
+            + "".join(f"\n      note          {c.obj.key}  {', '.join(n)}  on {a}" for c, n, a in result.notes), flush=True)
 
     timer.mark("judging")
     unavailable = [x for x in (verdicts or {}).values() if x.verdict == "unavailable"]
@@ -399,7 +485,14 @@ def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = m
                                "alerts": records}, indent=1, default=str))
     for n in notes:
         print(f"{WARN_PREFIX}{n}", file=sys.stderr)
-    say(f"Replay done: {len(records)} alerts over {len(days)} days -> {out}", flush=True)
+    # the point-source watch counts replayed alerts too (TNS as it stands today)
+    ps = [(r["key"], r["ra"], r["dec"], mon.date_to_mjd(r["day"]), f"replay {name} {first_day}..{last_day}")
+          for r in records if r["category"] == "point_source"]
+    for line in mon.point_source_watch(ps, mon.now_mjd()):
+        say(line, flush=True)
+    n_notes = sum("note_on" in r for r in records)
+    say(f"Replay done: {len(records) - n_notes} alerts and {n_notes} notes (the same event seen by another survey) "
+        f"over {len(days)} days -> {out}", flush=True)
     say(f"  time per stage (awake): {timer.summary()}", flush=True)
     return records
 
@@ -430,12 +523,20 @@ def _memo(classify):
 
 
 def alert_set(records: list[dict]) -> set[tuple]:
-    return {(r["day"], r["key"], r["category"], tuple(r["conditions"])) for r in records}
+    return {(r["day"], r["key"], r["category"], tuple(r["conditions"]), r.get("note_on")) for r in records}
 
 
 def compare_cuts(name: str, cone, first_day: str, last_day: str, lookback_days: float = mon.LOOKBACK_DAYS,
-                 bracket_days: float = mon.BRACKET_DAYS, min_detections: int = mon.MIN_DETECTIONS) -> int:
-    """The equivalence test: the same window with and without the span cut must give identical alerts."""
+                 bracket_days: float = mon.BRACKET_DAYS, min_detections: int = mon.MIN_DETECTIONS,
+                 yes: bool = False) -> int:
+    """
+    The equivalence test: the same window with and without the span cut must give identical
+    alerts. Both sides are priced before either fetches anything, and the total is what
+    needs confirming: the uncut side is the expensive one, often by hours (2026-10-02).
+    """
+    sides = [price(name, cone, first_day, last_day, lookback_days, cut)[3]["seconds"] for cut in (True, False)]
+    print(f"\nEquivalence test: ~{sides[0] / 60:.0f} min with the cut + ~{sides[1] / 60:.0f} min without it", flush=True)
+    confirm_cost(sum(sides), yes, f"--compare-cuts {name} {first_day}..{last_day}")
     classify = _memo(mon.footprint_classifier(cone))
     with_cut = alert_set(run(name, cone, first_day, last_day, lookback_days, bracket_days, min_detections, True, classify))
     without = alert_set(run(name, cone, first_day, last_day, lookback_days, bracket_days, min_detections, False, classify))

@@ -615,3 +615,48 @@ class TestRunAntaresPipeline:
             assert capsys.readouterr().out == ""
             run_antares_pipeline(locus_ids=["ANT1"], inter_object_delay=0, quiet=False)
             assert "ANT1" in capsys.readouterr().out
+
+
+# --- the ANTARES helpers the repo shares (one definition each, 2026-10-03) -----------------
+
+
+class TestSharedAntaresHelpers:
+    def test_errors_are_requests_and_antares_exceptions(self):
+        import requests
+        from antares_client.exceptions import AntaresException
+
+        from rubin_qa.antares_api import antares_errors
+        assert antares_errors() == (requests.exceptions.RequestException, AntaresException)
+
+    @pytest.mark.parametrize("value,named", [("null", False), (None, False), ("", False), ("31521", True)])
+    def test_ssnamenr_placeholders_are_not_asteroids(self, value, named):
+        from rubin_qa.antares_api import is_solar_system
+        assert is_solar_system({"ztf_ssnamenr": value}) is named
+
+    def test_locus_survey_ids(self):
+        from rubin_qa.antares_api import locus_survey_ids
+        props = {"survey": {"ztf": {"id": ["ZTF26a"]}, "lsst": {"dia_object_id": [17]}}}
+        assert locus_survey_ids(props) == {"ztf": ["ZTF26a"], "lsst": ["17"]}
+        assert locus_survey_ids({"ztf_object_id": "ZTF19b"})["ztf"] == ["ZTF19b"]
+
+    def test_sky_distance_clause(self):
+        from rubin_qa.antares_api import sky_distance_clause
+        assert sky_distance_clause((150.1, 2.5, 2.82)) == {
+            "sky_distance": {"distance": "2.82 degree", "htm16": {"center": "150.1 2.5"}}}
+
+    def test_the_tools_use_these_very_functions_not_copies(self):
+        """Two copies drift apart, and a fix in one quietly misses the other."""
+        import pathlib
+        import sys
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
+        import asteroid_probe
+
+        # defined in antares_api, not in the tool (identity is fragile here: the deferred-import
+        # tests above reload the module)
+        assert asteroid_probe.is_solar_system.__module__ == "rubin_qa.antares_api"
+        assert asteroid_probe.locus_survey_ids.__module__ == "rubin_qa.antares_api"
+        tools = pathlib.Path(__file__).resolve().parents[1] / "tools"
+        for path in tools.glob("*.py"):
+            text = path.read_text()
+            for marker in ('"ztf_ssnamenr") not in', '{"sky_distance": {', "RequestException, AntaresException"):
+                assert marker not in text, f"{path.name} re-implements an antares_api helper ({marker})"

@@ -34,11 +34,24 @@ host_candidates, host_ellipse, ellipse_radius), for each variant in VARIANTS and
 threshold in THRESHOLDS; at the production settings each position is also run through
 sky_catalog.best_host itself, and any disagreement is reported.
 
-Usage:
-    python tools/host_match_check.py sample     # TNS SNe with reported hosts (network, cached)
-    python tools/host_match_check.py evaluate   # score TNS + DES known hosts (DR10 tiles, cached)
-    python tools/host_match_check.py randoms    # score random positions (DR10 tiles, cached)
-    python tools/host_match_check.py report     # the tables, no network
+Usage, in this order (sample -> evaluate -> randoms -> report):
+    uv run tools/host_match_check.py sample     # TNS SNe with reported hosts (network, cached)
+    uv run tools/host_match_check.py evaluate   # score TNS + DES known hosts (DR10 tiles, cached)
+    uv run tools/host_match_check.py randoms    # score random positions (DR10 tiles, cached)
+    uv run tools/host_match_check.py report     # the tables, no network
+
+Why the order:
+  - sample first, and again until it exits 0: it exits 1 while any SN is pending (TNS
+    unavailable, host lookup failed), and a pending SN is missing from the known set.
+  - evaluate reads sample's sne.jsonl, and sne.jsonl is fingerprinted: running sample
+    after evaluate makes the report open with MIXED VERSIONS.
+  - randoms needs no sample (seeded positions, RANDOM_SEED), but must run on the same
+    code as evaluate: no edits to the fingerprinted files between the two stages.
+  - report only reads the two scored files and their sidecars, and checks that both
+    match the current files.
+After an edit to sky_catalog.py, this tool or the footprints, rerun evaluate and
+randoms (both rescore from the caches in minutes), then report; rerun sample only if
+the SN sample itself should change.
 """
 
 from __future__ import annotations
@@ -55,7 +68,6 @@ import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import unquote
 
 import numpy as np
 import pandas as pd
@@ -64,35 +76,24 @@ import requests
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from rubin_qa import sky_catalog as sc  # noqa: E402
+from rubin_qa.antares_api import sky_distance_clause  # noqa: E402
+from rubin_qa.config import PROJECT_ROOT  # noqa: E402
+from rubin_qa.tns import (  # noqa: E402,F401  (re-exported for replay_tns_check and the tests)
+    TNS_CANARY, TNS_MAX_WAIT, TNS_PAUSE, TNS_THROTTLE_WAIT, TNS_WINDOW_SECONDS, tns_batch, tns_lookup, tns_once,
+)
 from rubin_qa.transient_monitor import FOOTPRINTS  # noqa: E402
 
-OUT_DIR = pathlib.Path(__file__).resolve().parents[1] / "logs" / "host_check"
-ALERCE_TNS_URL = "https://tns.alerce.online/search"
+OUT_DIR = PROJECT_ROOT / "logs" / "host_check"  # scores, sidecars, reports
+# State, not logs: the TNS sample (sample skips what it holds; evaluate reads it) and the
+# pending list (asked first next run) must outlive a tidy-up of logs/ (2026-10-02)
+SAMPLE_DIR = PROJECT_ROOT / "state" / "host_check"
 SESAME_URL = "https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV"
 SN_TYPE_PREFIXES = ("SN", "SLSN")
 REQUEST_PAUSE = 1.0  # seconds between calls to the public services
-# A TNS object ALeRCE's TNS service must know, asked to tell "not in TNS" from "throttled".
-# The service runs on a quota of 10 answers per 60 s window and answers 200 with an empty
-# record once it is spent, until the window turns (measured 2026-10-01: exactly 10 full
-# answers per window, in fixed windows that turned at :23 past the minute that day).
-# Within a window, answers only go full -> empty, so an empty answer followed by a full
-# canary in the *same* window is genuine. Where the windows turn is never used: a server
-# restart can move it. Ask twice instead: two (empty answer, full canary) pairs within
-# one window length cannot both straddle a turn, so at least one shares a window and
-# vouches for "not in TNS". A canary from before the answer proves nothing (the quota can
-# run out in between). The rule assumes fixed windows at least TNS_WINDOW_SECONDS long;
-# tests sweep every phase against a simulated service, and a shorter window fools it. (User's design, 2026-10-01, the canary at the scale of the cycle; it replaced
-# two 10 s retries per object, then a canary bracketing the whole batch, which a
-# throttled minute in the middle slips past.)
-TNS_CANARY = {"name": "2025zi", "ra": 54.727480, "dec": -26.370617}
-TNS_WINDOW_SECONDS = 60
-TNS_PAUSE = 6.5  # before every call, canaries included: under 10 a window, so we do not spend the quota ourselves
-TNS_THROTTLE_WAIT = 15.0  # a throttled canary is asked again this often, until it answers
-TNS_MAX_WAIT = 180.0  # throttled for longer than this: "unavailable"
 PENDING_FILE = "pending.jsonl"
 REQUEST_TIMEOUT = 60
 WARN_PREFIX = "WARN: "
-DES_HEAD = pathlib.Path(__file__).resolve().parents[1] / "cache" / "des_sn5yr" / "DES-SN5YR_DES_HEAD.FITS.gz"
+DES_HEAD = PROJECT_ROOT / "cache" / "des_sn5yr" / "DES-SN5YR_DES_HEAD.FITS.gz"
 # DES-SN5YR SNTYPE codes of spectroscopically classified SNe (from its README)
 DES_SN_TYPES = {1: "SNIa", 4: "SNIa-pec", 5: "SNI", 23: "SNIIb", 29: "SNII", 32: "SNIb", 33: "SNIc", 39: "SNIbc",
                 41: "SLSN-I", 66: "SLSN-II", 122: "SNIIn?", 129: "SNII?", 139: "SNIbc?", 141: "SLSN-I?"}
@@ -131,12 +132,12 @@ TILE_WORKERS = 4
 # What decides the scores, fingerprinted into every stage's sidecar and the report header,
 # so a report names its version without version control and refuses to pass as clean
 # when its stages came from different code (2026-10-01: they once did, mid-run edits).
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = PROJECT_ROOT
 FINGERPRINTED = {
     "sky_catalog.py": ROOT / "src" / "rubin_qa" / "sky_catalog.py",
     "host_match_check.py": pathlib.Path(__file__).resolve(),
     "transient_monitor.py (footprints)": ROOT / "src" / "rubin_qa" / "transient_monitor.py",
-    "sne.jsonl (TNS sample)": OUT_DIR / "sne.jsonl",
+    "sne.jsonl (TNS sample)": SAMPLE_DIR / "sne.jsonl",
     "DES-SN5YR_DES_HEAD.FITS.gz": DES_HEAD,
 }
 TILE_RETRY_WAITS = (30, 60)  # Data Lab answers slowly at times; a run should not die on one tile
@@ -150,10 +151,8 @@ def antares_tns_sne(footprint: str) -> list[dict]:
     """Classified TNS supernovae among ANTARES loci in the footprint cone."""
     from antares_client.search import search
 
-    ra, dec, radius = FOOTPRINTS[footprint][0]
-    query = {"query": {"bool": {"filter": [
-        {"sky_distance": {"distance": f"{radius} degree", "htm16": {"center": f"{ra} {dec}"}}},
-        {"term": {"catalogs": "tns_public_objects"}}]}}}
+    query = {"query": {"bool": {"filter": [sky_distance_clause(FOOTPRINTS[footprint][0]),
+                                           {"term": {"catalogs": "tns_public_objects"}}]}}}
     out = {}
     for locus in search(query):
         for r in (locus.catalog_objects or {}).get("tns_public_objects", []):
@@ -162,63 +161,6 @@ def antares_tns_sne(footprint: str) -> list[dict]:
                                   "z": r.get("redshift"), "ra": r["ra"], "dec": r["declination"],
                                   "locus": locus.locus_id}
     return list(out.values())
-
-
-def tns_once(ra: float, dec: float) -> dict:
-    """The TNS record at a position, via ALeRCE; {} when it answers without one. One call, no retry."""
-    r = requests.post(ALERCE_TNS_URL, json={"ra": ra, "dec": dec}, timeout=REQUEST_TIMEOUT)
-    r.raise_for_status()
-    return r.json().get("object_data") or {}
-
-
-def tns_canary_ok() -> bool:
-    time.sleep(TNS_PAUSE)
-    try:
-        return tns_once(TNS_CANARY["ra"], TNS_CANARY["dec"]).get("objname") == TNS_CANARY["name"]
-    except requests.RequestException:
-        return False
-
-
-def _now() -> float:
-    return time.time()
-
-
-def tns_lookup(ra: float, dec: float) -> dict | None:
-    """
-    The TNS record at a position; {} only when vouched for as "not in TNS" (see
-    TNS_CANARY); None when unavailable: the request failed, or the service stayed
-    throttled past TNS_MAX_WAIT.
-    """
-    pairs: list[float] = []  # when each (empty answer, full canary) pair started
-    waited = 0.0
-    while True:
-        time.sleep(TNS_PAUSE)
-        asked = _now()
-        try:
-            rec = tns_once(ra, dec)
-        except requests.RequestException:
-            return None
-        if rec:
-            return rec
-        if tns_canary_ok():
-            pairs.append(asked)
-            if len(pairs) >= 2 and _now() - pairs[-2] < TNS_WINDOW_SECONDS:
-                return {}
-            continue
-        # throttled: wait until the canary answers again, then ask again (earlier pairs
-        # still count: the window argument holds for any two)
-        while True:
-            if waited >= TNS_MAX_WAIT:
-                return None
-            time.sleep(TNS_THROTTLE_WAIT)
-            waited += TNS_THROTTLE_WAIT
-            if tns_canary_ok():
-                break
-
-
-def tns_batch(positions: list[tuple[float, float]]) -> list[dict | None]:
-    """tns_lookup for each position (paced inside)."""
-    return [tns_lookup(ra, dec) for ra, dec in positions]
 
 
 def j_coords(name: str) -> tuple[float, float] | None:
@@ -249,8 +191,7 @@ def resolve_host(hostname: str) -> tuple[float, float, str] | None:
     and nothing resolved, the RequestException propagates, so the SN is retried next
     run instead of being saved without a host.
     """
-    # TNS sometimes stores names URL-encoded: 2026fgl's host came as 2MASXJ09565234%2B0328119
-    aliases = [unquote(a).strip() for a in hostname.split(",") if unquote(a).strip()]
+    aliases = [a.strip() for a in hostname.split(",") if a.strip()]  # already decoded by tns_once
     for alias in aliases:
         c = j_coords(alias)
         if c:
@@ -307,8 +248,8 @@ def run_sample(footprints: list[str]) -> int:
     first by the next run, independently of the ANTARES listing. The TNS answers come
     in one canary-bracketed batch. Exit 1 while any are pending.
     """
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path, pending_path = OUT_DIR / "sne.jsonl", OUT_DIR / PENDING_FILE
+    SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
+    path, pending_path = SAMPLE_DIR / "sne.jsonl", SAMPLE_DIR / PENDING_FILE
     have = {json.loads(l)["name"] for l in path.read_text().splitlines()} if path.exists() else set()
     pending = {json.loads(l)["name"]: json.loads(l) for l in pending_path.read_text().splitlines()} \
         if pending_path.exists() else {}
@@ -399,7 +340,7 @@ def brick_names(footprint: str, positions: list[tuple[float, float]]) -> set[str
 
 
 def prefetch_maskbits(bricks: set[str]) -> None:
-    todo = sorted(b for b in bricks if not (sc.MASKBITS_CACHE_DIR / f"{b}.fits.fz").exists())
+    todo = sorted(b for b in bricks if not sc.maskbits_is_cached(b))
     print(f"  {len(bricks)} maskbits bricks needed, {len(todo)} to fetch", flush=True)
 
     def one(b):
@@ -550,7 +491,7 @@ def score_position(footprint: str, ra: float, dec: float, host: tuple[float, flo
 
 def known_pairs() -> list[dict]:
     pairs = []
-    path = OUT_DIR / "sne.jsonl"
+    path = SAMPLE_DIR / "sne.jsonl"
     for line in path.read_text().splitlines() if path.exists() else []:
         sn = json.loads(line)
         if "host_ra" in sn:
@@ -639,6 +580,7 @@ def random_positions(footprint: str, rng: random.Random) -> list[tuple[float, fl
     while len(out) < RANDOM_TILES * RANDOM_PER_TILE:
         # a tile at a uniform point of the cone, then positions uniform inside the tile
         r, phi = radius * math.sqrt(rng.random()), rng.uniform(0, 2 * math.pi)
+        # flat-sky step, cos(dec) at the centre: density skews ~±2.5% across ecdfs (membership below is exact); make exact at the next random-stage rerun
         ra = ra0 + r * math.sin(phi) / math.cos(math.radians(dec0))
         dec = dec0 + r * math.cos(phi)
         i, j = sc.tile_of(ra, dec)
@@ -759,6 +701,11 @@ def run_report() -> int:
     for src in ("DES", "TNS"):
         st = pd.Series([k["truth"] for k in known if k["source"] == src]).value_counts()
         print(f"  {src}: " + ", ".join(f"{s_} {n}" for s_, n in st.items()))
+    atlas = {src: (sum(str(k.get("true_key", "")).startswith("sga") for k in known if k["source"] == src and k["truth"] in scored_ok),
+                   sum(k["source"] == src and k["truth"] in scored_ok for k in known)) for src in ("TNS", "DES")}
+    print("Caveat: the TNS sample is found through ANTARES loci, so it holds only SNe ZTF detected - bright, nearby, "
+          f"often in big galaxies (host an atlas galaxy: TNS {atlas['TNS'][0]}/{atlas['TNS'][1]}, "
+          f"DES {atlas['DES'][0]}/{atlas['DES'][1]}); TNS correct is the easy end, not comparable with DES agreement")
     bad = sum(not k["selfcheck_ok"] for k in known) + sum(not r["selfcheck_ok"] for r in rnd)
     print(f"Self-check against sky_catalog.best_host: {bad} disagreements over {len(known) + len(rnd)} positions\n")
     des = [k for k in known if k["source"] == "DES" and k["truth"] in scored_ok]

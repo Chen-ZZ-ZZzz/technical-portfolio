@@ -238,7 +238,7 @@ def object_profile(oid: str, survey: str = DEFAULT_SURVEY) -> None:
 
 
 def main() -> None:
-    """CLI entry point: python -m rubin_qa.profiler [survey] oid [oid ...]"""
+    """CLI entry point: uv run python -m rubin_qa.profiler [survey] oid [oid ...]"""
     import argparse
 
     parser = argparse.ArgumentParser(description="Diagnostic deep-dive for one object")

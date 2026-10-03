@@ -13,7 +13,7 @@ WorkingDirectory=/path/to/LSST-Alert-QA/
 # instead, or on a second timer at daily cadence.
 #
 # --quiet suppresses the full JSON printout, leaving one summary line per run. The
-# sample itself is written by the script, straight to logs/latency_samples.jsonl —
+# sample itself is written by the script, straight to state/latency_samples.jsonl —
 # stdout is a digest of it, never the record, so --quiet costs no data.
 ExecStart=/path/to/uv run tools/sample_latency.py --quick --quiet
 
@@ -25,7 +25,7 @@ ExecStart=/path/to/uv run tools/sample_latency.py --quick --quiet
 # and there it comes with exit status and unit context attached.
 
 # hardening — see "Sandboxing" in README.md before editing.
-# ReadWritePaths must cover logs/latency_samples.jsonl, which every run appends to.
+# ReadWritePaths must cover state/latency_samples.jsonl, which every run appends to.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/path/to/LSST-Alert-QA/

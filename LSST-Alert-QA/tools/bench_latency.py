@@ -11,10 +11,10 @@ call in the system and the reason REQUEST_TIMEOUT stays at 60s, so --candidates
 is worth running whenever that ceiling is in question.
 
 Usage:
-    python tools/bench_latency.py                      # per-object, all surveys
-    python tools/bench_latency.py --rounds 2            # repeat; check stability
-    python tools/bench_latency.py --candidates         # candidate fetch only
-    python tools/bench_latency.py --out bench.json
+    uv run tools/bench_latency.py                      # per-object, all surveys
+    uv run tools/bench_latency.py --rounds 2            # repeat; check stability
+    uv run tools/bench_latency.py --candidates         # candidate fetch only
+    uv run tools/bench_latency.py --out bench.json
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from typing import Any, Callable
 # nothing but os and pathlib, so this costs no import time and no broker imports.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from rubin_qa.config import SURVEYS  # noqa: E402
+from rubin_qa.config import SURVEYS, from_root  # noqa: E402
 
 # Which surveys reach ALeRCE rather than ANTARES — a different question from which
 # ones exist, so this one stays a literal here.
@@ -193,7 +193,7 @@ def main() -> None:
         "--page-sizes", nargs="+", type=int, default=list(DEFAULT_PAGE_SIZES),
         help="Page sizes for --candidates.",
     )
-    parser.add_argument("--out", help="Write JSON results here (default: stdout only).")
+    parser.add_argument("--out", type=from_root, help="Write JSON results here, relative to the repo root (default: stdout only).")
     args = parser.parse_args()
 
     result: dict[str, Any] = {

@@ -15,12 +15,12 @@ alert's own ztf_ssnamenr, never the locus-level one being tested. One CSV row
 per locus.
 
 Report reduces a saved CSV, offline, to the numbers behind MIN_SPAN_DAYS and
-is_solar_system() in rubin_qa/transient_monitor.py.
+is_solar_system() (here; the monitor's asteroid rule).
 
 Usage:
-    python tools/asteroid_probe.py                   # ~250 loci -> reports/asteroid_probe_YYYYMMDD.csv
-    python tools/asteroid_probe.py --limit 100 --out /tmp/probe.csv
-    python tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv
+    uv run tools/asteroid_probe.py                   # ~250 loci -> reports/asteroid_probe_YYYYMMDD.csv
+    uv run tools/asteroid_probe.py --limit 100 --out /tmp/probe.csv
+    uv run tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv
 
 Evidence: reports/asteroid_probe_20260927.csv is the run the monitor's asteroid
 rules cite. It was collected by this probe's first draft, before it was a tool,
@@ -48,12 +48,19 @@ from rubin_qa.transient_monitor import (  # noqa: E402
     MIN_ABS_GAL_LAT,
     MIN_DETECTIONS,
     MIN_SPAN_DAYS,
-    NETWORK_ERRORS,
     galactic_latitude,
-    is_solar_system,
-    preexisting_ztf_ids,
+    ztf_id_is_old,
 )
-from rubin_qa.config import ERROR_PREFIX, REPORTS_DIR, now_mjd  # noqa: E402
+from rubin_qa.config import ERROR_PREFIX, REPORTS_DIR, from_root, now_mjd  # noqa: E402
+
+
+from rubin_qa.antares_api import antares_errors, is_solar_system, locus_survey_ids  # noqa: E402,F401
+
+
+def preexisting_ztf_ids(props: dict, since_mjd: float) -> list[str]:
+    """ZTF IDs on an ANTARES locus first seen before the window."""
+    return [oid for oid in locus_survey_ids(props)["ztf"] if ztf_id_is_old(oid, since_mjd)]
+
 
 DEFAULT_LIMIT = 250  # loci pulled from the listing, before the |b| cut
 SSO_TAGS = ("sso_candidates", "sso_confirmed")  # recorded to test whether they help
@@ -203,14 +210,14 @@ def format_summary(s: dict, min_span_days: float = MIN_SPAN_DAYS) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    parser.add_argument("--report", type=pathlib.Path, metavar="CSV",
+    parser.add_argument("--report", type=from_root, metavar="CSV",
                         help="summarize a saved probe CSV instead of collecting")
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT,
                         help=f"loci to pull from the listing (default {DEFAULT_LIMIT})")
     parser.add_argument("--lookback-days", type=float, default=LOOKBACK_DAYS)
     parser.add_argument("--min-detections", type=int, default=MIN_DETECTIONS)
-    parser.add_argument("--out", type=pathlib.Path,
-                        help="CSV path (default reports/asteroid_probe_YYYYMMDD.csv)")
+    parser.add_argument("--out", type=from_root,
+                        help="CSV path, relative to the repo root (default reports/asteroid_probe_YYYYMMDD.csv)")
     args = parser.parse_args(argv)
 
     if args.report:
@@ -222,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         rows = collect(args.limit, args.lookback_days, args.min_detections)
-    except NETWORK_ERRORS as e:
+    except antares_errors() as e:
         print(f"{ERROR_PREFIX}ANTARES query failed: {e}", file=sys.stderr)
         return 1
     today = datetime.date.today().strftime("%Y%m%d")

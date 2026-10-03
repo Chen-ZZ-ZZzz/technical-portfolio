@@ -4,7 +4,7 @@ TNS truth check of a replay's alerts, per survey.
 The two surveys are read against different expectations. Bright ZTF transients are
 reported to TNS routinely, so ZTF objects bracketed on a host should match at a high
 rate; a low rate there means a problem. Most faint Rubin transients are never reported,
-so LSST risers should match far less. (Box D, spring 2026, defied that: brokers reported
+so LSST risers should match far less. (Footprint D, spring 2026, defied that: brokers reported
 COSMOS Rubin transients systematically, so the reporting group is kept with every match.)
 
 Lookups go through ALeRCE's TNS service (host_match_check.tns_lookup). The service
@@ -14,7 +14,7 @@ full. What stays unresolved is "unavailable", and the run exits 1.
 An answer counts as a match only within MATCH_ARCSEC of the alert's position; a
 farther record is listed with its separation, not matched.
 
-    python tools/replay_tns_check.py logs/replay_D_2026-03-12_2026-05-15.json
+    uv run tools/replay_tns_check.py logs/replay_D_2026-03-12_2026-05-15.json
 """
 
 from __future__ import annotations
@@ -29,9 +29,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import host_match_check as h  # noqa: E402
 
-from rubin_qa.config import ERROR_PREFIX  # noqa: E402
+from rubin_qa.config import ERROR_PREFIX, PROJECT_ROOT, from_root  # noqa: E402
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CANDIDATE_CACHE = PROJECT_ROOT / "cache" / "replay" / "candidates"
 MATCH_ARCSEC = 2.0
 DEFAULT_REPLAY = PROJECT_ROOT / "logs" / "replay_D_2026-03-12_2026-05-15.json"
@@ -111,7 +110,7 @@ def run(replay: pathlib.Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("replay", nargs="?", type=pathlib.Path, default=DEFAULT_REPLAY,
+    parser.add_argument("replay", nargs="?", type=from_root, default=DEFAULT_REPLAY,
                         help="a replay result written by transient_monitor --replay")
     return run(parser.parse_args().replay)
 

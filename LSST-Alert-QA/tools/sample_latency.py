@@ -1,5 +1,5 @@
 """
-Collect one broker-latency sample and append it to logs/latency_samples.jsonl.
+Collect one broker-latency sample and append it to state/latency_samples.jsonl.
 
 Sampling must be spread across the clock: the 4-5× swing seen between 2026-08-06 and
 2026-08-11 could be time-of-day, day-of-week, or load, and samples clustered at one
@@ -12,10 +12,10 @@ survey, the candidate-fetch cost, and the SECONDS_PER_OBJECT values in force at 
 time (so a later reading stays honest about what was being compared against).
 
 Usage:
-    python tools/sample_latency.py              # take a sample, append it (~2.5 min)
-    python tools/sample_latency.py --quick      # skip the candidate fetch (~1.5 min)
-    python tools/sample_latency.py --report     # read the log back, summarize
-    python tools/sample_latency.py --report --by-hour
+    uv run tools/sample_latency.py              # take a sample, append it (~2.5 min)
+    uv run tools/sample_latency.py --quick      # skip the candidate fetch (~1.5 min)
+    uv run tools/sample_latency.py --report     # read the log back, summarize
+    uv run tools/sample_latency.py --report --by-hour
 
 You do not need to run this often. Each run measures `--objects` objects per survey
 and every one of them is kept, so --report pools measurements rather than counting
@@ -43,9 +43,10 @@ from bench_latency import (  # noqa: E402
     bench_candidates,
     bench_objects,
 )
-from rubin_qa.config import SURVEYS  # noqa: E402
+from rubin_qa.config import PROJECT_ROOT, SURVEYS, from_root  # noqa: E402
 
-LOG_PATH = pathlib.Path(__file__).resolve().parents[1] / "logs" / "latency_samples.jsonl"
+# state, not logs: past latencies cannot be measured again (the campaign behind SECONDS_PER_OBJECT)
+LOG_PATH = PROJECT_ROOT / "state" / "latency_samples.jsonl"
 SAMPLE_OBJECTS = 5          # per survey; keeps a manual run to ~2.5 min
 CANDIDATE_PAGE_SIZE = 100   # the size the daily runs actually use
 CANDIDATE_REPEATS = 1       # one shot per sample; the spread comes from many samples
@@ -324,7 +325,7 @@ def main() -> None:
         "--objects", type=int, default=SAMPLE_OBJECTS,
         help=f"Objects per survey (default: {SAMPLE_OBJECTS}).",
     )
-    parser.add_argument("--log", type=pathlib.Path, default=LOG_PATH, help="JSONL log path.")
+    parser.add_argument("--log", type=from_root, default=LOG_PATH, help="JSONL log path, relative to the repo root.")
     parser.add_argument("--dry-run", action="store_true", help="Print the sample, do not append.")
     parser.add_argument(
         "--quiet", action="store_true",

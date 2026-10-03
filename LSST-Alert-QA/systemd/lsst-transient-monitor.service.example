@@ -1,20 +1,19 @@
-# Rename to lsst-sso-monitor.service and replace /path/to/dir/ with your path
+# Rename to lsst-transient-monitor.service and replace /path/to/dir/ with your path
 
 [Unit]
-Description=ANTARES SSO brightness monitor
+Description=Transient monitor: daily new-transient scan of the live footprint
 
 [Service]
 Type=oneshot
-SyslogIdentifier=lsst-sso-monitor
-ExecStartPre=/bin/sleep 60
+SyslogIdentifier=lsst-transient-monitor
+ExecStartPre=/usr/bin/nm-online -q -t 36
 WorkingDirectory=/path/to/LSST-Alert-QA/
-ExecStart=/path/to/uv run antares_sso_monitor.py
-StandardOutput=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
-StandardError=append:/path/to/LSST-Alert-QA/logs/sso_monitor.log
+Environment=PYTHONUNBUFFERED=1
+# No arguments: never --init, never --dry-run.
+ExecStart=/path/to/uv run python -m rubin_qa.transient_monitor
+TimeoutStartSec=2h
 
 # hardening — see "Sandboxing" in README.md before editing.
-# ReadWritePaths must cover the log target above and the state file
-# state/bright_sso_state.json, which the monitor rewrites every run.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/path/to/LSST-Alert-QA/

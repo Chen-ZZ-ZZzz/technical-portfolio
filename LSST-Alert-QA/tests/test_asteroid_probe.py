@@ -207,3 +207,9 @@ def test_collect_network_failure_exits_1(monkeypatch, capsys):
     monkeypatch.setattr(ap, "collect", down)
     assert ap.main([]) == 1
     assert capsys.readouterr().err.startswith("ERROR: ANTARES query failed")
+
+
+def test_preexisting_ztf_ids_from_locus_props():
+    """Moved here from the monitor 2026-10-03: the probe is its one user (the monitor reads ALeRCE only)."""
+    props = {"survey": {"ztf": {"id": ["ZTF26aaa", "ZTF18bbb"]}}}
+    assert ap.preexisting_ztf_ids(props, 61310.0 - 14) == ["ZTF18bbb"]

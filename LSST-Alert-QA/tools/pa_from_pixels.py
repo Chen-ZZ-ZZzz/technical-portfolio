@@ -14,9 +14,9 @@ this script; rerun it to regenerate them (new fixtures, a new Legacy release or 
 version). It is a standalone tool: nothing in the monitor imports it.
 
 Usage:
-    python tools/pa_from_pixels.py RA DEC [RA DEC ...]       # PA, b/a per position
-    python tools/pa_from_pixels.py --radius 62.3 RA DEC      # cutout sized for a 62" galaxy
-    python tools/pa_from_pixels.py --check FILE.csv           # compare with catalogue
+    uv run tools/pa_from_pixels.py RA DEC [RA DEC ...]       # PA, b/a per position
+    uv run tools/pa_from_pixels.py --radius 62.3 RA DEC      # cutout sized for a 62" galaxy
+    uv run tools/pa_from_pixels.py --check FILE.csv           # compare with catalogue
         (FILE.csv: ra, dec, shape_r, shape_e1, shape_e2[, atlas_pa])
 """
 
@@ -25,12 +25,17 @@ from __future__ import annotations
 import argparse
 import io
 import math
+import pathlib
 import sys
 from collections import deque
 
 import numpy as np
 import requests
 from astropy.io import fits
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
+
+from rubin_qa.config import from_root  # noqa: E402
 
 CUTOUT_URL = "https://www.legacysurvey.org/viewer/cutout.fits"
 LAYER = "ls-dr10"
@@ -110,7 +115,8 @@ def main() -> int:
     p.add_argument("coords", nargs="*", type=float, help="RA DEC pairs (deg)")
     p.add_argument("--radius", type=float, default=5.0,
                    help="galaxy major-axis radius in arcsec; the cutout is SIZE_PER_RADIUS times it (default 5)")
-    p.add_argument("--check", help="CSV with ra, dec, shape_r, shape_e1, shape_e2[, atlas_pa]")
+    p.add_argument("--check", type=from_root,
+                   help="CSV with ra, dec, shape_r, shape_e1, shape_e2[, atlas_pa] (relative to the repo root)")
     args = p.parse_args()
     if args.check:
         import pandas as pd

@@ -18,8 +18,8 @@ same cone (2026-10-01: C 768 = 768, D 1173 = 1173, ecdfs 1002 = 1002; brick 0532
 49% BAILOUT, still has its one atlas galaxy). Run it for any new footprint.
 
 Usage:
-    python tools/atlas_query_contract.py              # footprint D
-    python tools/atlas_query_contract.py --footprint ecdfs
+    uv run tools/atlas_query_contract.py              # footprint D
+    uv run tools/atlas_query_contract.py --footprint ecdfs
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import sys
 import pandas as pd
 import requests
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]  # imports only (src/, tests.fake_tap); no data paths here
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
@@ -54,7 +54,10 @@ def tap_csv(query: str, first_column: str = "ra") -> pd.DataFrame:
 
 
 def superset_query(cone: tuple[float, float, float]) -> str:
-    """The same rows as the footprint query, by an RA/Dec box instead of q3c."""
+    """
+    The same rows as the footprint query, by an RA/Dec box instead of q3c. Deliberately a
+    box, not a cone: an oracle has to be independent of the thing it checks.
+    """
     ra, dec, radius = cone
     r = radius + sc.ATLAS_MARGIN_DEG + BOX_PAD_DEG
     dra = r / math.cos(math.radians(min(abs(dec) + r, 89.0)))

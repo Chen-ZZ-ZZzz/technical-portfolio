@@ -5,7 +5,7 @@ data sources (photometry.py); this module decides what is interesting, on
 photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
 
   discover   every survey object in the cone active within N days
-             (ANTARES loci split into their survey objects; ALeRCE LSST cone)
+             (ALeRCE cone listings of ZTF and LSST; light curves from ALeRCE)
   reject     galactic plane, the survey's own asteroid association,
              Legacy Surveys DR10 star (Gaia astrometry) unless moving
   new        judged per survey, on that survey's own history:
@@ -28,20 +28,24 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
              source within 1" -> agn, on a host farther out -> a context note.
              The path (bracketed, rising, rapid_rise, re_brightening) is the
              confidence label: a report reads "host · rising"
-  report     broker tags, classifications, catalogue matches and TNS are
-             printed, never filtered on
+  report     broker classifications and TNS (ALeRCE's TNS service, asked
+             again for 30 days) are printed, never filtered on
 
 Each survey object is reported again whenever its (category, path) pair is
 new: a new path, or a new category (unchecked becoming a real verdict). State is keyed
-on survey IDs, in logs/transient_monitor_<footprint>.json.
+on survey IDs, in state/transient_monitor_<footprint>.json.
 
-    python -m rubin_qa.transient_monitor --footprint D --as-of 2026-04-15 --dry-run
-    python -m rubin_qa.transient_monitor --cone RA DEC RADIUS
+    uv run python -m rubin_qa.transient_monitor --footprint D --dry-run
+    uv run python -m rubin_qa.transient_monitor --cone RA DEC RADIUS
+    uv run python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]
 
-Run it with -m, not by file path: it uses the package's relative imports.
+Run it with uv run (the project's environment) and -m, not by file path: it uses the
+package's relative imports.
 """
 
 import argparse
+import hashlib
+import inspect
 import bisect
 import datetime
 import json
@@ -55,26 +59,28 @@ from pathlib import Path
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-from . import retry_budget, sky_catalog
-from .config import ERROR_PREFIX, MJD_J2000, PROJECT_ROOT, WARN_PREFIX, now_mjd
-from .photometry import (  # noqa: F401  (is_solar_system, NETWORK_ERRORS re-exported for tools/)
+from . import retry_budget, sky_catalog, tns
+from .config import CONFIRM_THRESHOLD_SECONDS, ERROR_PREFIX, MJD_J2000, PROJECT_ROOT, WARN_PREFIX, now_mjd
+from .photometry import (  # noqa: F401  (NETWORK_ERRORS re-exported for tools/)
     NETWORK_ERRORS,
     Cone,
     PhotPoint,
     SurveyObject,
-    antares_tns,
-    discover_alerce_lsst,
-    discover_antares,
+    alerce_newest_in_cone,
+    discover_alerce,
     fetch_alerce_lsst,
     fetch_alerce_ztf,
-    is_solar_system,
-    locus_survey_ids,
     njy_to_mag,
     sep_deg,
     truncate,
 )
 
 LOOKBACK_DAYS = 14.0  # N: a survey's first detection must be this recent to be new
+# An empty LSST listing is checked against ALeRCE's newest LSST object in the cone, asked
+# with lastmjd >= min(window start, last known newest - this): the known object must come
+# back, so silence there means the check failed, not that the sky is quiet.
+LISTING_CHECK_MARGIN_DAYS = 1.0
+LIVE_SURVEYS = ("ztf", "lsst")  # both listed and fetched from ALeRCE (2026-10-03)
 BRACKET_DAYS = 10.0  # X: a quiet point this close before the first detection brackets the onset
 QUIET_SIGMA = 5.0  # quiet point deep enough if QUIET_SIGMA * flux_err < first-detection flux
 MIN_DETECTIONS = 3  # per survey object; filters noise, NOT asteroids (MIN_SPAN_DAYS)
@@ -101,18 +107,23 @@ RISING_MIN_MAG = 0.3  # ... and at least this much brighter
 RISING_MIN_SPAN_DAYS = 0.5  # ... measured on at least two nights
 ASSOC_RADIUS_ARCSEC = 1.5  # survey objects this close are the same place
 STATE_RETENTION_DAYS = 60.0
-STATE_DIR = PROJECT_ROOT / "logs"
+# State, not logs: the per-footprint state and the point-source watch hold what must
+# outlive a run (reported pairs, parked onsets, the watch's evidence, kept past the 60-day
+# retention). logs/ is the directory people clean up and rotate, so a tidy-up there would
+# silently reset them (2026-10-02). Written like the state always was: temp file, rename.
+STATE_DIR = PROJECT_ROOT / "state"
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 WARN_LIMIT = 5  # per-object fetch warnings printed per run; the rest are counted
 PROGRESS_EVERY = 100  # LSST photometry fetches between progress lines
 
-DEFAULT_RADIUS_DEG = 2.82  # pi r^2 = 25 deg2, the area of the 5x5 deg boxes it replaced
+DEFAULT_RADIUS_DEG = 2.82  # pi r^2 = 25 deg2; membership is angular separation <= radius
 FOOTPRINTS = {
-    "C": ((35.7, -9.0, DEFAULT_RADIUS_DEG), "real run v1: just south of the XMM-LSS deep field"),
+    "C": ((35.7, -9.0, DEFAULT_RADIUS_DEG), "former live candidate v1: just south of the XMM-LSS deep field"),
     "D": ((150.1, 2.5, DEFAULT_RADIUS_DEG), "test replay: COSMOS, Rubin data 2026-02-15..05-15"),
-    "ecdfs": ((53.1, -27.8, DEFAULT_RADIUS_DEG), "real run v2 candidate: ECDFS deep field"),
+    "ecdfs": ((53.1, -27.8, DEFAULT_RADIUS_DEG), "the live footprint: ECDFS deep field"),
 }
+LIVE_FOOTPRINT = "ecdfs"  # decided 2026-10-02; scanned when neither --footprint nor --cone is given
 
 # NewVerdict.status
 NEW, UNBRACKETED, NOT_NEW = "new", "unbracketed", "not_new"
@@ -221,11 +232,6 @@ def ztf_id_is_old(oid: str, since_mjd: float) -> bool:
         return False
 
 
-def preexisting_ztf_ids(props: dict, since_mjd: float) -> list[str]:
-    """ZTF IDs on an ANTARES locus first seen before the window (tools/asteroid_probe.py)."""
-    return [oid for oid in locus_survey_ids(props)["ztf"] if ztf_id_is_old(oid, since_mjd)]
-
-
 def _finite(x) -> bool:
     return x is not None and math.isfinite(x)
 
@@ -253,6 +259,8 @@ def quiet_points(points: list[PhotPoint]) -> list[tuple[float, float]]:
 
 def _bracket(first: PhotPoint, quiet: list[tuple[float, float]], bracket_days: float):
     window = [(m, d) for m, d in quiet if first.mjd - bracket_days <= m < first.mjd]
+    # against the FIRST detection, never the brightest so far (decided 2026-10-02): a shallow limit
+    # would then pass and prove only a rise. Pinned by test_a_limit_shallower_than_the_first_detection_...
     deep = [m for m, d in window if d < first.flux]
     return (max(deep) if deep else None), bool(window)
 
@@ -410,7 +418,10 @@ def evaluate(
         return Evaluation(reason="solar_system")
     dets = detections(obj.points)
     if not dets:
-        return Evaluation(reason="no_photometry" if obj.fetch_errors else "no_detections")
+        # an object the listing says has detections but was not worth a light-curve call
+        # (needs_photometry) is "not_fetched", not "no_detections"
+        return Evaluation(reason="no_photometry" if obj.fetch_errors else
+                          "not_fetched" if obj.summary.get("n_det") else "no_detections")
     if not spans_nights(dets[0].mjd, dets[-1].mjd):  # every path, rising and rapid rise included
         return Evaluation(reason="single_night")
 
@@ -451,11 +462,11 @@ def evaluate(
 # ------------------------------------------------------------------ gathering
 
 
-def needs_lsst_photometry(obj: SurveyObject, now: float, since_mjd: float) -> bool:
+def needs_photometry(obj: SurveyObject, now: float, since_mjd: float) -> bool:
     """
-    One ALeRCE call per LSST object is the run's main cost, so decide from the
-    listing (or ANTARES detections) first: a recent onset, or recent enough
-    activity for a rapid rise, with at least two detections.
+    One ALeRCE light-curve call per object is the run's main cost, so decide from
+    the listing first: a recent onset, or recent enough activity for a rapid rise,
+    with at least two detections.
     """
     dets = detections(obj.points)
     first = obj.summary.get("firstmjd") or (dets[0].mjd if dets else None)
@@ -470,57 +481,93 @@ def _merge(into: SurveyObject, new: SurveyObject) -> None:
     seen = {(p.mjd, p.band, p.detected) for p in into.points}
     into.points += [p for p in new.points if (p.mjd, p.band, p.detected) not in seen]
     into.broker_refs.update(new.broker_refs)
-    for attr in ("tags", "classifications", "broker_matches", "tns", "fetch_errors"):
+    for attr in ("classifications", "tns", "fetch_errors"):
         have = getattr(into, attr)
         have += [x for x in getattr(new, attr) if x not in have]
     into.summary = into.summary or new.summary
     into.sso_id = into.sso_id or new.sso_id
 
 
-def gather(cone: Cone, now: float, since_mjd: float, until_mjd: float | None, min_detections: int,
-           use_alerce: bool, stats: dict) -> list[SurveyObject]:
-    """Every survey object in the cone, with photometry, from all sources."""
-    def keep(locus) -> bool:  # the cheapest cut, before the per-locus alerts call
-        return abs(galactic_latitude(locus.ra, locus.dec)) >= MIN_ABS_GAL_LAT
+@dataclass
+class ListingCheck:
+    """What the LSST listing said, and whether its silence can be trusted."""
+    status: str  # "objects" | "quiet" | "failed" | "not_asked"
+    detail: str
+    newest_mjd: float | None = None  # latest lastmjd of the survey known in the cone, for the next run's check
 
-    objs: dict[str, SurveyObject] = {}
-    for o in discover_antares(cone, since_mjd, until_mjd, min_detections, keep_locus=keep,
-                              ztf_fallback=fetch_alerce_ztf if use_alerce else None, stats=stats):
-        if o.key in objs:
-            _merge(objs[o.key], o)
-        else:
-            objs[o.key] = o
-    if not use_alerce:
-        return list(objs.values())
 
-    listed, err = discover_alerce_lsst(cone, since_mjd, until_mjd)
+def check_listing(survey: str, listed: list[SurveyObject], err: str | None, cone: Cone, since_mjd: float,
+                  known_newest: float | None, probe=None) -> ListingCheck:
+    """
+    Tell "no new data upstream" from "the listing failed" (LSST 2026-10-02, ZTF too since
+    2026-10-03). With Rubin off sky an empty LSST listing is the normal state for weeks,
+    and ALeRCE can also answer a listing with 200 and zero items when it fails; the two
+    must not look alike. An empty listing is checked against a known answer: ALeRCE's
+    newest object of the survey in the cone (lastmjd >= min(window start, known newest -
+    margin), so the known one must come back).
+    """
+    probe = probe or (lambda cone, floor: alerce_newest_in_cone(survey, cone, floor))
+    label, since = survey.upper(), _date(since_mjd)
     if err:
-        print(f"{WARN_PREFIX}{err}", file=sys.stderr)
-        stats["alerce_listing_error"] = err
-    for o in listed:
-        if o.key in objs:
-            _merge(objs[o.key], o)
-        else:
-            objs[o.key] = o
+        return ListingCheck("failed", f"{err} (objects gathered before it are kept)", known_newest)
+    if listed:
+        newest = max([known_newest or 0.0] + [float(o.summary.get("lastmjd") or 0.0) for o in listed])
+        return ListingCheck("objects", f"{len(listed)} objects active since {since}", newest)
+    floor = None if known_newest is None else min(since_mjd, known_newest - LISTING_CHECK_MARGIN_DAYS)
+    item, perr = probe(cone, floor)
+    if perr:
+        return ListingCheck("failed", f"empty listing, and the check could not run: {perr}", known_newest)
+    if item is None:
+        what = (f"ALeRCE returned no {label} object in this cone at all: never observed, or the listing service "
+                "failed - cannot tell which" if floor is None else
+                f"the known newest object (lastmjd {known_newest:.2f}, {_date(known_newest)}) did not come back: "
+                "the listing service is not answering")
+        return ListingCheck("failed", f"empty listing, unverified: {what}", known_newest)
+    newest = float(item["lastmjd"])
+    if newest >= since_mjd:
+        return ListingCheck("failed", f"empty listing, yet ALeRCE holds {survey}:{item['oid']} detected "
+                                      f"{_date(newest)}, inside the window: the listing failed silently", newest)
+    return ListingCheck("quiet", f"none active since {since}; upstream quiet: newest {label} detection in the cone "
+                                 f"{_date(newest)} ({survey}:{item['oid']}, checked)", max(newest, known_newest or 0.0))
 
-    lsst = [o for o in objs.values() if o.survey == "lsst"]
-    todo = [o for o in lsst if needs_lsst_photometry(o, now, since_mjd)]
-    stats["lsst_not_fetched"] = len(lsst) - len(todo)
+
+def gather(cone: Cone, now: float, since_mjd: float, until_mjd: float | None, stats: dict,
+           newest: dict | None = None) -> list[SurveyObject]:
+    """
+    Every survey object in the cone, with photometry, all from ALeRCE: each survey's
+    listing (stats["<survey>_listing"]: a ListingCheck), then one light-curve call per
+    object the listing says is worth it. newest: the latest lastmjd known per survey.
+    """
+    newest = newest or {}
+    objs: dict[str, SurveyObject] = {}
+    for survey in LIVE_SURVEYS:
+        listed, err = discover_alerce(survey, cone, since_mjd, until_mjd)
+        stats[f"{survey}_listing"] = check_listing(survey, listed, err, cone, since_mjd, newest.get(survey))
+        for o in listed:
+            if o.key in objs:
+                _merge(objs[o.key], o)
+            else:
+                objs[o.key] = o
+
+    todo = [o for o in objs.values() if needs_photometry(o, now, since_mjd)]
+    stats["not_fetched"] = len(objs) - len(todo)
     if todo:
-        print(f"Fetching LSST photometry from ALeRCE for {len(todo)} of {len(lsst)} LSST objects", flush=True)
+        print(f"Fetching photometry from ALeRCE for {len(todo)} of {len(objs)} objects", flush=True)
     warned = 0
     for n, o in enumerate(todo, 1):
         if n % PROGRESS_EVERY == 0:
             print(f"  ... {n}/{len(todo)}", flush=True)
-        points, sso, ferr = fetch_alerce_lsst(o.survey_object_id)
-        stats["lsst_fetched"] = stats.get("lsst_fetched", 0) + 1
-        if ferr is None:
-            o.points = truncate(points, until_mjd)  # complete: detections + forced photometry
-            o.sso_id = o.sso_id or sso
-            o.broker_refs.setdefault("alerce", o.survey_object_id)
+        if o.survey == "lsst":
+            points, sso, ferr = fetch_alerce_lsst(o.survey_object_id)  # detections + forced photometry
         else:
-            o.fetch_errors.append(f"alerce lsst: {ferr}")
-            stats["lsst_fetch_errors"] = stats.get("lsst_fetch_errors", 0) + 1
+            (points, ferr), sso = fetch_alerce_ztf(o.survey_object_id), None  # detections + upper limits
+        stats["fetched"] = stats.get("fetched", 0) + 1
+        if ferr is None:
+            o.points = truncate(points, until_mjd)
+            o.sso_id = o.sso_id or sso
+        else:
+            o.fetch_errors.append(f"alerce {o.survey}: {ferr}")
+            stats["fetch_errors"] = stats.get("fetch_errors", 0) + 1
             if warned < WARN_LIMIT:
                 print(f"{WARN_PREFIX}{o.key}: ALeRCE photometry unavailable ({ferr})", file=sys.stderr)
                 warned += 1
@@ -547,7 +594,7 @@ def _load_state(path) -> dict:
 
 
 def _save_state(path, state: dict) -> None:
-    # logs/ is gitignored, so a fresh checkout has no such directory.
+    # state/ is gitignored, so a fresh checkout has no such directory.
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2))
@@ -575,7 +622,7 @@ def update_parked(prev: dict, parked_now: dict, seen: set[str], since_mjd: float
     return parked, resolved, expired
 
 
-def _print_candidate(c: Candidate, new_conditions: list[str]) -> None:
+def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = None) -> None:
     o, v = c.obj, c.onset
     print(f"{o.key}  {c.category} · {', '.join(c.conditions)}  new: {', '.join(new_conditions)}")
     print(f"  ra={o.ra:.5f}  dec={o.dec:.5f}  b={c.gal_b:.1f}")
@@ -596,19 +643,182 @@ def _print_candidate(c: Candidate, new_conditions: list[str]) -> None:
         print(f"  context: {line}")
     if o.broker_refs:
         print(f"  brokers: {', '.join(f'{b} {i}' for b, i in sorted(o.broker_refs.items()))}")
-    for label, items in (("tags", sorted(o.tags)), ("classifications", o.classifications),
-                         ("broker catalogues", sorted(o.broker_matches)), ("TNS", o.tns)):
-        if items:
-            print(f"  {label}: {', '.join(items)}")
+    if o.classifications:
+        print(f"  classifications: {', '.join(o.classifications)}")
+    if tns is not None:
+        print(f"  TNS: {tns}")
 
 
-def _add_tns(c: Candidate) -> None:
-    locus = c.obj.broker_refs.get("antares")
-    if locus and "tns_public_objects" in c.obj.broker_matches and not c.obj.tns:
+# TNS, via ALeRCE's TNS service (rubin_qa/tns.py; ANTARES's crossmatch until 2026-10-03,
+# which left every LSST object without a locus "not checked"). A "none" only means nobody
+# had reported the object yet - SN 2026kfw: our replay alert came 5 days before its TNS
+# report - so "none" is asked again, like "unavailable", every run for TNS_RECHECK_DAYS.
+TNS_RECHECK_DAYS = 30.0
+TNS_MATCH_ARCSEC = 2.0
+TNS_NONE_YET = f"none yet; asked again each run for {TNS_RECHECK_DAYS:g} d (a report often comes days after an alert)"
+TNS_UNAVAILABLE = f"unavailable (lookup failed); asked again each run for {TNS_RECHECK_DAYS:g} d"
+
+# The point-source watch (user, 2026-10-02). A S/N floor for the point-source rule was
+# measured and not adopted: its window rested on one supernova, SN 2026kfw, a spectroscopic
+# SN Ia on a DR10 point source of S/N 6.3. The watch counts the pattern instead: every
+# point_source alert, live or replayed, is looked up in TNS until classified (TNS
+# classifies days to weeks after discovery, so it looks back, weekly per alert), and each
+# spectroscopic supernova (TNS prefix SN) on a point source below PS_REVISIT_SNR counts.
+# One is kfw, two can be coincidence, PS_PATTERN is a pattern: from then on the report
+# carries a notice every run. Findings are kept with a fingerprint of the point-source rule,
+# so changing the rule (or PS_PATTERN) is what stops the notice. Never fails the run.
+PS_WATCH_FILE = "point_source_watch.json"  # under STATE_DIR, shared by every footprint and replay
+PS_REVISIT_SNR = 7.0  # the top of the measured window (2026-10-02, tools/point_source_snr.py)
+PS_PATTERN = 3
+PS_CHECK_EVERY_DAYS = 7.0  # a TNS lookup paces at 6.5 s; a classification takes days to weeks
+PS_WATCH_DAYS = 180.0  # unclassified this long after the alert: no longer asked
+PS_MATCH_ARCSEC = 2.0
+# TNS records are judged on their classification type, never the prefix: unclassified is
+# AT with type {"id": None, "name": None}; a supernova has an SN type ("SN Ia", "SLSN-I")
+# and the SN prefix; other classes may keep AT or get their own prefix (AT 2018hyz, a TDE,
+# comes back as prefix TDE, type TDE; checked 2026-10-02).
+SUPERNOVA_TYPES = ("SN", "SLSN")
+NUCLEAR_TYPES = ("TDE", "AGN", "QSO")  # the nuclear cases the point_source label exists for
+
+
+def point_source_rule() -> str:
+    """Fingerprint of the point-source rule as it stands: what the counted findings were judged under."""
+    text = "".join(inspect.getsource(f) for f in (sky_catalog.point_counterpart, sky_catalog._verdict))
+    return hashlib.sha256(f"{text}{sky_catalog.COUNTERPART_RADIUS_ARCSEC}".encode()).hexdigest()[:12]
+
+
+def point_source_watch(alerts: list[tuple[str, float, float, float, str]], now: float, save: bool = True) -> list[str]:
+    """
+    Register this run's point_source alerts ((key, ra, dec, alerted_mjd, source)), look up
+    the watched ones that are due, and return the report lines. Never raises: a failure is
+    a line, asked again next run.
+    """
+    try:
+        return _point_source_watch(alerts, now, save)
+    except Exception as e:  # display context: it must never take the run down
+        return [f"Point-source watch: could not run ({type(e).__name__}: {e}); asked again next run"]
+
+
+def _point_source_watch(alerts, now, save) -> list[str]:
+    path = STATE_DIR / PS_WATCH_FILE
+    objects = json.loads(path.read_text())["objects"] if path.exists() else {}
+    for key, ra, dec, mjd, source in alerts:
+        objects.setdefault(key, {"ra": ra, "dec": dec, "alerted_mjd": mjd, "source": source,
+                                 "status": "watching", "checked_mjd": None})
+    rule, unavailable, classified_now = point_source_rule(), 0, []
+    for key, e in sorted(objects.items()):
+        if e["status"] != "watching" or (e["checked_mjd"] is not None and now - e["checked_mjd"] < PS_CHECK_EVERY_DAYS):
+            continue
+        rec = tns.tns_lookup(e["ra"], e["dec"])
+        if rec is None:
+            unavailable += 1
+            continue
+        if rec and sep_deg(e["ra"], e["dec"], rec["radeg"], rec["decdeg"]) * 3600 <= PS_MATCH_ARCSEC:
+            e["tns"] = f"{rec.get('name_prefix', '')} {rec['objname']}".strip()
+            e["tns_type"] = (rec.get("object_type") or {}).get("name")
+            if e["tns_type"] and e["tns_type"].startswith(SUPERNOVA_TYPES):  # classified a supernova
+                try:
+                    snr = sky_catalog.counterpart_snr(e["ra"], e["dec"])
+                except sky_catalog.CatalogError:
+                    unavailable += 1
+                    continue
+                e.update(status="sn" if snr is not None else "no_counterpart", snr=snr, rule=rule)
+            elif e["tns_type"]:  # classified as something else: settled, and said, never a silent drop
+                e["status"] = "other_class"
+                classified_now.append((key, e))
+        e["checked_mjd"] = now
+        if e["status"] == "watching" and now - e["alerted_mjd"] > PS_WATCH_DAYS:
+            e["status"] = "expired"
+    if save:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"objects": objects}, indent=1))
+        tmp.rename(path)
+
+    hits = {e["tns"]: e for e in objects.values() if e["status"] == "sn" and e["snr"] < PS_REVISIT_SNR}
+    counted = sorted(n for n, e in hits.items() if e["rule"] == rule)
+    older = len(hits) - len(counted)
+    watching = sum(e["status"] == "watching" for e in objects.values())
+    other = Counter(e["tns_type"] for e in objects.values() if e["status"] == "other_class")
+    found = ", ".join(f"{n} S/N {hits[n]['snr']:.1f}" for n in counted)
+    lines = [f"Point-source watch: {watching} point_source alerts awaiting a TNS classification; spectroscopic "
+             f"supernovae on a point source below S/N {PS_REVISIT_SNR:g}: {len(counted)} of {PS_PATTERN}"
+             + (f" ({found})" if found else "")
+             + (f"; {older} more under an earlier version of the rule, not counted" if older else "")
+             + (f"; classified as other than supernovae: {', '.join(f'{n} {k}' for k, n in sorted(other.items()))}"
+                if other else "")
+             + (f"; {unavailable} lookups unavailable, asked again next run" if unavailable else "")]
+    for key, e in classified_now:
+        nuclear = e["tns_type"].startswith(NUCLEAR_TYPES)
+        lines.append(f"  {key}, a point_source alert, is classified in TNS: {e['tns']}, {e['tns_type']}"
+                     + (" - the nuclear case the point_source label exists for" if nuclear else ""))
+    if len(counted) >= PS_PATTERN:
+        lines.append(f"NOTICE: {len(counted)} spectroscopic supernovae labelled point_source on DR10 point sources below "
+                     f"S/N {PS_REVISIT_SNR:g} - a pattern, not one object. Measure the point-source S/N floor again "
+                     "(tools/point_source_snr.py). Repeated each run until the rule or PS_PATTERN changes.")
+    return lines
+
+
+def _tns_match(rec: dict, ra: float, dec: float) -> bool:
+    return bool(rec) and sep_deg(ra, dec, rec["radeg"], rec["decdeg"]) * 3600 <= TNS_MATCH_ARCSEC
+
+
+def _tns_line(rec: dict) -> str:
+    kind = (rec.get("object_type") or {}).get("name")
+    found = (rec.get("discoverydate") or "")[:10]
+    return (f"{rec.get('name_prefix', '')} {rec['objname']}".strip() + (f", {kind}" if kind else "")
+            + (f", discovered {found}" if found else ""))
+
+
+def _add_tns(c: Candidate, now: float) -> tuple[str, dict | None]:
+    """
+    The alert's TNS line, looked up after its verdict: TNS is display context, never an
+    input. Returns (line, watch entry): the record, or TNS_NONE_YET / TNS_UNAVAILABLE with
+    an entry scan keeps in the state and asks again each run for TNS_RECHECK_DAYS.
+    """
+    entry = {"ra": c.obj.ra, "dec": c.obj.dec, "alerted_mjd": now}
+    try:
+        rec = tns.tns_lookup(c.obj.ra, c.obj.dec)  # "none" only when the canary vouched for it
+    except Exception as e:  # display context: whatever goes wrong, the run goes on
+        print(f"{WARN_PREFIX}{c.obj.key}: TNS lookup failed ({type(e).__name__}: {e})", file=sys.stderr)
+        rec = None
+    if rec is None:
+        print(f"{WARN_PREFIX}{c.obj.key}: TNS unavailable; asked again next run", file=sys.stderr)
+        return TNS_UNAVAILABLE, entry
+    if _tns_match(rec, c.obj.ra, c.obj.dec):
+        c.obj.tns = [_tns_line(rec)]
+        return c.obj.tns[0], None
+    return TNS_NONE_YET, entry
+
+
+def _retry_tns(watch: dict, now: float) -> tuple[dict, list[str]]:
+    """
+    Ask TNS again for earlier alerts that had no record yet (or no answer). One paced call
+    each, no canary: an empty answer only means "not yet" whatever its cause; only a record
+    is news. Returns (still watched, report lines).
+    """
+    still, lines = {}, []
+    for key, e in sorted(watch.items()):
+        if "ra" not in e:  # an ANTARES-locus entry from before 2026-10-03: cannot be asked by position
+            continue
+        when = f"{key} (alert {_date(e['alerted_mjd'])})"
+        if now - e["alerted_mjd"] > TNS_RECHECK_DAYS:
+            lines.append(f"  {when}: no TNS record {TNS_RECHECK_DAYS:g} d after the alert; no longer asked")
+            continue
+        time.sleep(tns.TNS_PAUSE)
         try:
-            c.obj.tns = antares_tns(locus)
-        except NETWORK_ERRORS as e:
-            c.obj.fetch_errors.append(f"tns: {e}")
+            rec = tns.tns_once(e["ra"], e["dec"])
+        except Exception:  # display context: kept, asked again next run
+            rec = {}
+        if _tns_match(rec, e["ra"], e["dec"]):
+            lag = ""
+            if rec.get("discoverydate"):
+                days = date_to_mjd(rec["discoverydate"][:10]) - 1 - e["alerted_mjd"]
+                lag = f" ({abs(days):.0f} d {'after' if days > 0 else 'before'} our alert)"
+            lines.append(f"  {when}: now in TNS: {_tns_line(rec)}{lag}")
+        else:
+            still[key] = e
+    return still, lines
 
 
 def footprint_classifier(cone: Cone):
@@ -658,6 +868,8 @@ class DayResult:
     newly_parked: list[str]
     resolved: list[str]
     expired: list[str]
+    # the same event seen by another survey: (candidate, new paths, key of the alert it is a note on)
+    notes: list[tuple[Candidate, list[str], str]] = field(default_factory=list)
 
 
 def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, classify,
@@ -687,8 +899,10 @@ def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, c
     prev_parked = state["parked"]
     parked, resolved, expired = update_parked(prev_parked, parked_now, {o.key for o in objs}, since, now)
     reported = state["reported"]
-    alerts = []
-    for c in candidates:
+    alerts, notes = [], []
+    # earliest first detection first, so the survey that saw the event first holds its alert
+    for c in sorted(candidates, key=lambda c: (c.onset.first_det_mjd if c.onset and c.onset.first_det_mjd is not None
+                                               else math.inf, c.obj.key)):
         k = c.obj.key
         if k in resolved:
             c.context.append(f"was parked since {_date(prev_parked[k]['parked_mjd'])}")
@@ -696,13 +910,32 @@ def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, c
         # reported again when either axis changes: a new path, or a new category
         seen = {tuple(p) for p in prev.get("pairs", [])}
         new_conditions = [x for x in c.conditions if (c.category, x) not in seen]
+        anchor = prev.get("note_on") or _alerted_elsewhere(c.obj, reported)
         if new_conditions:
-            alerts.append((c, new_conditions))
+            (notes.append((c, new_conditions, anchor)) if anchor else alerts.append((c, new_conditions)))
         reported[k] = {"first_reported_mjd": prev.get("first_reported_mjd", now), "category": c.category,
-                       "pairs": sorted(seen | {(c.category, x) for x in c.conditions})}
+                       "pairs": sorted(seen | {(c.category, x) for x in c.conditions}),
+                       "ra": c.obj.ra, "dec": c.obj.dec, **({"note_on": anchor} if anchor else {})}
     newly_parked = sorted(k for k in parked_now if k not in prev_parked)
     state["parked"] = parked
-    return DayResult(candidates, alerts, rejected, parked, newly_parked, resolved, expired)
+    return DayResult(candidates, alerts, rejected, parked, newly_parked, resolved, expired, notes)
+
+
+def _alerted_elsewhere(obj: SurveyObject, reported: dict) -> str | None:
+    """
+    The alert this object's event already has: another survey's object reported within
+    ASSOC_RADIUS_ARCSEC (this run or before), followed to the alert itself if that one was
+    a note. One event, one alert; the second survey's detection becomes a note on it
+    (2026-10-02: 3 of 46 replay alerts were such repeats). Matched on the positions kept in
+    the state, not on today's listing, so it holds on a day the first survey's listing
+    failed. Same-survey neighbours are a recurrence (the context lines), not grouped here.
+    """
+    r_deg = ASSOC_RADIUS_ARCSEC / 3600
+    for key, entry in reported.items():
+        if (not key.startswith(f"{obj.survey}:") and "ra" in entry
+                and abs(entry["dec"] - obj.dec) <= r_deg and sep_deg(obj.ra, obj.dec, entry["ra"], entry["dec"]) <= r_deg):
+            return entry.get("note_on") or key
+    return None
 
 
 def scan(
@@ -712,14 +945,27 @@ def scan(
     min_detections: int = MIN_DETECTIONS,
     bracket_days: float = BRACKET_DAYS,
     dry_run: bool = False,
-    use_alerce: bool = True,
+    init: bool = False,
 ) -> int:
     """
     Scan the cone once, report survey objects reaching a condition not reported
     before, park those whose onset cannot be bracketed yet. Past dates are not
     scanned here but replayed (replay.py). Returns a process exit code.
+
+    No state file is an error unless init (user, 2026-10-02): it catches a wrong path
+    at once, instead of a run that silently starts over and reports everything that
+    already qualifies. init is the footprint's first run: it records what already
+    qualifies without reporting it, so the next run reports only what changes.
     """
     path = state_file(name)
+    if init and path.exists():
+        print(f"{ERROR_PREFIX}--init: state already exists at {path}. --init is only for a footprint's first run: "
+              "it would reset what was reported and hide alerts.", file=sys.stderr)
+        return 1
+    if not init and not path.exists():
+        print(f"{ERROR_PREFIX}no state found at {path}: a wrong path, or this footprint's first run? "
+              "For a first run pass --init: it records what already qualifies without reporting it.", file=sys.stderr)
+        return 1
     state = _load_state(path)
     now = now_mjd()
     since = now - lookback_days
@@ -731,10 +977,12 @@ def scan(
           f"{lookback_days:g} d, quiet point within {bracket_days:g} d before it")
     print(f"Previously reported: {len(state['reported'])}  parked: {len(state['parked'])}\n")
 
+    # the newest detection per survey; a state from before 2026-10-03 kept LSST's alone
+    newest = state.get("newest_mjd") or ({"lsst": state["lsst_newest_mjd"]} if state.get("lsst_newest_mjd") else {})
     for attempt in range(MAX_RETRIES):
         stats: dict = {}
         try:
-            objs = gather(cone, now, since, None, min_detections, use_alerce, stats)
+            objs = gather(cone, now, since, None, stats, newest)
             break
         except NETWORK_ERRORS as e:
             if attempt < MAX_RETRIES - 1:
@@ -749,11 +997,14 @@ def scan(
     day = judge_day(objs, now, since, state, footprint_classifier(cone), bracket_days, min_detections)
 
     by_survey = Counter(o.survey for o in objs)
-    print(f"ANTARES loci: {stats.get('loci', 0)}  (skipped at |b| < {MIN_ABS_GAL_LAT:g}: "
-          f"{stats.get('loci_skipped', 0)}, duplicate listing entries: {stats.get('duplicates', 0)})")
-    if use_alerce:
-        print(f"LSST photometry from ALeRCE: fetched {stats.get('lsst_fetched', 0)}, "
-              f"not needed {stats.get('lsst_not_fetched', 0)}, failed {stats.get('lsst_fetch_errors', 0)}")
+    listings = {survey: stats[f"{survey}_listing"] for survey in LIVE_SURVEYS}
+    for survey, listing in listings.items():
+        print(f"{survey.upper()} listing (ALeRCE): {'FAILED - ' if listing.status == 'failed' else ''}{listing.detail}")
+        if listing.status == "failed":
+            print(f"{ERROR_PREFIX}{survey.upper()} listing failed: {listing.detail}. Its objects are not listed this "
+                  "run (parked ones stay parked); exit 1 so the outage is not mistaken for a quiet sky.", file=sys.stderr)
+    print(f"Photometry from ALeRCE: fetched {stats.get('fetched', 0)}, not needed {stats.get('not_fetched', 0)}, "
+          f"failed {stats.get('fetch_errors', 0)}")
     print(f"Survey objects: {len(objs)} ({', '.join(f'{s} {n}' for s, n in sorted(by_survey.items()))})  "
           f"kept: {len(day.candidates)}")
     for reason, n in sorted(day.rejected.items()):
@@ -765,7 +1016,13 @@ def scan(
         print(f"  {k}  first detection {_date(info['first_det_mjd'])}  {info['code']}")
     print()
 
-    if day.alerts:
+    tns_watch, tns_lines = _retry_tns(state.get("tns_watch", {}), now)
+    if init:
+        recorded = Counter(c.category for c, _ in day.alerts) + Counter(c.category for c, _, _ in day.notes)
+        print(f"INIT: recorded {sum(recorded.values())} survey objects that already qualify, not reported"
+              + (f" ({', '.join(f'{k} {n}' for k, n in sorted(recorded.items()))})" if recorded else "")
+              + f"; parked {len(day.parked)}. From the next run on, only what changes is reported.")
+    elif day.alerts:
         print(f"=== {len(day.alerts)} TRANSIENT ALERTS ===\n")
         for category in CATEGORY_ORDER:
             group = [a for a in day.alerts if a[0].category == category]
@@ -773,19 +1030,39 @@ def scan(
                 continue
             print(f"--- {category} ({len(group)}) ---")
             for c, new_conditions in group:
-                _add_tns(c)
-                _print_candidate(c, new_conditions)
+                tns_text, watch_entry = _add_tns(c, now)
+                if watch_entry:
+                    tns_watch[c.obj.key] = watch_entry
+                _print_candidate(c, new_conditions, tns_text)
             print()
     else:
         print("No new transient alerts.")
+    if day.notes and not init:
+        print(f"\n--- the same events, seen by another survey: notes on earlier alerts ({len(day.notes)}) ---")
+        for c, new_conditions, anchor in day.notes:
+            onset = f", first detection {_date(c.onset.first_det_mjd)}" if c.onset and c.onset.first_det_mjd else ""
+            print(f"{c.obj.key}  {c.category} · {', '.join(c.conditions)}  new: {', '.join(new_conditions)}  "
+                  f"note on {anchor}{onset}")
+    if tns_lines:
+        print("\nTNS for earlier alerts:")
+        print("\n".join(tns_lines))
+    ps = [] if init else [(c.obj.key, c.obj.ra, c.obj.dec, now, f"live {name}")
+                          for c in [a[0] for a in day.alerts] + [n[0] for n in day.notes] if c.category == "point_source"]
+    watch_file = STATE_DIR / PS_WATCH_FILE
+    if not init and not watch_file.exists():  # state, like the monitor's: a missing one loses its evidence count
+        print(f"{WARN_PREFIX}no point-source watch file at {watch_file} although this footprint has state: "
+              "deleted? Its evidence count restarts from zero.", file=sys.stderr)
+        print(f"\nPoint-source watch file missing at {watch_file}: evidence count restarts from zero.")
+    print("\n" + "\n".join(point_source_watch(ps, now, save=not dry_run)))
 
     cutoff = now - STATE_RETENTION_DAYS
     reported = {k: v for k, v in state["reported"].items() if v["first_reported_mjd"] >= cutoff}
     if dry_run:
         print("\n(dry run: state not saved)")
     else:
-        _save_state(path, {"last_mjd": now, "reported": reported, "parked": day.parked})
-    return 0
+        _save_state(path, {"last_mjd": now, "reported": reported, "parked": day.parked,
+                           "newest_mjd": {s: lc.newest_mjd for s, lc in listings.items()}, "tns_watch": tns_watch})
+    return 1 if any(lc.status == "failed" for lc in listings.values()) else 0
 
 
 # ------------------------------------------------------------------ CLI
@@ -793,9 +1070,9 @@ def scan(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scan a sky cone for new transients (SNe, TDEs, orphans).")
-    where = parser.add_mutually_exclusive_group(required=True)
+    where = parser.add_mutually_exclusive_group()
     where.add_argument("--footprint", choices=sorted(FOOTPRINTS),
-                       help="; ".join(f"{k}: {v[1]}" for k, v in FOOTPRINTS.items()))
+                       help=f"default {LIVE_FOOTPRINT}. " + "; ".join(f"{k}: {v[1]}" for k, v in FOOTPRINTS.items()))
     where.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS"),
                        help="cone in degrees")
     parser.add_argument("--radius", type=float, help=f"override a footprint's radius (default {DEFAULT_RADIUS_DEG:g} deg)")
@@ -813,10 +1090,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help=f"X: a quiet point this close before it brackets the onset (default {BRACKET_DAYS:g})")
     parser.add_argument("--min-detections", type=int, default=MIN_DETECTIONS,
                         help=f"per survey object (default {MIN_DETECTIONS})")
-    parser.add_argument("--no-alerce", action="store_true",
-                        help="ANTARES only: no LSST forced photometry, no ZTF fallback")
     parser.add_argument("--dry-run", action="store_true", help="report without saving state")
+    parser.add_argument("--init", action="store_true",
+                        help="a footprint's first run: record what already qualifies without reporting it "
+                             "(without --init, a missing state file is an error)")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="with --replay: start even when the estimate is above "
+                             f"{CONFIRM_THRESHOLD_SECONDS / 60:g} min, without asking")
     args = parser.parse_args(argv)
+    if args.footprint is None and args.cone is None:
+        args.footprint = LIVE_FOOTPRINT
 
     if args.footprint:
         args.name = args.footprint
@@ -838,6 +1121,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--lookback-days and --bracket-days must be positive")
     if args.min_detections < 1:
         parser.error("--min-detections must be at least 1")
+    if args.init and args.replay:
+        parser.error("--init is for a live footprint's first run; a replay keeps its state in memory")
     if (args.no_cuts or args.compare_cuts or args.estimate) and not args.replay:
         parser.error("--no-cuts, --compare-cuts and --estimate go with --replay")
     if args.replay:
@@ -854,12 +1139,17 @@ def main(argv: list[str] | None = None) -> int:
     a = _parse_args(argv)
     if a.replay:
         from . import replay
-        if a.compare_cuts:
-            return replay.compare_cuts(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections)
-        replay.run(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections, cut=not a.no_cuts,
-                   estimate_only=a.estimate)
+        try:
+            if a.compare_cuts:
+                return replay.compare_cuts(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections,
+                                           yes=a.yes)
+            replay.run(a.name, a.cone, *a.replay, a.lookback_days, a.bracket_days, a.min_detections, cut=not a.no_cuts,
+                       estimate_only=a.estimate, yes=a.yes)
+        except replay.Declined as e:
+            print(f"{ERROR_PREFIX}{e}", file=sys.stderr)
+            return 1
         return 0
-    return scan(a.name, a.cone, a.lookback_days, a.min_detections, a.bracket_days, a.dry_run, not a.no_alerce)
+    return scan(a.name, a.cone, a.lookback_days, a.min_detections, a.bracket_days, a.dry_run, init=a.init)
 
 
 if __name__ == "__main__":

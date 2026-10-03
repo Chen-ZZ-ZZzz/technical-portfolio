@@ -362,6 +362,7 @@ src/rubin_qa/
     profiler.py        — single-object diagnostic tool (all three surveys, own CLI)
     photometry.py      — broker-neutral photometry records (ANTARES, ALeRCE)
     sky_catalog.py     — Legacy Surveys DR10 + Siena Galaxy Atlas host matching, cached per catalogue version
+    tns.py             — TNS lookups via ALeRCE's throttled TNS service
     transient_monitor.py — new-transient scan of a sky cone (own CLI)
     replay.py          — the monitor replayed day by day over past dates (transient_monitor --replay)
     __main__.py        — CLI entry point
@@ -370,10 +371,15 @@ tools/                 — on-demand measurement scripts, outside the monitor's 
     host_match_check.py  — host-matching validation (known hosts vs random positions)
     pa_from_pixels.py    — galaxy position angles from cutout pixels (source of the ellipse fixtures)
     atlas_query_contract.py — checks the test fake's q3c reading and the atlas join against Data Lab
-    lsst_box_census.py   — every LSST object at ALeRCE per test box, 2026-02-15 → 07-14
+    lsst_box_census.py   — every LSST object at ALeRCE per 5×5° test box, 2026-02-15 → 07-14 (box-based, from before the cones; kept as is)
     replay_tns_check.py  — a replay's alerts against TNS, per survey (throttle-aware lookups)
+    point_source_snr.py  — two-sided measurement of a S/N floor for the point-source rule
 tests/                 — pytest, mock data only
 pyproject.toml
+cache/                 — anything that can be fetched again; deleting it only costs time (gitignored)
+state/                 — anything that can't be recreated: monitor state, the point-source watch,
+                         pending TNS lookups, latency samples; deleting it loses information (gitignored)
+logs/                  — run output; can be deleted at any time (gitignored)
 ```
 
 ---
@@ -390,7 +396,8 @@ All tests use mock data — no live API calls.
 | File | Covers |
 |---|---|
 | `test_client.py` | ALeRCE client: retry, dedup, per-field fetch errors |
-| `test_antares.py` | ANTARES broker path, end to end (see below) |
+| `test_antares.py` | ANTARES broker path, end to end (see below); the ANTARES helpers the tools share, and that no tool re-implements one |
+| `test_sso_frozen.py` | the retired SSO monitor is frozen: SHA-256 of its files and of what it imports; recording a new hash is the deliberate unlock |
 | `test_validators.py` | completeness tokens, ZTF and LSST |
 | `test_classifier.py` | weighted classifier consensus |
 | `test_reporting.py` | QA row assembly, status tiers |
@@ -398,11 +405,14 @@ All tests use mock data — no live API calls.
 | `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes |
 | `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
 | `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
-| `test_photometry.py` | broker-neutral fetch layer: survey objects, ANTARES locus splitting, ALeRCE fallback |
-| `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, state, footprint atlas loading and its outage flags |
+| `test_photometry.py` | broker-neutral fetch layer: survey objects, ALeRCE listings for both surveys (both answer shapes, paging, partial answers), newest-in-cone, light curves |
+| `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, the LSST listing guard, one event one alert, the TNS line's four states, the point-source watch (only spectroscopic SNe count, threshold 3, notice until the rule or threshold changes, never fails the run), state, footprint atlas loading and its outage flags |
+| `test_live_without_antares.py` | the monitor's daily run (`--dry-run`) in a fresh interpreter where ANTARES cannot be imported, only the network faked; any import attempt fails it, even a swallowed one |
 | `test_replay.py` | replay: listing in chunks, light-curve cache (failures never cached), day slicing (the future never leaks into a day), the span cut's equivalence on synthetic data, catalogue prefetch, suspend-aware stage timer |
 | `test_sky_catalog.py` | DR10 host matching: ellipse conventions pinned to pixel-measured fixtures, atlas pieces (NGC 873), two-step candidates and the margin (with a q3c-reading fake TAP service, `tests/fake_tap.py`), catalogue gaps, cache rules (no failure or empty answer ever cached) |
-| `test_host_match_check.py` | `tools/host_match_check.py` — every fetch-failure path fed its failure (empty TNS record, Sesame down, tile and atlas errors) must come back as "fetch error" or pending, never "no host"; the TNS throttle rule against a simulated throttled service at every window phase; truth mapping; mixed-version detection |
+| `test_host_match_check.py` | `tools/host_match_check.py` — every fetch-failure path fed its failure (empty TNS record, Sesame down, tile and atlas errors) must come back as "fetch error" or pending, never "no host"; truth mapping; mixed-version detection |
+| `test_tns.py` | `rubin_qa/tns.py` — the throttle rule against a fake clock and a simulated throttled service at every window phase; an empty answer is "not in TNS" only when vouched for; names decoded where they come in |
+| `test_paths.py` | paths resolve from the repo root, never the current directory: one root shared by the code and every tool (`RUBIN_QA_ROOT` moves them all), relative command-line paths land in the repo |
 | `test_asteroid_probe.py` | `tools/asteroid_probe.py` — the evidence behind the monitor's asteroid rules |
 
 **ANTARES coverage.** The ALeRCE path had unit tests from the start; the ANTARES
@@ -451,6 +461,7 @@ named `lsst-<role>` so `systemctl --user list-timers 'lsst-*'` and
 | `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 100` | active |
 | `lsst-sso-monitor` | daily | `antares_sso_monitor.py` | **retired 2026-08-18** |
 | `lsst-latency-sample` | hourly, randomized | `tools/sample_latency.py --quick --quiet` | **retired 2026-09-01** |
+| `lsst-transient-monitor` | daily, 16:00 (your choice) | `python -m rubin_qa.transient_monitor` (no arguments: the live footprint, never `--init`) | new 2026-10-03 |
 
 The two investigative units are done and disabled — the monitor because its premise
 was falsified, the sampler because it settled the constants it was collected for.
@@ -458,7 +469,8 @@ Their `.example` files and setup instructions stay in `systemd/` as the deployme
 record; the scripts behind them still run by hand. Nothing in the repo re-enables
 them.
 
-Install: copy the pair, drop the `.example` suffix, replace `/path/to/...`, then
+Install: copy the pair, drop the `.example` suffix from the service (timers hold no paths and
+have none, except the frozen SSO monitor's), replace `/path/to/...`, then
 `systemctl --user daemon-reload && systemctl --user enable --now <unit>.timer`.
 
 Every service carries the same sandboxing block (`ProtectSystem=strict` +
@@ -484,7 +496,7 @@ which put ZTF at 17.0s per object. A constant sized off one sitting is a guess; 
 campaign was run to find out whether it was a baseline or an episode.
 
 **Method.** `tools/sample_latency.py` appends one record per run to
-`logs/latency_samples.jsonl`, timing each client call directly with no retry wrapper.
+`state/latency_samples.jsonl`, timing each client call directly with no retry wrapper.
 Collection was hourly with `RandomizedDelaySec=3600`, so each sample landed somewhere
 inside its hour rather than at the same minute of every hour — a fixed offset cannot
 separate time-of-day from load. Every individual object timing is kept, so `--report`
@@ -537,13 +549,15 @@ at 60s.
 broker change or when a fourth survey is added, and let it run for weeks rather than
 days — the useful signal here was the failure clustering, which a short run would have
 missed entirely. `uv run tools/sample_latency.py --report` still reads the collected
-log; `--by-hour` and `--exclude-boot` break it down. Note `logs/` is gitignored, so
+log; `--by-hour` and `--exclude-boot` break it down. Note `state/` is gitignored, so
 the samples are local-only. For a one-off, `tools/bench_latency.py` times 10 objects
 per survey over two rounds without the retry wrapper.
 
 ---
 
 ## Replay Box Census (transient monitor)
+
+*Box-based: this census was taken in 5×5° boxes on 2026-10-01, before every footprint became a 2.82° cone (25 deg²). It is kept as it was run; the replays themselves use the cones.*
 
 > **2026-10-01** — the LSST alert stream stopped on 2026-07-14, so the monitor's Rubin path can only be exercised by replaying past dates. Before choosing where and when to replay, every LSST object ALeRCE holds for each candidate box was counted, 2026-02-15 → 07-14. Summary per box and month: [`reports/lsst_box_census_20261001.csv`](reports/lsst_box_census_20261001.csv).
 
@@ -581,7 +595,7 @@ The monitor labels each transient by what DR10 shows at its position: a host gal
 - *AGN check.* The WISE colour check used to read whichever source sat nearest, before any host was known. It is now a flag on the source actually assigned, applied only when both WISE bands have S/N ≥ 5, with Stern's 0.8 Vega cut converted to 0.16 AB.
 
 **3 — Test populations and oracles.**
-- *Known hosts.* 21 classified TNS supernovae with a reported host (records via ALeRCE's TNS service, host positions from survey J-names or CDS Sesame), plus 172 DES-SN5YR spectroscopic supernovae with the host DES chose by the same method. DES measures **agreement, not truth**: its radii come from deeper stacks, and our d_DLR runs 1.39× theirs (median), so its cut does not carry over.
+- *Known hosts.* 21 classified TNS supernovae with a reported host (records via ALeRCE's TNS service, host positions from survey J-names or CDS Sesame), plus 172 DES-SN5YR spectroscopic supernovae with the host DES chose by the same method. DES measures **agreement, not truth**: its radii come from deeper stacks, and our d_DLR runs 1.39× theirs (median), so its cut does not carry over. The TNS supernovae are found through ANTARES loci, so the sample holds only what ZTF detected: bright, nearby (median z 0.045 against DES's 0.28) and often in big galaxies (40% atlas hosts against 5%). That is likely why all 20 TNS hosts are found while DES agreement is 86%: the TNS score is the easy end.
 - *Excluded and counted, never scored as misses.* 4 pairs in catalogue gaps, 8 DES hosts below Legacy depth, 14 hosts that DR10 types as point-like, and 1 TNS record whose host redshift contradicts the SN's.
 - *Random positions.* 1000 per footprint, giving the chance-host rate.
 - *Self-check.* The tool's fast scoring against the production `best_host`: 0 disagreements over 3188 positions.
@@ -601,20 +615,21 @@ The two error rates apply to populations of very different size. Hosted supernov
 
 **6 — Negative results, kept with their evidence.**
 - *A compact-host rule (a point-like source 1–3″ away taken as host) was measured and dropped.* It gained 0 of 14 point-like hosts, 12 of which sit within 1″ where the point-source label already keeps them out of the orphan bucket, and it gave 10.4% of random positions a host at 3″.
+- *A signal-to-noise floor for the point-source rule was measured and not adopted* (2026-10-02, `tools/point_source_snr.py`). SN 2026kfw, a spectroscopic SN Ia from the replay, came out `point_source` on a DR10 point source of S/N 6.3. Measured two-sided over all 82 firings of the rule: a floor of 6.5–7 loses none of the 12 point-like true hosts (the faintest is at S/N 7.1) and lowers the random point-source rate from 2.03% ± 0.26 to about 1.7%, a change under 1.5σ. Both edges of that window are single objects, and the cost on faint variable stars and QSOs is unmeasured, so the rule stays as it is and kfw is a known limitation. A watch looks for a pattern instead, inside the monitor run: every `point_source` alert, live or replayed, is looked up in TNS until classified, and spectroscopic supernovae on a point source below S/N 7 are counted. One is kfw, two can be coincidence; from three the daily report carries a notice, every run, until the rule or the threshold changes. The floor would be on S/N, never magnitude: DR10 measures r for sources detected in other bands (one host's point source reads r = 26.4 at S/N 175), and depth varies across the sky.
 - *Point source before host costs more than estimated.* About 2% of random positions (1.4–2.6%) have a star-free point source within 1″, not 0.1%. It relabels 4 correct hosts; the reverse order would instead give 4 of the 12 point-like hosts a wrong galaxy. On that tie the point source stays first: a wrong host asserts something false, while the point-source label only withholds a host, the transient is reported either way, and a faint variable star beyond Gaia's reach cannot pass as SN-like. (The 4 relabelled DES supernovae may be the SNe themselves, since DR10's stacks include DES epochs; that cannot happen for new Rubin transients.)
-- *Data defects found by auditing the inputs.* ALeRCE's TNS service answers with an empty record once its quota of 10 requests a minute is spent (see Replay Validation below; at one call a second the sampler spent it itself, which first looked like intermittent faults). Before the fix, 14 of 44 supernovae were saved as "no host"; refetching recovered 8 real hosts. One host name came back URL-encoded (`2MASXJ09565234%2B0328119`) and silently failed to resolve. Every fetch-failure path now has an injected-failure test, and failed supernovae go on a pending list that the next run retries first.
+- *Data defects found by auditing the inputs.* ALeRCE's TNS service answers with an empty record once its quota of 10 requests a minute is spent (see Replay Validation below; at one call a second the sampler spent it itself, which first looked like intermittent faults). Before the fix, 14 of 44 supernovae were saved as "no host"; refetching recovered 8 real hosts. One host name came back URL-encoded (`2MASXJ09565234%2B0328119`, where `%2B` is `+`) and silently failed to resolve. Names from that service are now decoded once, where they come in, so no stored name and no later lookup sees the encoding; a literal `+` survives the decoding, and tests pin both. Every fetch-failure path now has an injected-failure test, and failed supernovae go on a pending list that the next run retries first.
 - *A bug in the validator itself.* Its truth mapping first took NGC 873's point-like nucleus, 0.18″ from the Sesame position, as the host of SN 2022xjk, while the matcher had correctly chosen the galaxy (d_DLR 0.08). A named host now resolves to the atlas galaxy at that position, ahead of any nucleus or piece.
 - *One position with no DR10 source within 15″ and no mask bit set:* 1 observed against 3.1 expected by chance from each position's own source density. A chance void, not a catalogue fault.
 
 **Provenance.** Each scoring stage writes a sidecar with the SHA-256 of the code and inputs it ran on. The report prints those fingerprints in its header and opens with a MIXED VERSIONS banner if its stages disagree with each other or with the current files. That guard exists because one run did mix versions: the code was edited between its known-host and random-position stages. The published report was then rescored from the cache in a single version.
 
-Tools: `tools/host_match_check.py` (sample, evaluate, randoms, report), `tools/pa_from_pixels.py`, `tools/atlas_query_contract.py` (the test fake's q3c reading agrees with Data Lab's: 1173 = 1173 atlas IDs, edge cut exact; the atlas join misses no atlas galaxy in any footprint).
+**Tools:** `tools/host_match_check.py`, run as sample → evaluate → randoms → report (`uv run tools/host_match_check.py <stage>`; sample until it exits 0, nothing pending; no edits between evaluate and randoms; after a code change, evaluate + randoms + report rescore from the cache — the tool's docstring gives the reasons), `tools/pa_from_pixels.py`, `tools/atlas_query_contract.py` (the test fake's q3c reading agrees with Data Lab's: 1173 = 1173 atlas IDs, edge cut exact; the atlas join misses no atlas galaxy in any footprint).
 
 ---
 
 ## Replay Validation (transient monitor)
 
-> **2026-10-01** — the monitor's first end-to-end run on real data. Box D (COSMOS), 2026-03-12 → 05-15, judged day by day as the live monitor would have judged it, then checked against TNS.
+> **2026-10-01** — the monitor's first end-to-end run on real data. Footprint D (COSMOS, a 2.82° cone), 2026-03-12 → 05-15, judged day by day as the live monitor would have judged it, then checked against TNS.
 
 **Method.** A replay may filter only on what cannot change afterwards:
 - *Candidates* are every LSST and ZTF object first detected in the window (plus the 14-day lookback), listed once at ALeRCE in week-long chunks.
@@ -632,7 +647,7 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 
 **Equivalence test** (`--compare-cuts`, 04-05 → 04-06). The same window was replayed with and without the span cut: 48 candidates against 2,200, and identical alerts. The evidence is narrow: one alert, and 2,152 objects removed by the cut, none of which would have alerted. The uncut side took 46 min against an estimated 52.
 
-**Result — 46 alerts in 65 days** (the first day, 03-12, includes warm-up: the state starts empty). Each cell gives the TNS matches over the alerts checked; the 3 stars marked * appeared after the check.
+**Result — 46 detections in 65 days: 43 alerts and 3 notes** (the first day, 03-12, includes warm-up: the state starts empty). The table counts detections: each cell gives the TNS matches over the detections checked; the 3 stars marked * appeared after the check.
 
 | category · path | LSST | ZTF |
 |---|---|---|
@@ -643,9 +658,11 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 | point_source · rising | 1 / 1 | — |
 | stellar · any path | 0 / 2, plus 3* | 0 / 1 |
 
-- *ZTF matched as expected.* All 6 ZTF objects bracketed on a host are in TNS. Five list our own ZTF ID among their internal names.
+- *One event, one alert.* Three events — SN 2026ezw, SN 2026fgl and SN 2026ivl — first alerted as LSST `host · rising`, then again days later as ZTF `host · bracketed`, 0.26–0.34″ apart. Another survey's detection of an already reported position (within the monitor's 1.5″ association radius) is now a note on the first alert, keeping its own path: the ZTF notes carry the stronger evidence, the bracketed onset. So 46 detections make 43 alerts and 3 notes.
+- *ZTF matched as expected.* All 6 ZTF objects bracketed on a host are in TNS (3 of them now as notes on the LSST alerts). Five list our own ZTF ID among their internal names.
 - *LSST matched far more than expected (22 of 32), and the reason is the reporting, not the selection.* TNS records every one of the 22 as discovered from Rubin data. They were reported by SGLF (15), Lasair (5) and ALeRCE (1), and 21 carry our diaObjectId as `LSST-AP-DO-<id>`. Brokers were reporting COSMOS Rubin transients systematically that spring, so the rate measures that practice.
-- *TNS mostly came first.* TNS discovery preceded the alert by a median of 4.5 days, because the monitor waits for a second night and a measurable rise. Two alerts came first: SN 2026kfw by 5 days, AT 2026khr by 1.
+- *In TNS is not confirmed.* A match means another broker flagged the object too. The truth check is the TNS prefix: `SN` once a spectrum classified it, `AT` otherwise. ZTF: 5 of 6 are `SN` (3 Ia, 1 IIb, 1 Ic-BL), all `host · bracketed`. LSST: 7 of 22 are `SN` (6 Ia, 1 Ic-BL), and 15 stay `AT`; 6 of the 7 are `host · rising`. One spectroscopic SN Ia, SN 2026kfw, came out `point_source`: DR10 has a point source within 0.2″ of it at S/N 6.3, among the faintest the catalogue holds — likely a faint compact host or a marginal detection. **Known limitation**, kept as measured: a S/N floor that would free it (to `orphan`, not `host`) was measured and not adopted (see Host Matching Validation, negative results).
+- *Known property: the alerts trail TNS.* TNS discovery preceded the alert by a median of 4.5 days. That is the price of the paths: every path waits for detections on a second night, and `rising` for a later, brighter epoch, while other brokers report on the first detection. It is accepted for this monitor's purpose. Two alerts came first: SN 2026kfw by 5 days, AT 2026khr by 1.
 - *The categories separate.* 18 of 22 host risers are in TNS, against 2 of 6 AGN-coloured risers and none of the stars.
 
 **The oracle had a fault of its own, kept with its evidence.** ALeRCE's TNS service answers 10 requests per 60 s window. Once those are spent it returns empty records until the window turns, which looks exactly like "not in TNS".
@@ -657,11 +674,13 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 **What the run changed in the monitor: the decision table.** The run surfaced a combination nobody had written down. Rising objects on Gaia stars, on AGN and on point sources were all reported as `rising`, mixed with supernova candidates.
 - *Two axes.* The sky context alone now decides the category: `host`, `agn`, `orphan`, `point_source`, `stellar` or `unchecked`. The photometric path is the confidence label: `bracketed`, `rising`, `rapid_rise` or `re_brightening`. A report reads `host · rising`.
 - *Visible names.* The old names `new_candidate`, `agn_flare` and `stellar_flare` claimed a path as well. The "flaring" stars rose over up to two weeks, which is stellar variability.
-- *Nothing dropped.* The table has no "dropped" cell. The old rule dropped Gaia stars that did not rise, and in this window it had silently hidden 3 objects.
+- *Nothing dropped.* The table has no "dropped" cell. The old rule dropped Gaia stars that did not rise: of the 6 stars in this window it had silently hidden 3, half of them.
 - *Tested.* A test runs all 5 path cases × 8 sky contexts through the monitor. An unmapped context raises an error.
 - *Re-reporting.* A report is repeated when either axis changes, so an `unchecked` object is reported again once the catalogue gives a verdict.
 
-Tools: `python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]`, `tools/replay_tns_check.py`. Results are kept locally in `logs/` (replay JSON and log, TNS rows with reporting groups).
+**First live run.** The monitor reports changes relative to what it has already reported, so a run from an empty state would report everything that currently qualifies, as the replay's first day did. A live scan with no state file is therefore an error, and a footprint's first run is explicit: `uv run python -m rubin_qa.transient_monitor --footprint ecdfs --init` records what already qualifies without reporting it. From the next run on, only new objects and real changes are reported; something genuinely new on exactly that day is absorbed, and still shows up once its category or path changes.
+
+**Tools:** `uv run python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]`, `uv run tools/replay_tns_check.py`. Results are kept locally in `logs/` (replay JSON and log, TNS rows with reporting groups).
 
 ---
 

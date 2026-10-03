@@ -12,9 +12,10 @@ the unit to inspect without a lookup table.
 | `lsst-pipeline-antares.{service,timer}` | `lsst-pipeline-antares` | active |
 | `lsst-sso-monitor.{service,timer}` | `lsst-sso-monitor` | **retired 2026-08-18** |
 | `lsst-latency-sample.{service,timer}` | `lsst-latency-sample` | **retired 2026-09-01** |
+| `lsst-transient-monitor.{service,timer}` | `lsst-transient-monitor` | new 2026-10-03 |
 
-The two retired units answered their question and were disabled; only the two
-pipeline timers still fire. Their examples and setup sections are kept below as the
+The two retired units answered their question and were disabled; the two pipeline
+timers still fire, and the transient monitor's pair is new (2026-10-03). Their examples and setup sections are kept below as the
 record of how each was deployed and why it was stopped — treat them as history, not
 as something to enable. Both retirements are covered in the project README: the SSO
 monitor under "Bright Solar System Objects (SSO) Monitor", the sampler under
@@ -73,7 +74,7 @@ Things that catch people out:
 - `ProtectSystem=strict` makes **everything** read-only, so `ReadWritePaths` is not
   optional — set it to your real project path when you edit the example. Anything the
   job writes must live under it: the CSV in `reports/`, the JSONL in `logs/`,
-  `logs/bright_sso_state.json`, and any `StandardOutput=append:` target.
+  `state/bright_sso_state.json`, and any `StandardOutput=append:` target.
 - `$HOME` stays writable (`ProtectHome` is deliberately **not** set) because `uv`
   needs its cache at `~/.cache/uv` and its interpreters at `~/.local/share/uv`.
   Adding `ProtectHome=yes` breaks the units with a confusing cache error.
@@ -83,6 +84,83 @@ Things that catch people out:
 - A syscall denial shows up as `EPERM` from an ordinary library call, not a crash —
   check `journalctl --user -u <unit> -n 50` if a run starts failing right after a
   dependency upgrade, and verify with `systemd-analyze --user security <unit>`.
+
+---
+
+# Transient Monitor Setup — new 2026-10-03
+
+Daily systemd user timer that runs the transient monitor on the live footprint
+(`LIVE_FOOTPRINT` in `transient_monitor.py`, ecdfs). Its report goes to the journal
+under `lsst-transient-monitor`, like every active unit here. The point-source watch
+runs inside it; nothing else to install.
+
+## Files
+
+- `lsst-transient-monitor.service.example`
+- `lsst-transient-monitor.timer`: no `.example` and no comments, since it holds no
+  paths to fill in; copy it as it is, or change the hour.
+
+## Before installing
+
+- The footprint's state must exist (`state/transient_monitor_ecdfs.json`, written by
+  `--init`, done 2026-10-03). The unit never passes `--init`: without state a run
+  exits 1 with an `ERROR:` naming the path, so a lost state file can never quietly
+  become a first run. `--init` is run by hand, once per footprint.
+- What the unit will do, by hand: `uv run python -m rubin_qa.transient_monitor --dry-run`.
+
+## Install
+
+```bash
+# copy both files; drop `.example` from the service; edit its paths.
+systemctl --user daemon-reload
+systemctl --user enable --now lsst-transient-monitor.timer
+```
+
+## Verify
+
+```bash
+systemctl --user list-timers lsst-transient-monitor.timer
+systemctl --user start lsst-transient-monitor.service   # a real run now: saves state, like the daily one
+journalctl --user -u lsst-transient-monitor.service --since today -o cat   # the day's report
+systemctl --user --failed
+```
+
+## Notes
+
+- **The hour is yours to choose.** The example says 16:00, in the machine's local
+  time, picked for a machine in Germany so that both surveys' nights are over and
+  ingested. Computed over 2026 with the sun at −12°, the latest ends are 12:43 German
+  time for Rubin (Cerro Pachón, late June) and 15:03 for ZTF (Palomar, late October).
+  ZTF is the only live stream while Rubin is off sky, so 16:00 leaves ALeRCE about an
+  hour for the end of the ZTF night. Elsewhere, shift it to the same moment
+  (14:00 UTC), or add a time zone to `OnCalendar` (`*-*-* 16:00:00 Europe/Berlin`).
+  An earlier run loses nothing (the next one sees what it missed); it only reports
+  some objects a day later.
+- `Persistent=true`: a run missed while the machine was off or asleep is made up at
+  the next start. A catch-up plus the daily run on the same day is harmless: each run
+  reports only what changed against the state.
+- **No arguments, on purpose** (pinned by `tests/test_systemd_units.py`). The footprint
+  is the CLI default, so it is named in one place. Never `--init` (see above), and never
+  `--dry-run`: nothing would be saved, so every alert would repeat daily.
+- **Exit 1 means look**: a listing failed (an outage, not a quiet sky), the state is
+  missing, or the network failed after retries. The `ERROR:` line in the journal says
+  which, and the unit shows in `systemctl --user --failed`. A missed listing loses
+  nothing: parked objects stay parked, and the 14-day window lets the next run catch up.
+- `TimeoutStartSec=2h`: a run takes minutes. A oneshot has no start timeout by default,
+  and a hung run would make the timer skip every later day without a word.
+- `PYTHONUNBUFFERED=1`: without it Python buffers stdout when it is not a terminal,
+  so the report would reach the journal in one block at the end of the run, stamped
+  at flush time and out of order with the `WARN:`/`ERROR:` lines (stderr).
+- `WorkingDirectory` is for `uv`, which finds the project from it. The monitor resolves
+  every path from the repo root (`config.PROJECT_ROOT`), never the working directory.
+- `ReadWritePaths` must cover `state/` (the footprint's state, the point-source watch)
+  and `cache/` (DR10 tiles, atlas, bricks, maskbits).
+- User timers fire only while the user's systemd manager runs (a login session, or
+  `loginctl enable-linger`); `Persistent=true` covers the rest at the next login.
+- Checked 2026-10-03, before installing anything. The unit's exact command and
+  hardening block ran as a throwaway `systemd-run --user` with `--dry-run`: success
+  in 49 s, state untouched. Both files, with paths filled in, pass
+  `systemd-analyze --user verify`.
 
 ---
 
@@ -128,7 +206,7 @@ journalctl --user -u lsst-sso-monitor.service -n 50
 - `status=203/EXEC` in journalctl = executable not found or not executable (check `chmod +x` and the shebang).
 - `Persistent=true` runs a missed job on next boot.
 - `ExecStartPre=/bin/sleep 60` lets the network settle before the ANTARES query.
-- State file: `logs/bright_sso_state.json`, resolved against the script's own directory (not the CWD).
+- State file: `state/bright_sso_state.json`, resolved against the script's own directory (not the CWD).
 - **The monitor is a documented negative result** — an ANTARES locus is a sky position, not an object, so it cannot track a mover, and every alert it raised was a stationary variable star or galaxy. See "Bright Solar System Objects (SSO) Monitor" in the project README before acting on anything this unit logged. It was run as an experiment, never as a detector, and the experiment is over.
 - `pipeline.py` confirms before long scans, but only on a TTY. Under systemd there is no stdin, so it logs the estimate to stderr and proceeds — the unit will not hang waiting for input. Pass `-y` if you want the prompt skipped when running the same command by hand.
 - Each run carries a deadline of 6× its own estimated duration. A run that stops early logs `WARN: ... Upstream or network is stalled` and still writes a partial CSV, so a truncated report in the log means the broker was unwell, not that the job was misconfigured.
@@ -148,22 +226,22 @@ journalctl --user -u lsst-sso-monitor.service -n 50
 > the numbers.
 
 Hourly systemd user timer that ran `tools/sample_latency.py` and appended one record
-to `logs/latency_samples.jsonl`. Fed the `SECONDS_PER_OBJECT` constants in
+to `state/latency_samples.jsonl`. Fed the `SECONDS_PER_OBJECT` constants in
 `config.py`, which drive the runtime estimate, the run deadline, and the long-run
 confirm prompt.
 
 `tools/sample_latency.py` itself is **not** retired — `--report` still reads the
-collected `logs/latency_samples.jsonl`, and a manual run still appends to it.
+collected `state/latency_samples.jsonl`, and a manual run still appends to it.
 
 ## Files
 
 - `lsst-latency-sample.service.example`
-- `lsst-latency-sample.timer.example`
+- `lsst-latency-sample.timer` (no paths, so no `.example`)
 
 ## Install
 
 ```bash
-# copy both files; drop `.example` suffix; edit paths.
+# copy both files; drop `.example` from the service; edit its paths.
 systemctl --user daemon-reload
 systemctl --user enable --now lsst-latency-sample.timer
 ```
@@ -223,12 +301,12 @@ Weekly systemd user timer that runs `pipeline.py` on ALeRcE broker.
 ## Files
 
 - `lsst-pipeline-alerce.service.example`
-- `lsst-pipeline-alerce.timer.example`
+- `lsst-pipeline-alerce.timer` (no paths, so no `.example`)
 
 ## Install
 
 ```bash
-# copy both files; drop `.example` suffix; edit paths and/or page numbers.
+# copy both files; drop `.example` from the service; edit its paths and/or page numbers.
 systemctl --user daemon-reload
 systemctl --user enable --now lsst-pipeline-alerce.timer
 ```
@@ -249,12 +327,12 @@ Daily systemd user timer that runs `pipeline.py antares`.
 ## Files
 
 - `lsst-pipeline-antares.service.example`
-- `lsst-pipeline-antares.timer.example`
+- `lsst-pipeline-antares.timer` (no paths, so no `.example`)
 
 ## Install
 
 ```bash
-# copy both files; drop `.example` suffix; edit paths and/or page numbers.
+# copy both files; drop `.example` from the service; edit its paths and/or page numbers.
 systemctl --user daemon-reload
 systemctl --user enable --now lsst-pipeline-antares.timer
 ```

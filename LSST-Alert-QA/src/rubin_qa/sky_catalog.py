@@ -9,9 +9,10 @@ they are too shallow for Rubin (2MASS and VSX stop far above ~24 mag), so real
 SNe in faint hosts come out "no match" while faint variable stars slip through.
 DR10 reaches ~23-24 mag with morphology, Gaia astrometry, and WISE W1/W2.
 
-Tiles, not the whole box: around the deep fields the boxes sit on, DR10 holds
-~7M rows per 25 deg2, ~2M even at r < 24 (COSMOS and ECDFS, measured
-2026-09-27). A candidate needs the few tiles around it.
+Tiles, not the whole footprint: around the deep fields the footprints sit on, DR10
+holds ~7M rows per 25 deg2, ~2M even at r < 24 (COSMOS and ECDFS, measured
+2026-09-27). A candidate needs the few tiles around it. The 0.1 deg tiles are how
+the catalogue is fetched, not a footprint shape; footprints are cones everywhere.
 
 Large galaxies: DR10 fits the Siena Galaxy Atlas (SGA-2020) galaxies separately
 (REF_CAT "L3"). The galaxy itself carries REF_ID = its SGA_ID. Every other source
@@ -95,13 +96,15 @@ would be a separate, earlier check; none is wired in.)
 import functools
 import io
 import math
+import sys
+import zlib
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 import requests
 
-from .config import PROJECT_ROOT
+from .config import PROJECT_ROOT, WARN_PREFIX
 
 TAP_URL = "https://datalab.noirlab.edu/tap/sync"
 TABLE = "ls_dr10.tractor"
@@ -230,11 +233,9 @@ def _fetch_cached(path, query: str, label: str, get=None, timeout: float = TAP_T
     cannot become a permanent hole that turns every SN in it into an orphan.
     """
     columns = columns or (*COLUMNS, *ATLAS_COLUMNS)
-    if path.exists():
-        df = pd.read_csv(path)
-        if set(columns) <= set(df.columns):
-            return df
-        # cached before a column existed: fetch again
+    df = _read_cached_csv(path, columns)
+    if df is not None:
+        return df
     get = get or requests.get
     try:
         r = get(TAP_URL, params={"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "MAXREC": TAP_MAXREC,
@@ -257,13 +258,38 @@ def _fetch_cached(path, query: str, label: str, get=None, timeout: float = TAP_T
     return df
 
 
-def tile_is_cached(i: int, j: int) -> bool:
-    """A current cache file exists for the tile (every column of this version; a stale one would refetch)."""
-    path = CACHE_DIR / f"{i}_{j}.csv.gz"
+# What a damaged cache file raises on read. Measured 2026-10-02 by truncating cached files:
+# a gzip tile cut anywhere raises EOFError (gzip's trailer holds length and CRC, so it
+# can never read back as a shorter tile); a maskbits file cut inside its MASKBITS image
+# raises TypeError, OSError or StopIteration (344 cuts over 3 bricks, never a silently
+# wrong image), and cut after it reads back identical (only the WISE masks are lost).
+DAMAGED_FILE_ERRORS = (OSError, EOFError, ValueError, TypeError, UnicodeDecodeError, StopIteration, zlib.error)
+
+
+def _discard_damaged(path, e: BaseException) -> None:
+    print(f"{WARN_PREFIX}damaged cache file {path} ({type(e).__name__}: {e}); deleted, fetched again", file=sys.stderr)
+    path.unlink()
+
+
+def _read_cached_csv(path, columns) -> pd.DataFrame | None:
+    """
+    A cached file's rows, or None to fetch again: absent, cached before a column existed,
+    or damaged (then deleted). Writes are atomic, so damage means a disk fault or a file
+    from before that; either way it must be refetched, never crash the run.
+    """
     if not path.exists():
-        return False
-    header = pd.read_csv(path, nrows=0).columns
-    return set(COLUMNS) | set(ATLAS_COLUMNS) <= set(header)
+        return None
+    try:
+        df = pd.read_csv(path)
+    except DAMAGED_FILE_ERRORS as e:
+        _discard_damaged(path, e)
+        return None
+    return df if set(columns) <= set(df.columns) else None
+
+
+def tile_is_cached(i: int, j: int) -> bool:
+    """A current, readable cache file exists for the tile (the whole file is read: a damaged one keeps its header)."""
+    return _read_cached_csv(CACHE_DIR / f"{i}_{j}.csv.gz", (*COLUMNS, *ATLAS_COLUMNS)) is not None
 
 
 def fetch_tile(i: int, j: int, get=None) -> pd.DataFrame:
@@ -280,17 +306,21 @@ def footprint_atlas(cone: tuple[float, float, float], get=None) -> pd.DataFrame:
 
 
 def footprint_bricks_query(cone: tuple[float, float, float]) -> str:
+    """
+    The bricks whose centres lie in the footprint cone plus the margin: a cone like the
+    atlas query, so no cos(dec) widening and no RA 0/360 wrap (it replaced an RA/Dec box,
+    2026-10-02). A brick touching the footprint plus the gap check's 30" area has its
+    centre within radius + 30" + its half-diagonal (0.18 deg), well inside the margin.
+    """
     ra, dec, radius = cone
-    r = radius + ATLAS_MARGIN_DEG
-    dra = min(180.0, r / math.cos(math.radians(min(abs(dec) + r, 89.0))))
-    return (f"SELECT {', '.join(BRICK_COLUMNS)} FROM {BRICKS_TABLE} WHERE dec2 > {dec - r:.6f} AND dec1 < {dec + r:.6f} "
-            f"AND ra2 > {ra - dra:.6f} AND ra1 < {ra + dra:.6f}")
+    return (f"SELECT {', '.join(BRICK_COLUMNS)} FROM {BRICKS_TABLE} AS t "
+            f"WHERE 't' = q3c_radial_query(t.ra, t.dec, {ra:.6f}, {dec:.6f}, {radius + ATLAS_MARGIN_DEG:.6f})")
 
 
 def footprint_bricks(cone: tuple[float, float, float], get=None) -> pd.DataFrame:
     """The DR10 bricks covering the footprint cone plus its margin; one query, cached."""
     ra, dec, radius = cone
-    path = BRICKS_CACHE_DIR / f"cone_{ra:g}_{dec:g}_{radius:g}_margin_{ATLAS_MARGIN_DEG:g}.csv.gz"
+    path = BRICKS_CACHE_DIR / f"centres_in_cone_{ra:g}_{dec:g}_{radius:g}_margin_{ATLAS_MARGIN_DEG:g}.csv.gz"
     return _fetch_cached(path, footprint_bricks_query(cone), f"bricks for cone {ra:g} {dec:g} {radius:g}", get,
                          columns=BRICK_COLUMNS)
 
@@ -302,6 +332,11 @@ def fetch_maskbits(brick: str, get=None) -> tuple[np.ndarray, "WCS"] | None:
     any other failure raises CatalogError. Only a complete FITS file is cached.
     """
     path = MASKBITS_CACHE_DIR / f"{brick}.fits.fz"
+    if path.exists():
+        try:
+            return _read_maskbits(str(path))
+        except DAMAGED_FILE_ERRORS as e:
+            _discard_damaged(path, e)
     if not path.exists():
         get = get or requests.get
         try:
@@ -318,6 +353,37 @@ def fetch_maskbits(brick: str, get=None) -> tuple[np.ndarray, "WCS"] | None:
         tmp.write_bytes(content)
         tmp.rename(path)
     return _read_maskbits(str(path))
+
+
+def maskbits_is_cached(brick: str) -> bool:
+    """
+    A complete maskbits file is cached: as long as its own headers say (data start + span
+    of the last image). Cheap (headers only, ~ms); a full read costs ~0.2 s per brick. A
+    file cut short is deleted, so the prefetch fetches it again instead of the judging loop.
+    """
+    import warnings
+
+    from astropy.io import fits
+    from astropy.utils.exceptions import AstropyWarning
+
+    path = MASKBITS_CACHE_DIR / f"{brick}.fits.fz"
+    if not path.exists():
+        return False
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AstropyWarning)  # a short file's header complaints: our own WARN says it
+            with fits.open(path) as hdul:
+                info = hdul.fileinfo(len(hdul) - 1)
+                # a file cut inside the first image header shows only the empty primary HDU, whose own
+                # span is trivially complete (27 such cuts in the 2026-10-02 sweep): require the image
+                has_image = any(h.header.get("ZNAXIS", h.header.get("NAXIS", 0)) >= 2 for h in hdul)
+                complete = has_image and info["datLoc"] + info["datSpan"] <= path.stat().st_size
+    except DAMAGED_FILE_ERRORS as e:
+        _discard_damaged(path, e)
+        return False
+    if not complete:
+        _discard_damaged(path, EOFError(f"file ends before its last image ({path.stat().st_size} bytes)"))
+    return complete
 
 
 @functools.lru_cache(maxsize=8)  # ~50 MB each in memory
@@ -522,6 +588,43 @@ def point_counterpart(rows: pd.DataFrame) -> pd.Series | None:
         return None
     first = near.sort_values("sep_arcsec").iloc[0]
     return first if first["type"] == "PSF" else None
+
+
+SNR_BANDS = ("g", "r", "i", "z")
+SNR_MATCH_ARCSEC = 0.1  # the counterpart's own catalogue row
+
+
+def combined_snr(row) -> float:
+    """S/N over g, r, i, z combined: sqrt(sum of flux^2 * ivar), negative fluxes counted as 0. Not magnitude:
+    DR10 measures r for sources detected in other bands, and depth varies across the sky."""
+    return math.sqrt(sum(max(float(row[f"flux_{b}"] or 0), 0.0) ** 2 * float(row[f"flux_ivar_{b}"] or 0)
+                         for b in SNR_BANDS))
+
+
+def counterpart_snr(ra: float, dec: float, fetch=None, get=None) -> float | None:
+    """
+    Combined S/N of the point source the point-source rule takes at (ra, dec); None when
+    there is none. The tiles carry no optical flux_ivar, so its one row is fetched (the
+    point-source watch asks only for TNS-classified supernovae: rare). Raises CatalogError.
+    """
+    psf = point_counterpart(neighbours(ra, dec, SEARCH_RADIUS_ARCSEC, fetch))
+    if psf is None:
+        return None
+    cols = [f"flux_{b}" for b in SNR_BANDS] + [f"flux_ivar_{b}" for b in SNR_BANDS]
+    query = (f"SELECT {', '.join(cols)} FROM {TABLE} WHERE 't' = q3c_radial_query(ra, dec, "
+             f"{psf['ra']:.6f}, {psf['dec']:.6f}, {SNR_MATCH_ARCSEC / 3600:.8f})")
+    label = f"S/N of the point source at {psf['ra']:.6f},{psf['dec']:.6f}"
+    try:
+        r = (get or requests.get)(TAP_URL, params={"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv",
+                                                   "MAXREC": 10, "QUERY": query}, timeout=TAP_TIMEOUT)
+    except requests.RequestException as e:
+        raise CatalogError(f"{label}: {type(e).__name__}") from e
+    if r.status_code != 200 or not r.text.startswith(f"{cols[0]},"):
+        raise CatalogError(f"{label}: HTTP {r.status_code} {r.text[:80]!r}")
+    rows = pd.read_csv(io.StringIO(r.text))
+    if len(rows) != 1:
+        raise CatalogError(f"{label}: {len(rows)} catalogue rows within {SNR_MATCH_ARCSEC}\"")
+    return combined_snr(rows.iloc[0])
 
 
 def reached_atlas(atlas_rows: pd.DataFrame, dlr_max: float = HOST_DLR_MAX,

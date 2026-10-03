@@ -1,0 +1,11 @@
+[Unit]
+Description=Sample broker latency hourly, at a random offset
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=3600
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
