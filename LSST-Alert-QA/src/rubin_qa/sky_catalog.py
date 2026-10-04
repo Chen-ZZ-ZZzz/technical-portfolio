@@ -153,13 +153,8 @@ NUCLEAR_RADIUS_ARCSEC = 1.0  # transient this close to its host's centre: flagge
 # atlas hosts: DR10 can split the nucleus off as a point source offset from the model
 # centre (NGC 873: 1.3"), so their nuclear radius is wider
 ATLAS_NUCLEAR_RADIUS_ARCSEC = 2.0
-# Chosen 2026-10-01 from tools/host_match_check.py: at 4, 99% of DES hosts get a host
-# and 14.8% of random positions do; at 3, 95% and 8.5%. Hosted SNe outnumber hostless
-# ones ~20:1 at Legacy depth, so false orphans (which fill the bucket looked at first)
-# cost more than chance hosts (which only relabel the rare hostless case, still kept):
-# per 100 transients, orphan-bucket purity ~80% at 4 against ~50% at 3. The knee plus
-# margin rather than a precise optimum: 1% of 146 is one or two objects. DES's own cut
-# does not carry over (our d_DLR runs ~1.4x theirs).
+# Chosen 2026-10-01 from tools/host_match_check.py: false orphans cost more than chance
+# hosts. The measurement: README, "Host Matching Validation".
 HOST_DLR_MAX = 4.0
 MIN_HALF_LIGHT_ARCSEC = 0.2  # floor on shape_r so a tiny galaxy cannot claim nothing
 PARALLAX_SNR_MIN = 5.0
@@ -312,6 +307,9 @@ def footprint_bricks_query(cone: tuple[float, float, float]) -> str:
     atlas query, so no cos(dec) widening and no RA 0/360 wrap (it replaced an RA/Dec box,
     2026-10-02). A brick touching the footprint plus the gap check's 30" area has its
     centre within radius + 30" + its half-diagonal (0.18 deg), well inside the margin.
+    Checked against Data Lab 2026-10-02: the same bricks as the old box list's
+    centre-in-cone ones (C 736, D 738, ecdfs 732), and none of the ~450 bricks touching
+    each footprint + 30" missing.
     """
     ra, dec, radius = cone
     return (f"SELECT {', '.join(BRICK_COLUMNS)} FROM {BRICKS_TABLE} AS t "

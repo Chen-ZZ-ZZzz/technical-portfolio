@@ -96,13 +96,9 @@ BRACKET_DAYS = 10.0  # X: a quiet point this close before the first detection br
 QUIET_SIGMA = 5.0  # quiet point deep enough if QUIET_SIGMA * flux_err < first-detection flux
 MIN_DETECTIONS = 3  # per survey object; filters noise, NOT asteroids (MIN_SPAN_DAYS)
 # Detections must span more than one night. Asteroids reach MIN_DETECTIONS in a
-# single night: of 159 new high-|b| loci with >= 3 detections (2026-09-27), 62
-# were known asteroids; 61 held nothing but asteroid detections, and 60 of those
-# fell on one night, 1.4 min to 3.9 h apart. The survey's own asteroid ID names
-# the known ones; this span is what catches the unknown ones. It does not
-# replace the ID check: the 61st locus was two different asteroids crossing
-# 8 days apart, which only the ID catches.
-# Evidence: reports/asteroid_probe_20260927.csv, via tools/asteroid_probe.py.
+# single night: the survey's own asteroid ID names the known ones, this span
+# catches the unknown ones, and neither replaces the other (the numbers: README,
+# "Asteroid Probe").
 # Since 2026-10-01 this is a precondition of every path to a report (new, rising,
 # rapid rise), not only of "new": rising could pass on one night of detections plus
 # brighter forced photometry, and rapid_rise on two detections the same night. The
@@ -687,8 +683,8 @@ TNS_NONE_YET = f"none yet; asked again each run for {TNS_RECHECK_DAYS:g} d (a re
 TNS_UNAVAILABLE = f"unavailable (lookup failed); asked again each run for {TNS_RECHECK_DAYS:g} d"
 
 # The point-source watch (user, 2026-10-02). A S/N floor for the point-source rule was
-# measured and not adopted: its window rested on one supernova, SN 2026kfw, a spectroscopic
-# SN Ia on a DR10 point source of S/N 6.3. The watch counts the pattern instead: every
+# measured and not adopted: its window rested on one supernova, SN 2026kfw (README, "Host
+# Matching Validation"). The watch counts the pattern instead: every
 # point_source alert, live or replayed, is looked up in TNS until classified (TNS
 # classifies days to weeks after discovery, so it looks back, weekly per alert), and each
 # spectroscopic supernova (TNS prefix SN) on a point source below PS_REVISIT_SNR counts.

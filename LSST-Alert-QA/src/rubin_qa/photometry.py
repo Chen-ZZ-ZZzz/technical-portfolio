@@ -19,8 +19,9 @@ light-curve call per object worth it (query_lightcurve: ZTF detections and upper
 limits; LSST detections and forced photometry, Rubin's quiet points). ANTARES left
 the live path then: before, ZTF came from ANTARES loci, LSST from ALeRCE, and TNS
 from ANTARES's crossmatch, which left every LSST object without a locus "not
-checked". ANTARES remains only in the retired SSO monitor and in the validation
-tool's TNS sample.
+checked". Measured on ecdfs at the switch: the ZTF listing returned 38 objects in
+1.8 s, 31 light curves were fetched, 0 failed (ANTARES had listed 45 ZTF + 4 old
+LSST objects for the same window, counting loci active through upper limits).
 """
 
 import math
@@ -226,6 +227,7 @@ def alerce_newest_in_cone(survey: str, cone: Cone, floor_mjd: float | None,
     """
     ALeRCE's object of the survey with the latest lastmjd in the cone, among those with
     lastmjd >= floor_mjd (None: the whole cone - heavy for LSST, ~55 s on ecdfs, 2026-10-02).
+    The filtered query once took 59.5 s on footprint D, against the 60 s request timeout.
     Returns (item or None, error). One row, ordered on the server: with a recent floor it is
     cheap (~2 s LSST, ~1 s ZTF), since only the last nights' objects are sorted.
     """

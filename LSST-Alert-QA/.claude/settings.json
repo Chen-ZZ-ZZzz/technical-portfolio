@@ -1,0 +1,13 @@
+{
+  "sandbox": {
+    "network": {
+      "allowedDomains": [
+        "api.alerce.online",
+        "api-lsst.alerce.online",
+        "tns.alerce.online",
+        "datalab.noirlab.edu",
+        "portal.nersc.gov"
+      ]
+    }
+  }
+}

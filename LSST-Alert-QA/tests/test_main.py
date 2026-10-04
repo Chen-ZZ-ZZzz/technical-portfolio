@@ -106,12 +106,12 @@ class TestOutput:
         _run_cli(["ztf", "3", "-q"], tmp_path, result=_report(3, flagged=2))
         out = capsys.readouterr().out.strip().splitlines()
         assert len(out) == 1
-        assert "ztf" in out[0] and "n=3" in out[0] and "flagged=2/3" in out[0]
+        assert out[0].startswith("ALeRCE ZTF  n=3  flagged=2/3  → ") and "qa_alerce_ztf_" in out[0]
 
     def test_verbose_prints_summary_table_and_flag_count(self, tmp_path, capsys):
         _run_cli(["ztf", "3"], tmp_path, result=_report(3, flagged=2))
         out = capsys.readouterr().out
-        assert "=== QA Report ===" in out
+        assert "=== ALeRCE ZTF Data Quality Report ===" in out
         assert "2/3 objects flagged" in out
         for column in main_module.SUMMARY_COLUMNS:
             assert column in out
@@ -127,6 +127,12 @@ class TestDispatch:
         pipeline = _run_cli(["ztf", "ZTF1", "ZTF2"], tmp_path, result=_report(2))
         assert pipeline.call_args.kwargs["oids"] == ["ZTF1", "ZTF2"]
         assert "page_size" not in pipeline.call_args.kwargs
+
+    def test_antares_page_size_reaches_the_pipeline(self, tmp_path):
+        # 2026-10-04: a unit edited to "antares 25" still listed ~256 loci; the number
+        # on the command line is what the pipeline gets, nothing in between overrides it
+        pipeline = _run_cli(["antares", "25"], tmp_path, result=_report(3))
+        assert pipeline.call_args.kwargs["page_size"] == 25
 
     def test_antares_targets_route_to_locus_ids(self, tmp_path):
         pipeline = _run_cli(["antares", "ANT1", "ZTF20aafqubg"], tmp_path, result=_report(2))
@@ -171,11 +177,17 @@ class TestSurveyValidation:
         assert exc.value.code == 2
         assert _csvs(tmp_path) == []
 
-    @pytest.mark.parametrize("survey", ["ztf", "lsst", "antares"])
-    def test_every_listed_survey_still_dispatches(self, survey, tmp_path):
+    @pytest.mark.parametrize("survey,label,slug", [
+        ("ztf", "ALeRCE ZTF", "alerce_ztf"), ("lsst", "ALeRCE LSST", "alerce_lsst"), ("antares", "ANTARES", "antares"),
+    ])
+    def test_every_listed_survey_still_dispatches(self, survey, label, slug, tmp_path, capsys):
+        """One name per run, the same in the header, the report heading and the file (2026-10-04)."""
         pipeline = _run_cli([survey, "5"], tmp_path, result=_report(2))
         assert pipeline.called
-        assert _csvs(tmp_path)[0].name.startswith(f"qa_{survey}_")
+        assert _csvs(tmp_path)[0].name.startswith(f"qa_{slug}_")
+        out = capsys.readouterr().out
+        assert f"=== {label} Alert Data Quality Pipeline  page_size=5 ===" in out
+        assert f"=== {label} Data Quality Report ===" in out
 
     def test_choices_match_the_config_registry(self):
         """The help text and the accepted set must not drift apart."""

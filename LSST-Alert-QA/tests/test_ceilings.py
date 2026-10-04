@@ -138,7 +138,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(10.0)
         fn = MagicMock(side_effect=APIError("504"))
         fn.__name__ = "query_detections"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             for _ in range(5):
                 _api_call(fn)
         total = sum(c.args[0] for c in mock_sleep.call_args_list)
@@ -148,7 +148,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(0.0)
         fn = MagicMock(side_effect=APIError("504"))
         fn.__name__ = "query_detections"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             result, err = _api_call(fn)
         mock_sleep.assert_not_called()
         assert result is None and "504" in err
@@ -158,7 +158,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(0.0)
         fn = MagicMock(side_effect=APIError("504"))
         fn.__name__ = "query_detections"
-        with patch("rubin_qa.client.time.sleep"):
+        with patch("rubin_qa.retry_budget.time.sleep"):
             _api_call(fn)
         assert "retry budget exhausted" in capsys.readouterr().err
 
@@ -166,7 +166,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(RETRY_BUDGET_SECONDS)
         fn = MagicMock(side_effect=APIError("504"))
         fn.__name__ = "query_detections"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             _api_call(fn)
         assert len(mock_sleep.call_args_list) == RETRY_ATTEMPTS - 1
 
@@ -178,7 +178,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(RETRY_BUDGET_SECONDS)
         fn = MagicMock(side_effect=ParseError("bad query", code=400))
         fn.__name__ = "query_objects"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             result, err = _api_call(fn)
         mock_sleep.assert_not_called()
         assert fn.call_count == 1
@@ -190,7 +190,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(RETRY_BUDGET_SECONDS)
         fn = MagicMock(side_effect=APIError("gateway timeout", code=504))
         fn.__name__ = "query_objects"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             _api_call(fn)
         assert fn.call_count == RETRY_ATTEMPTS
         assert len(mock_sleep.call_args_list) == RETRY_ATTEMPTS - 1
@@ -201,7 +201,7 @@ class TestBudgetBoundsClientRetries:
         retry_budget.reset(12.0)
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             for _ in range(5):
                 antares_api_call(fn, "ANT1")
         total = sum(c.args[0] for c in mock_sleep.call_args_list)
@@ -212,7 +212,7 @@ class TestBudgetBoundsClientRetries:
 
         fn = MagicMock(side_effect=ValueError("bug, not a fault"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             result, err = antares_api_call(fn, "ANT1")
         mock_sleep.assert_not_called()
         assert fn.call_count == 1

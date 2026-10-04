@@ -12,7 +12,7 @@ call added anywhere on the path - listing, photometry, DR10, TNS, the point-sour
 is caught, not only where a fake would have stood in.
 
 The fake day carries one new ZTF transient, bracketed, on a DR10 galaxy and in TNS, so
-the run goes through every stage; LSST is quiet, as it is in ecdfs. The retired SSO
+the run goes through every stage; LSST is quiet, as it is in ecdfs. The frozen SSO
 monitor and the host tool's validation sample may keep using ANTARES: they are not the
 live path. A fresh interpreter, because pytest's own process has imported ANTARES
 modules for other tests already, and an imported module never asks the import system again.

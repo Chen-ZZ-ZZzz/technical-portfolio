@@ -23,6 +23,17 @@ from .reporting import deadline_for, estimate_runtime, run_antares_pipeline, run
 SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
 
 
+def run_label(survey: str) -> tuple[str, str]:
+    """
+    How a run names itself: (label, slug), e.g. ("ALeRCE ZTF", "alerce_ztf") or
+    ("ANTARES", "antares"). The header, the report heading, the summary line, every
+    error and the CSV file name all take it from here, so they cannot drift apart.
+    """
+    if survey == "antares":
+        return "ANTARES", "antares"
+    return f"ALeRCE {survey.upper()}", f"alerce_{survey}"
+
+
 def _planned_count(rest: list) -> int:
     """How many objects the run will touch: an explicit ID list, or a page size."""
     if rest and not rest[0].isdigit():
@@ -39,13 +50,14 @@ def _confirm_long_run(survey: str, rest: list, assume_yes: bool) -> None:
     produce a report. Non-interactive runs log the estimate and proceed — the
     estimate is the useful part in a service log either way.
     """
+    label, _ = run_label(survey)
     n = _planned_count(rest)
     estimate = estimate_runtime(n, survey)
     if estimate <= CONFIRM_THRESHOLD_SECONDS:
         return
 
     summary = (
-        f"{survey}: {n} objects ≈ {estimate / 60:.0f} min estimated "
+        f"{label}: {n} objects ≈ {estimate / 60:.0f} min estimated "
         f"(deadline {deadline_for(n, survey) / 60:.0f} min)"
     )
 
@@ -63,30 +75,32 @@ def _confirm_long_run(survey: str, rest: list, assume_yes: bool) -> None:
     except EOFError:
         reply = ""
     if reply not in ("y", "yes"):
-        print(f"{ERROR_PREFIX}{survey}: aborted — no report written", file=sys.stderr)
+        print(f"{ERROR_PREFIX}{label}: aborted — no report written", file=sys.stderr)
         sys.exit(1)
 
 
 def _dispatch(survey: str, rest: list, quiet: bool) -> pd.DataFrame:
     """Route to the right pipeline. A numeric first target is a page size."""
+    label, _ = run_label(survey)
+    header = f"=== {label} Alert Data Quality Pipeline  {{}} ===\n"
     if survey == "antares":
         if rest and not rest[0].isdigit():
             if not quiet:
-                print(f"=== ANTARES Alert QA Pipeline  locus_ids={rest} ===\n")
+                print(header.format(f"locus_ids={rest}"))
             return run_antares_pipeline(locus_ids=rest, quiet=quiet)
         n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
         if not quiet:
-            print(f"=== ANTARES Alert QA Pipeline  page_size={n} ===\n")
+            print(header.format(f"page_size={n}"))
         return run_antares_pipeline(page_size=n, quiet=quiet)
 
     if rest and not rest[0].isdigit():
         if not quiet:
-            print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  oids={rest} ===\n")
+            print(header.format(f"oids={rest}"))
         return run_pipeline(survey=survey, oids=rest, quiet=quiet)
 
     n = int(rest[0]) if rest else DEFAULT_PAGE_SIZE
     if not quiet:
-        print(f"=== LSST/ZTF Alert Data Quality Pipeline  survey={survey}  page_size={n} ===\n")
+        print(header.format(f"page_size={n}"))
     return run_pipeline(page_size=n, survey=survey, quiet=quiet)
 
 
@@ -119,6 +133,7 @@ def main() -> None:
     survey = opts.survey
     rest   = opts.targets
     quiet  = opts.quiet
+    label, slug = run_label(survey)
 
     _confirm_long_run(survey, rest, opts.yes)
 
@@ -126,7 +141,7 @@ def main() -> None:
         df = _dispatch(survey, rest, quiet)
     except Exception as e:
         print(
-            f"{ERROR_PREFIX}{survey}: pipeline failed — {type(e).__name__}: {e}",
+            f"{ERROR_PREFIX}{label}: pipeline failed — {type(e).__name__}: {e}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -135,21 +150,21 @@ def main() -> None:
         # No rows means the fetch failed or returned nothing — writing here
         # would leave a header-only CSV that looks like a successful run.
         print(
-            f"{ERROR_PREFIX}{survey}: no objects processed — no report written",
+            f"{ERROR_PREFIX}{label}: no objects processed — no report written",
             file=sys.stderr,
         )
         sys.exit(1)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = REPORTS_DIR / f"qa_{survey}_{date}_n{len(df)}.csv"
+    csv_path = REPORTS_DIR / f"qa_{slug}_{date}_n{len(df)}.csv"
     df.to_csv(csv_path, index=False)
 
     if quiet:
         flagged = df["flag"].notna().sum()
-        print(f"{survey}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}")
+        print(f"{label}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}")
     else:
-        print("\n=== QA Report ===")
+        print(f"\n=== {label} Data Quality Report ===")
         print(df[SUMMARY_COLUMNS].to_string())
         print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
 

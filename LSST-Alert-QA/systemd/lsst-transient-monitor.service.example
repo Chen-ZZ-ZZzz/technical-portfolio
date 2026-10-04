@@ -7,17 +7,18 @@ Description=Transient monitor: daily new-transient scan of the live footprint
 Type=oneshot
 SyslogIdentifier=lsst-transient-monitor
 ExecStartPre=/usr/bin/nm-online -q -t 36
-WorkingDirectory=/path/to/LSST-Alert-QA/
+WorkingDirectory=/path/to/LSST-Alert-QA
 Environment=PYTHONUNBUFFERED=1
 Environment=UV_NO_SYNC=1
+Environment=PYTHONPYCACHEPREFIX=/path/to/LSST-Alert-QA/cache/pycache
 # No arguments: never --init, never --dry-run.
-ExecStart=/path/to/uv run python -m rubin_qa.transient_monitor
+ExecStart=%h/.local/bin/uv run python -m rubin_qa.transient_monitor
 TimeoutStartSec=2h
 
 # hardening — see "Sandboxing" in README.md before editing.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/path/to/LSST-Alert-QA/
+ReadWritePaths=/path/to/LSST-Alert-QA/state /path/to/LSST-Alert-QA/cache
 PrivateTmp=yes
 PrivateDevices=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

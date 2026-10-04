@@ -1,7 +1,6 @@
 """ANTARES alert broker client — fetch loci and per-locus data."""
 
 import sys
-import time
 
 import pandas as pd
 import requests
@@ -10,16 +9,13 @@ from . import retry_budget
 from .config import (
     DEFAULT_PAGE_SIZE,
     ERROR_PREFIX,
-    RETRY_ATTEMPTS,
-    RETRY_DELAY,
-    WARN_PREFIX,
 )
 
 
 # ANTARES helpers shared by everything in the repo that still reads ANTARES: this module's
 # pipeline, tools/asteroid_probe.py and tools/host_match_check.py. One definition each
 # (2026-10-03): two copies drift apart, and a fix made in one quietly misses the other.
-# The retired SSO monitor keeps its own self-built code, a frozen artifact.
+# The frozen SSO monitor keeps its own self-built code.
 
 
 def antares_errors() -> tuple[type[BaseException], ...]:
@@ -63,14 +59,12 @@ def _search():
 
 def _api_call(fn, *args, **kwargs):
     """
-    Call an ANTARES API function with retry on transient errors.
+    Call an ANTARES API function with retry (the loop: retry_budget.call).
     Returns (result, error_str). On failure: result=None, error_str set.
 
-    Mirrors client._api_call, with ANTARES's own failure modes:
-      - requests exceptions — ANTARES imposes a 60s read timeout of its own, and
-        a timed-out candidate fetch is what costs a whole daily run.
-      - AntaresException — raised for non-404 4xx and all 5xx.
-    Anything else is a bug, not a transient fault: break without retrying.
+    ANTARES's policy: requests exceptions (ANTARES imposes a 60s read timeout of its
+    own, and a timed-out candidate fetch is what costs a whole daily run) and
+    AntaresException (non-404 4xx and all 5xx) are faults worth retrying.
 
     Note: an ANT locus ID that does not exist answers 500, not 404 (measured
     2026-08-06), so it is indistinguishable from a server having a bad moment and
@@ -79,37 +73,7 @@ def _api_call(fn, *args, **kwargs):
     The ZTF path is better behaved — get_by_ztf_object_id returns None for an
     unknown object, which surfaces immediately as locus:not_found.
     """
-    errors = antares_errors()
-    last_err = None
-    name = getattr(fn, "__name__", str(fn))
-    for attempt in range(RETRY_ATTEMPTS):
-        try:
-            return fn(*args, **kwargs), None
-        except errors as e:
-            last_err = str(e)
-            if attempt < RETRY_ATTEMPTS - 1:
-                granted = retry_budget.consume(RETRY_DELAY * (2 ** attempt))
-                if granted is None:
-                    # Budget spent: this is a bad run, not a bad moment. Give up
-                    # on backoff so the rest of the page fails fast instead of
-                    # sleeping its way through the outage.
-                    print(
-                        f"{WARN_PREFIX}{name} failed ({last_err}) — "
-                        f"retry budget exhausted, not retrying",
-                        file=sys.stderr, flush=True,
-                    )
-                    break
-                print(
-                    f"{WARN_PREFIX}{name} failed ({last_err}) — "
-                    f"retry {attempt + 1}/{RETRY_ATTEMPTS - 1} in {granted:.0f}s "
-                    f"({retry_budget.remaining():.0f}s budget left)",
-                    file=sys.stderr, flush=True,
-                )
-                time.sleep(granted)
-        except Exception as e:
-            last_err = str(e)
-            break
-    return None, last_err
+    return retry_budget.call(fn, args, kwargs, transient=antares_errors())
 
 
 def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
@@ -117,10 +81,8 @@ def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
     Fetch random locus IDs from ANTARES.
     Returns a list of locus_id strings. Empty list on error.
 
-    Expect fewer IDs back than requested. ANTARES's random_score query carries no
-    seed and the client pages through results with a fresh request per page, so
-    the ordering reshuffles mid-walk and loci recur across pages. Measured loss
-    after dedup is 10-15% at page_size=256.
+    Deduplicated here; why the list comes back short: README, Known API Quirks
+    (get_random_locus_ids).
     """
     ids, err = _api_call(_search().get_random_locus_ids, page_size)
     if err is not None:

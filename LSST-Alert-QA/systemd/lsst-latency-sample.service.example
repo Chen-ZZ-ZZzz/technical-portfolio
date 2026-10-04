@@ -7,29 +7,22 @@ Description=Broker latency sample (feeds SECONDS_PER_OBJECT in config.py)
 Type=oneshot
 SyslogIdentifier=lsst-latency-sample
 ExecStartPre=/usr/bin/nm-online -q -t 36
-WorkingDirectory=/path/to/LSST-Alert-QA/
+WorkingDirectory=/path/to/LSST-Alert-QA
 # --quick skips the page_size=100 candidate fetch: it is the heaviest query in the
 # sample and does not need to run every hour. Drop --quick on a few manual runs
 # instead, or on a second timer at daily cadence.
-#
-# --quiet suppresses the full JSON printout, leaving one summary line per run. The
-# sample itself is written by the script, straight to state/latency_samples.jsonl —
-# stdout is a digest of it, never the record, so --quiet costs no data.
+# --quiet keeps the journal to one line per run; the full record still goes to the
+# JSONL log regardless.
+Environment=PYTHONPYCACHEPREFIX=/path/to/LSST-Alert-QA/cache/pycache
+Environment=PYTHONUNBUFFERED=1
 Environment=UV_NO_SYNC=1
-ExecStart=/path/to/uv run tools/sample_latency.py --quick --quiet
-
-# No StandardOutput=/StandardError= on purpose: both default to the journal, under
-# SyslogIdentifier above. Redirecting them to a file bought a duplicate of the
-# summary line and hid the case that matters — a run that dies before it can append
-# (nm-online timing out, uv failing, a bad import, a full disk). That leaves no JSONL
-# record at all, so --report cannot see it; the journal is the only place it shows up,
-# and there it comes with exit status and unit context attached.
+ExecStart=%h/.local/bin/uv run tools/sample_latency.py --quiet --quick
+TimeoutStartSec=5min
 
 # hardening — see "Sandboxing" in README.md before editing.
-# ReadWritePaths must cover state/latency_samples.jsonl, which every run appends to.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/path/to/LSST-Alert-QA/
+ReadWritePaths=/path/to/LSST-Alert-QA/cache /path/to/LSST-Alert-QA/state
 PrivateTmp=yes
 PrivateDevices=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

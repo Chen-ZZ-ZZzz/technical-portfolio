@@ -534,6 +534,8 @@ def compare_cuts(name: str, cone, first_day: str, last_day: str, lookback_days: 
     The equivalence test: the same window with and without the span cut must give identical
     alerts. Both sides are priced before either fetches anything, and the total is what
     needs confirming: the uncut side is the expensive one, often by hours (2026-10-02).
+    Before, each side priced itself only when it started, so a full-window run started
+    the 41,542 + 9,042-candidate uncut side unasked.
     """
     sides = [price(name, cone, first_day, last_day, lookback_days, cut)[3]["seconds"] for cut in (True, False)]
     print(f"\nEquivalence test: ~{sides[0] / 60:.0f} min with the cut + ~{sides[1] / 60:.0f} min without it", flush=True)

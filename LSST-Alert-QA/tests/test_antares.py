@@ -100,7 +100,7 @@ class TestApiCall:
     def test_requests_exception_retries_then_fails(self, capsys):
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_api.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             result, err = _api_call(fn, "ANT1")
         assert result is None
         assert "timed out" in err
@@ -113,7 +113,7 @@ class TestApiCall:
         """A missing ANT id answers 500, not 404 — indistinguishable from a fault."""
         fn = MagicMock(side_effect=AntaresException("500 server error"))
         fn.__name__ = "get_by_id"
-        with patch("rubin_qa.antares_api.time.sleep"):
+        with patch("rubin_qa.retry_budget.time.sleep"):
             result, err = _api_call(fn, "ANT_NOPE")
         assert result is None
         assert "500" in err
@@ -125,9 +125,11 @@ class TestApiCall:
 class TestFetchAntaresCandidates:
     def test_deduplicates_locus_ids_preserving_order(self):
         ids = ["ANT1", "ANT2", "ANT1", "ANT3", "ANT2"]
-        patcher, _ = patch_search(get_random_locus_ids=MagicMock(return_value=ids))
+        get_ids = MagicMock(return_value=ids)
+        patcher, _ = patch_search(get_random_locus_ids=get_ids)
         with patcher:
             result = fetch_antares_candidates(page_size=5)
+        get_ids.assert_called_once_with(5)  # the page size reaches the client as given
         # The dedup loss is upstream (unseeded random_score, per-page requests),
         # so a short list is expected behaviour, not a dropped row.
         assert result == ["ANT1", "ANT2", "ANT3"]
@@ -136,7 +138,7 @@ class TestFetchAntaresCandidates:
         fn = MagicMock(side_effect=requests.exceptions.ConnectionError("down"))
         fn.__name__ = "get_random_locus_ids"
         patcher, _ = patch_search(get_random_locus_ids=fn)
-        with patcher, patch("rubin_qa.antares_api.time.sleep"):
+        with patcher, patch("rubin_qa.retry_budget.time.sleep"):
             result = fetch_antares_candidates(page_size=10)
         assert result == []
         assert "ERROR: fetch_antares_candidates" in capsys.readouterr().err
@@ -224,7 +226,7 @@ class TestFetchAntaresLocus:
         fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
         patcher, _ = patch_search(get_by_id=fn)
-        with patcher, patch("rubin_qa.antares_api.time.sleep"):
+        with patcher, patch("rubin_qa.retry_budget.time.sleep"):
             data = fetch_antares_locus("ANT1")
         assert data["fetch_errors"][0].startswith("locus:")
         assert data["ms"].empty
@@ -456,6 +458,7 @@ class TestBuildAntaresQaRow:
         cl = classify_antares(antares_data["tags"])
         row = build_antares_qa_row("ANT1", antares_data, [], cl)
         assert list(row) == OUTPUT_COLUMNS
+        assert row["broker"] == "antares"
 
     def test_mag_range_and_timespan_derived(self, antares_data):
         cl = classify_antares(antares_data["tags"])

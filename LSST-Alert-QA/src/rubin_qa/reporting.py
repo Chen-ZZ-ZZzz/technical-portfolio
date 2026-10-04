@@ -105,6 +105,7 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
         status = "REVIEW_MAJOR"
 
     return {
+        "broker":             "alerce",
         "oid":                oid,
         "ndet":               ndet,
         "mag_range":          mag_range,
@@ -235,6 +236,7 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
         status = "REVIEW_MAJOR"
 
     return {
+        "broker":              "antares",
         "oid":                 locus_id,
         "ndet":                ndet,
         "mag_range":           mag_range,
@@ -281,7 +283,7 @@ def run_antares_pipeline(
     if not locus_ids:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
-    # Sized from the deduplicated locus count, which is 10-15% below page_size.
+    # Sized from the deduplicated locus count, not page_size.
     if max_run_seconds is None:
         max_run_seconds = deadline_for(len(locus_ids), "antares")
 

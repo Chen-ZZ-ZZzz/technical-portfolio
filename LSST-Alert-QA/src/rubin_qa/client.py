@@ -1,22 +1,28 @@
 """ALeRCE API client — fetch candidates and per-object data."""
 
+import os
 import sys
-import time
 import pandas as pd
 import requests
-from alerce.core import Alerce
-from alerce.exceptions import APIError, ObjectNotFoundError, ParseError
 
 from . import retry_budget
 from .config import (
+    CACHE_DIR,
     DEFAULT_SURVEY,
     DEFAULT_PAGE_SIZE,
     ERROR_PREFIX,
     REQUEST_TIMEOUT,
-    RETRY_ATTEMPTS,
-    RETRY_DELAY,
     WARN_PREFIX,
 )
+
+# The alerce package imports matplotlib.pyplot at its own module top (alerce/ms_stamps.py),
+# so every ALeRCE user loads matplotlib, plotting or not. Its font cache goes under cache/
+# (refetchable), set before that import; an MPLCONFIGDIR already set wins. Without it, a
+# sandboxed run (home directory closed) rebuilt the font cache on every command.
+os.environ.setdefault("MPLCONFIGDIR", str(CACHE_DIR / "matplotlib"))
+
+from alerce.core import Alerce  # noqa: E402
+from alerce.exceptions import APIError, ObjectNotFoundError, ParseError  # noqa: E402
 
 
 def _force_session_timeout(client, timeout: float = REQUEST_TIMEOUT) -> int:
@@ -60,47 +66,19 @@ _force_session_timeout(_client)
 
 def _api_call(fn, *args, **kwargs):
     """
-    Call an ALeRCE API function with simple retry on transient errors.
+    Call an ALeRCE API function with retry (the loop: retry_budget.call).
     Returns (result, error_str). On failure: result=None, error_str set.
 
-    Backoff draws on the run-wide retry_budget: this is called three times per
-    object, so an ALeRCE outage would otherwise stall a page three times over.
-    Once the budget is spent, attempts continue without waiting between them.
+    ALeRCE's policy: APIError is a fault worth retrying. ObjectNotFoundError is an
+    answer ("not_found"), and so is ParseError, which alerce raises for HTTP 400:
+    the request itself is malformed, and resending it would only burn the run's
+    retry budget on a guaranteed failure.
     """
-    last_err = None
-    name = getattr(fn, "__name__", str(fn))
-    for attempt in range(RETRY_ATTEMPTS):
-        try:
-            return fn(*args, **kwargs), None
-        except ObjectNotFoundError:
-            return None, "not_found"
-        except ParseError as e:
-            # alerce maps HTTP 400 to ParseError: the request itself is malformed.
-            # That is a real answer, not a transient fault — resending it four
-            # times just burns the run's retry budget on a guaranteed failure.
-            return None, f"bad_request: {e}"
-        except APIError as e:
-            last_err = str(e)
-            if attempt < RETRY_ATTEMPTS - 1:
-                granted = retry_budget.consume(RETRY_DELAY * (2 ** attempt))
-                if granted is None:
-                    print(
-                        f"{WARN_PREFIX}{name} failed ({last_err}) — "
-                        f"retry budget exhausted, not retrying",
-                        file=sys.stderr, flush=True,
-                    )
-                    break
-                print(
-                    f"{WARN_PREFIX}{name} failed ({last_err}) — "
-                    f"retry {attempt + 1}/{RETRY_ATTEMPTS - 1} in {granted:.0f}s "
-                    f"({retry_budget.remaining():.0f}s budget left)",
-                    file=sys.stderr, flush=True,
-                )
-                time.sleep(granted)
-        except Exception as e:
-            last_err = str(e)
-            break
-    return None, last_err
+    return retry_budget.call(
+        fn, args, kwargs,
+        transient=(APIError,),
+        answers=((ObjectNotFoundError, lambda e: "not_found"), (ParseError, lambda e: f"bad_request: {e}")),
+    )
 
 
 def fetch_candidates(page_size: int = DEFAULT_PAGE_SIZE, survey: str = DEFAULT_SURVEY) -> list:

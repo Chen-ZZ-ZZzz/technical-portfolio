@@ -4,11 +4,16 @@ import re
 
 import pandas as pd
 
-from .config import HIGH_CONFIDENCE_THRESHOLD, MAJORITY_THRESHOLD, OUTLIER_PROB_THRESHOLD
+# Consensus thresholds: tuning of this module's logic, so they live here, not in config.py
+# (user, 2026-10-04).
+HIGH_CONFIDENCE_THRESHOLD = 0.90   # weighted consensus → clean label, no flag
+MAJORITY_THRESHOLD        = 0.65   # weighted consensus → majority, minor flag
+OUTLIER_PROB_THRESHOLD    = 0.30   # dissenting classifier below this → outlier, not genuine split
 
-# ANTARES tag taxonomy (from get_available_tags() as of 2026-04).
-# NOTE: current tag set reflects ZTF filter implementations only — LSST-equivalent
-# science tags are not yet deployed. Revisit SCIENCE_TAGS when LSST tags go live.
+# ANTARES tag taxonomy (from get_available_tags() as of 2026-04). Mostly ZTF filters;
+# the Rubin ones then were young_rubin_transients (science) and
+# lsst_scimma_quality_transient (pipeline). Re-read get_available_tags() for new ones:
+# an unknown tag is flagged in no_science_tags, never silently scored.
 #
 # SCIENCE_TAGS: astrophysical classifications — count toward consensus.
 # All tags are filter outputs, not confirmed classifications. Tags with the _candidate

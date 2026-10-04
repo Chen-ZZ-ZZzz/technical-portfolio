@@ -1,5 +1,5 @@
 """
-The retired SSO monitor is frozen (user, 2026-10-03).
+The SSO monitor is frozen (user, 2026-10-03).
 
 It is a self-built portfolio artifact, kept as it was, and it keeps its own ANTARES code
 on purpose: a frozen copy cannot drift from the shared module, because it never changes.
@@ -21,7 +21,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FROZEN_FILES = {
     "antares_sso_monitor.py": "91611a4922c83b547e444b37aa44ba5f84392119ab9f996ef30520716c562dee",
     "systemd/lsst-sso-monitor.service.example": "a611aefcd8cbfe47c6d7bdaf7f030c798bf8fed5b57292a99c1cd9fb00f4b56e",
-    "systemd/lsst-sso-monitor.timer.example": "90aedcaff954ae5a0af607acb8fed143637525947537e334ef56178d547f33f6",
+    # renamed from lsst-sso-monitor.timer.example by the user, 2026-10-04: a timer holds no paths, so no
+    # .example and no "Rename to" comment, like the others; content otherwise unchanged (old hash 90aedcaf...)
+    "systemd/lsst-sso-monitor.timer": "d0593c0998f370a49a7f38b540c240a9dd6f3369f233f3edc60b2567ac91a151",
 }
 # antares_sso_monitor.py does `from rubin_qa.config import now_mjd`: a change there would
 # change the frozen monitor while its own file stayed byte for byte the same
@@ -31,7 +33,7 @@ UNLOCK = "if the change is deliberate, record the new hash in tests/test_sso_fro
 
 
 @pytest.mark.parametrize("rel", sorted(FROZEN_FILES))
-def test_the_retired_sso_monitors_files_are_unchanged(rel):
+def test_the_frozen_sso_monitors_files_are_unchanged(rel):
     digest = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
     assert digest == FROZEN_FILES[rel], f"{rel} changed (sha256 {digest}): the SSO monitor is frozen; {UNLOCK}"
 

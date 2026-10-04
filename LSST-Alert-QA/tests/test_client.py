@@ -24,7 +24,7 @@ class TestApiCall:
 
     def test_api_error_exhausts_retries(self):
         fn = MagicMock(side_effect=APIError("rate limited"))
-        with patch("rubin_qa.client.time.sleep"):
+        with patch("rubin_qa.retry_budget.time.sleep"):
             result, err = _api_call(fn)
         assert result is None
         assert "rate limited" in err
@@ -32,7 +32,7 @@ class TestApiCall:
     def test_api_error_retries_before_failing(self, capsys):
         fn = MagicMock(side_effect=APIError("boom"))
         fn.__name__ = "query_objects"
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             _api_call(fn)
         # N attempts → N-1 retries, delays growing exponentially from RETRY_DELAY
         expected = [RETRY_DELAY * 2 ** i for i in range(RETRY_ATTEMPTS - 1)]
@@ -43,7 +43,7 @@ class TestApiCall:
 
     def test_generic_exception_no_retry(self):
         fn = MagicMock(side_effect=ValueError("unexpected"))
-        with patch("rubin_qa.client.time.sleep") as mock_sleep:
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             result, err = _api_call(fn)
         assert result is None
         assert "unexpected" in err
@@ -71,7 +71,7 @@ class TestFetchCandidates:
     def test_returns_empty_list_on_api_error(self, capsys):
         with patch("rubin_qa.client._client") as mock_client:
             mock_client.query_objects.side_effect = APIError("down")
-            with patch("rubin_qa.client.time.sleep"):
+            with patch("rubin_qa.retry_budget.time.sleep"):
                 result = fetch_candidates()
         assert result == []
         assert "ERROR: fetch_candidates" in capsys.readouterr().err
@@ -114,7 +114,7 @@ class TestFetchObjectData:
             mock_client.query_detections.side_effect     = APIError("timeout")
             mock_client.query_magstats.return_value      = ztf_ms
             mock_client.query_probabilities.return_value = probs_clean
-            with patch("rubin_qa.client.time.sleep"):
+            with patch("rubin_qa.retry_budget.time.sleep"):
                 result = fetch_object_data("ZTF1")
         assert result["dets"].empty
         assert any("detections" in e for e in result["fetch_errors"])

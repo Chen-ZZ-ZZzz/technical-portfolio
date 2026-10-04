@@ -5,7 +5,6 @@ import pytest
 
 from rubin_qa.classifier import _method_weight, _version_score, classify_object
 
-
 class TestVersionScore:
     def test_none_returns_one(self):
         assert _version_score(None) == 1.0

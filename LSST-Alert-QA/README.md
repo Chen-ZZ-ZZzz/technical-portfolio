@@ -24,19 +24,19 @@ Built as a QA engineering showcase using real astronomical alert data from the V
 
 The validation patterns include completeness checks, classifier consensus, threshold tuning, and structured reporting. This mimics sensor data validation in HIL/SIL test environments.
 
-It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden. Both of the investigative jobs in this repo — that monitor and the broker-latency sampler — have since been retired on purpose: each was run until it answered its question, then stopped rather than left ticking.
+It also includes a worked false-positive investigation: the SSO monitor below was run daily for four months, its alerts audited against independent ground truth, and its design assumption falsified rather than its thresholds retuned. Negative results are reported here as findings, not hidden. Both of the investigative jobs in this repo — that monitor and the broker-latency sampler — were stopped on purpose: each was run until it answered its question, rather than left ticking. The monitor is now frozen, kept unchanged as the investigation; the sampler is dormant, maintained and ready to re-arm (the states: `systemd/README.md`).
 
 ---
 
 ## Bright Solar System Objects (SSO) Monitor
 
-> **Retired 2026-08-18** — ran daily for 115 scans, 2026-04-13 to 2026-08-17 (the last scan logged just after midnight on the 18th); the systemd timer is disabled. The audit below is the reason: the premise was falsified, so there was nothing left to learn from another night of scanning. Kept in the repo as the investigation, not as a running detector.
+> **Frozen; stopped 2026-08-18** — ran daily for 115 scans, 2026-04-13 to 2026-08-17 (the last scan logged just after midnight on the 18th); its files are never edited (`tests/test_sso_frozen.py`). The audit below is the reason: the premise was falsified, so there was nothing left to learn from another night of scanning. Kept in the repo as the investigation, not as a running detector.
 
 `antares_sso_monitor.py` is a stand-alone script which scanned ANTARES daily for SSO loci that had suddenly brightened. Proof of concept / exploration. Self built _without assists from Claude Code_.
 
 > **Negative result — and the reason it is in this portfolio.** The premise does not hold: an ANTARES locus is a sky position, not an object, so it cannot track a moving target. Every alert this monitor raised was a stationary variable star or galaxy. The script is kept unfixed because the investigation is the deliverable: a production false-positive rate traced to an invalid design assumption, tested against independent ground truth, with the residual risk quantified instead of tuned away.
 
-First run defaults to 7-day look-back with empty magnitudes. Daily deployment was automated by a systemd user timer (`lsst-sso-monitor`, now disabled). Magnitude states of SSO loci from each scan were stored in `logs/bright_sso_state.json`, and the daily service log in `logs/sso_monitor.log` — the log the audit below had to reconstruct its test population from.
+First run defaults to 7-day look-back with empty magnitudes. Daily deployment was automated by a systemd user timer (`lsst-sso-monitor`, now frozen). Magnitude states of SSO loci from each scan were stored in `logs/bright_sso_state.json`, and the daily service log in `logs/sso_monitor.log` — the log the audit below had to reconstruct its test population from.
 
 ### Audit, 2026-08-17
 
@@ -89,7 +89,7 @@ Full per-locus verdict table, committed as the evidence behind every number abov
 
 - **ANTARES tag classification** — maps discrete science tags to the same verdict schema, filtering out pipeline/infrastructure tags before scoring
 
-- **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (early-stage, sparse), with graceful degradation for unimplemented API endpoints, and without letting a structurally-absent endpoint masquerade as a data defect
+- **Survey-aware checks** — adapts validation rules for ZTF (mature, data-rich) vs LSST (sparser broker support, some endpoints unimplemented), with graceful degradation for unimplemented API endpoints, and without letting a structurally-absent endpoint masquerade as a data defect
 
 - **Single-object profiler** — a diagnostic deep-dive on any of the three brokers, deriving per-band photometry where the broker serves no magstats
 
@@ -163,14 +163,14 @@ df = run_antares_pipeline(page_size=20)
 # ANTARES explicit locus IDs or ZTF object IDs
 df = run_antares_pipeline(locus_ids=["ANT2020j7wo4", "ZTF20aafqubg"])
 
-# Deadline defaults to 6x the job's own estimate; override or disable it
+# Deadline defaults to DEADLINE_SLACK x the job's own estimate (config.py); override or disable it
 df = run_antares_pipeline(page_size=256, max_run_seconds=900)
 df = run_antares_pipeline(page_size=5000, max_run_seconds=0)   # no deadline
 
 # Inspect the sizing without running
 from rubin_qa.reporting import estimate_runtime, deadline_for
-estimate_runtime(1000, "ztf") / 60   # -> 283 min
-deadline_for(1000, "ztf") / 60       # -> 850 min
+estimate_runtime(1000, "ztf") / 60   # minutes, from SECONDS_PER_OBJECT
+deadline_for(1000, "ztf") / 60       # minutes, DEADLINE_SLACK x that, at least DEADLINE_FLOOR
 
 print(df[["oid", "top_class", "consensus", "status"]])
 ```
@@ -253,12 +253,13 @@ band  ndet  magmin  magmax  magmean  magsigma  firstmjd   lastmjd
 
 ## QA Report
 
-Reports are saved to `reports/qa_{survey}_{timestamp}_n{count}.csv` after each run. The CLI also prints a summary table (`oid`, `ndet`, `top_class`, `consensus`, `n_classifiers`, `status`) and a flagged-object count.
+Reports are saved to `reports/qa_{run}_{timestamp}_n{count}.csv` after each run, where `{run}` is `alerce_ztf`, `alerce_lsst` or `antares`; the CLI's header, report heading and summary line name the run the same way (`ALeRCE ZTF`, `ALeRCE LSST`, `ANTARES`). The CLI also prints a summary table (`oid`, `ndet`, `top_class`, `consensus`, `n_classifiers`, `status`) and a flagged-object count.
 
 One row per object. Columns:
 
 | Column | Description |
 |---|---|
+| `broker` | `alerce` or `antares` |
 | `oid` | Object identifier |
 | `ndet` | Total detection count |
 | `mag_range` | Brightness amplitude: magmax − magmin |
@@ -283,7 +284,7 @@ One row per object. Columns:
 | `REVIEW_MINOR` | No issues, consensus ≥ 0.65, all dissenters below prob 0.30 |
 | `REVIEW_MAJOR` | No issues, genuine classifier split — needs human inspection |
 
-Note: `REVIEW_MINOR` is currently dormant for ZTF because `lc_classifier` returns no data for most objects, leaving only one classifier voting. It will activate once `lc_classifier` data flows.
+Note: `REVIEW_MINOR` currently never fires for ZTF because `lc_classifier` returns no data for most objects, leaving only one classifier voting. It will start firing once `lc_classifier` data flows.
 
 **Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats` (ZTF only — see below), `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
 
@@ -340,7 +341,7 @@ All ANTARES tags are filter outputs, not confirmed classifications — treat eve
 |---|---|---|---|
 | Detections | ✓ | ✓ | ✓ (alerts, upper limits filtered out) |
 | Magstats | ✓ | — (falls back to raw detections) | ✓ (locus properties) |
-| Classifiers | ✓ | ✓ (2 stamp classifiers; `query_classifiers`/`query_classes` still absent) | ✓ (tag-based, science tags only) |
+| Classifiers | ✓ | ✓ (2 stamp classifiers) | ✓ (tag-based, science tags only) |
 | `rb`/`drb` scores | ✓ | `reliability` only | — (pre-filtered upstream, rb ≥ 0.55) |
 | Catalog cross-matches | — | — | ✓ (Gaia, Sloan, WISE, Chandra) |
 | Real-time stream | — | — | ✓ (Kafka, requires credentials) |
@@ -397,7 +398,7 @@ All tests use mock data — no live API calls.
 |---|---|
 | `test_client.py` | ALeRCE client: retry, dedup, per-field fetch errors |
 | `test_antares.py` | ANTARES broker path, end to end (see below); the ANTARES helpers the tools share, and that no tool re-implements one |
-| `test_sso_frozen.py` | the retired SSO monitor is frozen: SHA-256 of its files and of what it imports; recording a new hash is the deliberate unlock |
+| `test_sso_frozen.py` | the frozen SSO monitor: SHA-256 of its files and of what it imports; recording a new hash is the deliberate unlock |
 | `test_validators.py` | completeness tokens, ZTF and LSST |
 | `test_classifier.py` | weighted classifier consensus |
 | `test_reporting.py` | QA row assembly, status tiers |
@@ -452,44 +453,13 @@ every one. A test that passes against broken code is not coverage.
 
 ## Deployment
 
-`systemd/` holds example user units — one `.service` + `.timer` pair per job, all
-named `lsst-<role>` so `systemctl --user list-timers 'lsst-*'` and
-`journalctl -t 'lsst-*'` sweep the whole set:
-
-| Unit | Cadence | Runs | Status |
-|---|---|---|---|
-| `lsst-pipeline-antares` | daily | `pipeline.py antares 256 -q` | active |
-| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 100` | active |
-| `lsst-sso-monitor` | daily | `antares_sso_monitor.py` | **retired 2026-08-18** |
-| `lsst-latency-sample` | hourly, randomized | `tools/sample_latency.py --quick --quiet` | **retired 2026-09-01** |
-| `lsst-transient-monitor` | daily, 16:00 (your choice) | `python -m rubin_qa.transient_monitor` (no arguments: the live footprint, never `--init`) | new 2026-10-03 |
-
-The two investigative units are done and disabled — the monitor because its premise
-was falsified, the sampler because it settled the constants it was collected for.
-Their `.example` files and setup instructions stay in `systemd/` as the deployment
-record; the scripts behind them still run by hand. Nothing in the repo re-enables
-them.
-
-Install: copy the pair, drop the `.example` suffix from the service (timers hold no paths and
-have none, except the frozen SSO monitor's), replace `/path/to/...`, then
-`systemctl --user daemon-reload && systemctl --user enable --now <unit>.timer`.
-
-Every service carries the same sandboxing block (`ProtectSystem=strict` +
-`ReadWritePaths` on the project directory, syscall filter, no new privileges). Output
-goes to the journal; `lsst-sso-monitor` was the one exception, keeping its own
-`logs/sso_monitor.log` as the production record for as long as it ran. See
-[`systemd/README.md`](systemd/README.md)
-for per-unit rationale, the directive-by-directive breakdown, and the gotchas
-(`ReadWritePaths` is mandatory under `strict`; `ProtectHome` must stay unset for `uv`).
-
-The long-run confirm prompt only fires on a TTY — under systemd there is no stdin, so
-the estimate is logged to stderr and the run proceeds rather than hanging the unit.
+The jobs run as systemd user units, with examples in `systemd/`. Which units exist and their status, installing them, their sandboxing and logging, and the notes for running them: [`systemd/README.md`](systemd/README.md).
 
 ---
 
 ## Broker Latency Sampling Campaign
 
-> **Concluded 2026-09-01** — 329 samples over 21 days; the hourly timer is retired. The constants it was collected to check turned out to be right, so nothing changed. That is the result, not the absence of one.
+> **Concluded 2026-09-01** — 329 samples over 21 days; the hourly timer is dormant (Re-measuring, below). The constants it was collected to check turned out to be right, so nothing changed. That is the result, not the absence of one.
 
 `SECONDS_PER_OBJECT` drives the runtime estimate, the run deadline and the long-run
 confirm prompt. It was seeded on 2026-08-06 from a single afternoon's measurement,
@@ -532,21 +502,22 @@ is off overnight and no run is ever issued then; that is a property of the sched
 not a gap in the result.
 
 **What the campaign did find** is that the broker swings on its own timetable: 12
-failed fetches across 329 runs. Eleven are ZTF `ReadTimeout` at the full 60s
-`REQUEST_TIMEOUT` — about 3.4% of ZTF runs — clustered 08-12→08-16 and 08-31 rather
-than spread evenly; the twelfth is a 2026-08-13 event where ZTF *and* LSST both
-returned `APIError: 500`, the only broker-wide blip in the window. At that rate a
-failure is a normal Tuesday, which is the argument for ceilings that degrade rather
-than abort: a run has to survive one and still write its CSV.
+failed fetches across 329 runs. Eleven are ZTF `ReadTimeout`s that ran the full
+request timeout (60 s during the campaign) — about 3.4% of ZTF runs — clustered
+08-12→08-16 and 08-31 rather than spread evenly; the twelfth is a 2026-08-13 event
+where ZTF *and* LSST both returned `APIError: 500`, the only broker-wide blip in the
+window. At that rate a failure is a normal Tuesday, which is the argument for
+ceilings that degrade rather than abort: a run has to survive one and still write
+its CSV.
 
 It also priced the call that `SECONDS_PER_OBJECT` does not model at all — the one-off
 candidate fetch, the slowest single query in the system. ZTF `query_objects` runs a
-median 19.3s against the 60s `REQUEST_TIMEOUT`, with a worst case of 45.4s, and is no
+median 19.3s, p95 30.9s, worst case 45.4s (98 samples), and is no
 faster at `page_size=10` than at 100: server-side variance dominates and page size
-barely matters. That call, not the per-object ones, is what keeps `REQUEST_TIMEOUT`
-at 60s.
+barely matters. That call, not the per-object ones, is what sizes `REQUEST_TIMEOUT`
+(config.py): its worst case has to fit under it.
 
-**Re-measuring.** The unit examples are kept in `systemd/`; re-enable the pair after a
+**Re-measuring.** The unit examples are kept current in `systemd/`; re-arm the pair after a
 broker change or when a fourth survey is added, and let it run for weeks rather than
 days — the useful signal here was the failure clustering, which a short run would have
 missed entirely. `uv run tools/sample_latency.py --report` still reads the collected
@@ -592,7 +563,7 @@ The monitor labels each transient by what DR10 shows at its position: a host gal
 **2 — Faults the validation exposed in the design, and the fixes.**
 - *Big galaxies.* DR10 breaks an atlas galaxy into pieces (~4–7 each, up to ~75 near a big one), and each piece competed as a host. A piece is any row inside the atlas ellipse (maskbit 12), including point-like nuclei with no reference tag: NGC 873's nucleus is a separate PSF 1.3″ from the model centre. Pieces now belong to their galaxy in every rule.
 - *Hosts beyond the search radius.* SN 2025zi sits 123″ from NGC 1398, beyond the 30″ search. Candidates are now collected in two steps: Tractor sources within 30″, plus every atlas galaxy whose ellipse, scaled by the threshold, reaches the transient.
-- *Catalogue gaps.* Where DR10's fitting gave up (maskbit BAILOUT; brick 0532m280 at the CDFS centre is 49% BAILOUT) no sources exist, so empty sky there says nothing. A position with BAILOUT in its 30″ search area is "unavailable", never an orphan.
+- *Catalogue gaps.* Where DR10's fitting gave up (maskbit BAILOUT; brick 0532m280 at the CDFS centre is 49% BAILOUT) no sources exist, so empty sky there says nothing. A position with BAILOUT in its 30″ search area is "unavailable", never an orphan. 14 of 413 cached tiles had such a gap, clustered at the CDFS centre, which lies in ecdfs, the live footprint.
 - *AGN check.* The WISE colour check used to read whichever source sat nearest, before any host was known. It is now a flag on the source actually assigned, applied only when both WISE bands have S/N ≥ 5, with Stern's 0.8 Vega cut converted to 0.16 AB.
 
 **3 — Test populations and oracles.**
@@ -618,7 +589,7 @@ The two error rates apply to populations of very different size. Hosted supernov
 - *A compact-host rule (a point-like source 1–3″ away taken as host) was measured and dropped.* It gained 0 of 14 point-like hosts, 12 of which sit within 1″ where the point-source label already keeps them out of the orphan bucket, and it gave 10.4% of random positions a host at 3″.
 - *A signal-to-noise floor for the point-source rule was measured and not adopted* (2026-10-02, `tools/point_source_snr.py`). SN 2026kfw, a spectroscopic SN Ia from the replay, came out `point_source` on a DR10 point source of S/N 6.3. Measured two-sided over all 82 firings of the rule: a floor of 6.5–7 loses none of the 12 point-like true hosts (the faintest is at S/N 7.1) and lowers the random point-source rate from 2.03% ± 0.26 to about 1.7%, a change under 1.5σ. Both edges of that window are single objects, and the cost on faint variable stars and QSOs is unmeasured, so the rule stays as it is and kfw is a known limitation. A watch looks for a pattern instead, inside the monitor run: every `point_source` alert, live or replayed, is looked up in TNS until classified, and spectroscopic supernovae on a point source below S/N 7 are counted. One is kfw, two can be coincidence; from three the daily report carries a notice, every run, until the rule or the threshold changes. The floor would be on S/N, never magnitude: DR10 measures r for sources detected in other bands (one host's point source reads r = 26.4 at S/N 175), and depth varies across the sky.
 - *Point source before host costs more than estimated.* About 2% of random positions (1.4–2.6%) have a star-free point source within 1″, not 0.1%. It relabels 4 correct hosts; the reverse order would instead give 4 of the 12 point-like hosts a wrong galaxy. On that tie the point source stays first: a wrong host asserts something false, while the point-source label only withholds a host, the transient is reported either way, and a faint variable star beyond Gaia's reach cannot pass as SN-like. (The 4 relabelled DES supernovae may be the SNe themselves, since DR10's stacks include DES epochs; that cannot happen for new Rubin transients.)
-- *Data defects found by auditing the inputs.* ALeRCE's TNS service answers with an empty record once its quota of 10 requests a minute is spent (see Replay Validation below; at one call a second the sampler spent it itself, which first looked like intermittent faults). Before the fix, 14 of 44 supernovae were saved as "no host"; refetching recovered 8 real hosts. One host name came back URL-encoded (`2MASXJ09565234%2B0328119`, where `%2B` is `+`) and silently failed to resolve. Names from that service are now decoded once, where they come in, so no stored name and no later lookup sees the encoding; a literal `+` survives the decoding, and tests pin both. Every fetch-failure path now has an injected-failure test, and failed supernovae go on a pending list that the next run retries first.
+- *Data defects found by auditing the inputs.* ALeRCE's TNS service answers with an empty record once its quota is spent (Replay Validation below, the oracle); at one call a second the sampler spent it itself, which first looked like intermittent faults. Before the fix, 14 of 44 supernovae were saved as "no host"; refetching recovered 8 real hosts. One host name came back URL-encoded (`2MASXJ09565234%2B0328119`, where `%2B` is `+`) and silently failed to resolve. Names from that service are now decoded once, where they come in, so no stored name and no later lookup sees the encoding; a literal `+` survives the decoding, and tests pin both. Every fetch-failure path now has an injected-failure test, and failed supernovae go on a pending list that the next run retries first.
 - *A bug in the validator itself.* Its truth mapping first took NGC 873's point-like nucleus, 0.18″ from the Sesame position, as the host of SN 2022xjk, while the matcher had correctly chosen the galaxy (d_DLR 0.08). A named host now resolves to the atlas galaxy at that position, ahead of any nucleus or piece.
 - *One position with no DR10 source within 15″ and no mask bit set:* 1 observed against 3.1 expected by chance from each position's own source density. A chance void, not a catalogue fault.
 
@@ -692,10 +663,10 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 
 `tools/asteroid_probe.py` asks whether the monitor's first cuts (a new locus, enough detections, high Galactic latitude) already keep asteroids out, and what an asteroid locus looks like when they do not. It walks new loci all over the sky and attributes every detection to a known asteroid or not, using each alert's own `ztf_ssnamenr`. One CSV row per locus.
 
-The snapshot kept here, [`reports/asteroid_probe_20260927.csv`](reports/asteroid_probe_20260927.csv) (159 new loci at high Galactic latitude), is the evidence the monitor's asteroid rules cite. What is reproducible is the reduction: `uv run tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv` turns a saved snapshot into the same numbers every time, offline.
+The snapshot kept here, [`reports/asteroid_probe_20260927.csv`](reports/asteroid_probe_20260927.csv), is the evidence the monitor's asteroid rules cite. Of its 159 new high-latitude loci with at least 3 detections, 62 were known asteroids and 61 held nothing but asteroid detections. 60 of those fell on one night, 1.4 min to 3.9 h apart, which is why every path needs detections on two nights. The 61st was two different asteroids crossing the same spot 8 days apart, which only an asteroid ID catches. What is reproducible is the reduction: `uv run tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv` turns a saved snapshot into the same numbers every time, offline.
 
 Because each run sees different loci, a later run can show what an earlier one could not. A rerun on 2026-10-03 did, twice:
-- *A single slow asteroid can hold one position across two nights.* The 09-27 snapshot had only one multi-night case among its asteroid-only loci, two different asteroids crossing the same spot. The rerun had two loci where one asteroid stayed for about a day. Since the live monitor lost ZTF's asteroid ID (2026-10-03), such an object can pass the two-night rule. It is rare (3 in 185 new loci that day) and would surface as an alert a human can dismiss: accepted as it is.
+- *A single slow asteroid can hold one position across two nights.* The 09-27 snapshot's only multi-night case was the two-asteroid one. The rerun had two loci where one asteroid stayed for about a day. Since the live monitor lost ZTF's asteroid ID (2026-10-03), such an object can pass the two-night rule. It is rare (3 in 185 new loci that day) and would surface as an alert a human can dismiss: accepted as it is.
 - *Asteroid detections can merge into a real object's locus.* Three named loci held asteroid detections alongside a genuine object's own. On an old object, a passing asteroid then looks like a sudden rise, which is why an old object's rapid rise must persist (see Replay Validation).
 
 ---
@@ -708,18 +679,19 @@ Because each run sees different loci, a later run can show what an earlier one c
 - LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
 - LSST oids come back as integers from the API — normalized to `str` in `fetch_candidates`
 - LSST `classifier_version` is an integer (201, 202) where ZTF sends a string (`"1.0.0"`); the version tiebreaker parses both
+- LSST: `query_lightcurve`, `query_detections`, `query_non_detections` and `query_forced_photometry` work; `query_magstats`, `query_classifiers` and `query_classes` do not
 - LSST `query_lightcurve` returns **three** keys — `detections`, `non_detections`, `forced_photometry` — against ZTF's two, and `non_detections` is empty even for well-sampled objects: Rubin publishes forced photometry where ZTF publishes upper limits. Detections carry fluxes (`psfFlux`, nJy) and `band`/`band_name`, never `magpsf`/`fid`
 - LSST `query_probabilities` works and returns two ranking-1 classifiers, so the consensus path actually engages — but they are the same model at two dates, so their agreement is not independent evidence the way lc-vs-stamp would be
 
 **ANTARES:**
 - Kafka streaming requires credentials (request from ANTARES team); search/fetch API is open
-- `get_random_locus_ids` returns duplicates *within a single call* — deduplicated in `fetch_antares_candidates`, so a run returns 10-15% fewer loci than the requested page size (measured: 256 requested → 217-228 unique). The ES query is unseeded and the client pages with a fresh request per page, so results reshuffle mid-walk. Not a row-drop in the pipeline — one row is emitted per deduplicated ID.
+- `get_random_locus_ids` returns duplicates *within a single call* — deduplicated in `fetch_antares_candidates`, so a run returns fewer loci than the requested page size, by an amount that varies (256 requested → 217, 225, 228 unique on 2026-08-06; 207 on 2026-10-04). The ES query is unseeded and the client pages with a fresh request per page, so results reshuffle mid-walk. Not a row-drop in the pipeline — one row is emitted per deduplicated ID.
 - A nonexistent ANT locus ID returns HTTP 500, not 404, so it cannot be told apart from a transient fault and consumes the full retry backoff. ZTF IDs return `not_found` immediately.
-- Both ANTARES fetches retry on timeout / server error (4 attempts, 9s exponential), matching the ALeRCE client. ANTARES applies its own 60s read timeout.
-- Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines. All degrade rather than abort — a short CSV still gets written:
-  - **Per request (60s)** — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own.
-  - **Retry sleep (300s per run)** — shared budget; once spent, calls stop waiting between attempts.
-  - **Run deadline — sized to the job**, at 6× the run's own estimated duration (floor 5 min). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (ztf 3.7s, lsst 2.4s, antares 1.0s), each confirmed at or above its survey's p95 by the 2026-08/09 sampling campaign above. The 6× slack is not there for drift — latency proved stable — but to absorb one pathological object: the retry budget caps retry *sleep*, not socket time, so a worst-case ZTF object can block 3 calls × 4 attempts × 60s = 720s with only this deadline to stop it.
+- Both brokers' calls go through one retry loop (`retry_budget.call`; retry policy: see `RETRY_*` in config.py); each client passes only its own policy of which errors are worth retrying. antares-client 1.14.0 (the pinned version) applies its own 60 s request timeout.
+- Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines (values in config.py). All degrade rather than abort — a short CSV still gets written:
+  - **Per request** (`REQUEST_TIMEOUT`) — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own.
+  - **Retry sleep per run** (`RETRY_BUDGET_SECONDS`) — shared budget; once spent, a failing call is given up at once instead of retried.
+  - **Run deadline — sized to the job**, at `DEADLINE_SLACK` × the run's own estimated duration (floor `DEADLINE_FLOOR`). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` (Broker Latency Sampling Campaign, above). The slack is not there for drift — latency proved stable — but to absorb one pathological object: the retry budget caps retry *sleep*, not socket time, so a worst-case ZTF object can block for 3 calls × `RETRY_ATTEMPTS` × `REQUEST_TIMEOUT` with only this deadline to stop it.
 - The alerce package sets no request timeout anywhere, so `client._force_session_timeout()` wraps all five `requests.Session` objects the Alerce client holds.
 - `locus.alerts` bundles real detections (`ztf_candidate`, have `ant_mag`) and non-detections (`ztf_upper_limit`, no `ant_mag`) — pipeline filters to `ant_mag.notna()` before building the lightcurve
 - `locus.lightcurve` is a separate, tidier 14-column frame holding detections *and* upper limits together: `ant_mag` is null on a non-detection, where `ant_maglim` carries the limit. `ant_mag_corrected` is the `magpsf_corr` analogue, `ant_passband` the `fid` analogue. Also on the locus: `timeseries` (~114 columns), `catalog_objects` (crossmatch), and ~20 precomputed `feature_*` entries in `properties`

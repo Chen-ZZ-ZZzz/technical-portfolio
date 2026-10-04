@@ -37,6 +37,9 @@ class TestPsffluxToMag:
 
 
 class TestBuildQaRow:
+    def test_names_its_broker(self, data_complete):
+        assert build_qa_row("ZTF1", data_complete, [], _cl())["broker"] == "alerce"
+
     def test_uses_magstats_when_available(self, data_complete):
         row = build_qa_row("ZTF1", data_complete, [], _cl())
         assert row["ndet"] == 8           # 5 + 3
