@@ -92,7 +92,7 @@ REQUEST_TIMEOUT = 60.0
 
 # Total time one run may spend sleeping between retries. Retry is per-object, so
 # a broker-wide outage would otherwise multiply backoff across the whole page.
-# Once spent, remaining calls get their attempts without backoff.
+# Once spent, a failing call is given up at once instead of retried.
 RETRY_BUDGET_SECONDS = 300.0
 
 # Measured wall-clock cost per object, including INTER_OBJECT_DELAY. Update if
