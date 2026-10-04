@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
 from rubin_qa import sky_catalog as sc  # noqa: E402
-from rubin_qa.transient_monitor import FOOTPRINTS  # noqa: E402
+from rubin_qa.config import FOOTPRINTS  # noqa: E402
 from tests.fake_tap import great_circle_deg, q3c_tap  # noqa: E402
 
 BOX_PAD_DEG = 0.3  # the superset box reaches this far beyond the cone + margin

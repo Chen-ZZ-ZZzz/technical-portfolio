@@ -19,7 +19,8 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
   rising     recent onset, flux climbing across the post-onset photometry
              (forced photometry included): the main path for LSST
   rapid_rise >= 1 mag within 3 days, any age; an old object doing it is
-             re_brightening. Ordinary SNe are slower: that is what rising is for.
+             re_brightening, and only if it stays up: the elevated level seen
+             on two nights. Ordinary SNe are slower: that is what rising is for.
   unbracketed  recent onset, nothing to bracket it: parked, re-judged each run
   classify   DR10 locally (sky_catalog.py). The sky context alone decides the
              category, whatever the path: host -> host, nothing -> orphan,
@@ -60,7 +61,18 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 
 from . import retry_budget, sky_catalog, tns
-from .config import CONFIRM_THRESHOLD_SECONDS, ERROR_PREFIX, MJD_J2000, PROJECT_ROOT, WARN_PREFIX, now_mjd
+from .config import (  # noqa: F401  (FOOTPRINTS & co. re-exported: replay and tests read them as mon.X)
+    CONFIRM_THRESHOLD_SECONDS,
+    DEFAULT_RADIUS_DEG,
+    ERROR_PREFIX,
+    FOOTPRINTS,
+    LIVE_FOOTPRINT,
+    LIVE_SURVEYS,
+    MJD_J2000,
+    STATE_DIR,
+    WARN_PREFIX,
+    now_mjd,
+)
 from .photometry import (  # noqa: F401  (NETWORK_ERRORS re-exported for tools/)
     NETWORK_ERRORS,
     Cone,
@@ -80,7 +92,6 @@ LOOKBACK_DAYS = 14.0  # N: a survey's first detection must be this recent to be 
 # with lastmjd >= min(window start, last known newest - this): the known object must come
 # back, so silence there means the check failed, not that the sky is quiet.
 LISTING_CHECK_MARGIN_DAYS = 1.0
-LIVE_SURVEYS = ("ztf", "lsst")  # both listed and fetched from ALeRCE (2026-10-03)
 BRACKET_DAYS = 10.0  # X: a quiet point this close before the first detection brackets the onset
 QUIET_SIGMA = 5.0  # quiet point deep enough if QUIET_SIGMA * flux_err < first-detection flux
 MIN_DETECTIONS = 3  # per survey object; filters noise, NOT asteroids (MIN_SPAN_DAYS)
@@ -107,29 +118,19 @@ RISING_MIN_MAG = 0.3  # ... and at least this much brighter
 RISING_MIN_SPAN_DAYS = 0.5  # ... measured on at least two nights
 ASSOC_RADIUS_ARCSEC = 1.5  # survey objects this close are the same place
 STATE_RETENTION_DAYS = 60.0
-# State, not logs: the per-footprint state and the point-source watch hold what must
-# outlive a run (reported pairs, parked onsets, the watch's evidence, kept past the 60-day
-# retention). logs/ is the directory people clean up and rotate, so a tidy-up there would
-# silently reset them (2026-10-02). Written like the state always was: temp file, rename.
-STATE_DIR = PROJECT_ROOT / "state"
 MAX_RETRIES = 3
 RETRY_WAIT = 300  # 5 minutes
 WARN_LIMIT = 5  # per-object fetch warnings printed per run; the rest are counted
 PROGRESS_EVERY = 100  # LSST photometry fetches between progress lines
 
-DEFAULT_RADIUS_DEG = 2.82  # pi r^2 = 25 deg2; membership is angular separation <= radius
-FOOTPRINTS = {
-    "C": ((35.7, -9.0, DEFAULT_RADIUS_DEG), "former live candidate v1: just south of the XMM-LSS deep field"),
-    "D": ((150.1, 2.5, DEFAULT_RADIUS_DEG), "test replay: COSMOS, Rubin data 2026-02-15..05-15"),
-    "ecdfs": ((53.1, -27.8, DEFAULT_RADIUS_DEG), "the live footprint: ECDFS deep field"),
-}
-LIVE_FOOTPRINT = "ecdfs"  # decided 2026-10-02; scanned when neither --footprint nor --cone is given
 
 # NewVerdict.status
 NEW, UNBRACKETED, NOT_NEW = "new", "unbracketed", "not_new"
 NOT_NEW_REASON = {
     "no_detections": "no_detections",
-    "preexisting_ztf_object": "preexisting_ztf_object",
+    # a rejection reached only after the rise paths ran and did not fire: the label says
+    # so (an old object that rises fast is re_brightening, whatever its age)
+    "preexisting_ztf_object": "preexisting_ztf_no_rise",
     "old": "old_no_rise",
     "too_few_detections": "too_few_detections",
     "single_night": "single_night",
@@ -334,11 +335,20 @@ def rising(points: list[PhotPoint], first_det_mjd: float) -> Rise | None:
     return best
 
 
-def rapid_rise(points: list[PhotPoint], now: float, window: float = RAPID_RISE_DAYS) -> float | None:
+def rapid_rise(points: list[PhotPoint], now: float, window: float = RAPID_RISE_DAYS,
+               persistent: bool = False) -> float | None:
     """
     Largest same-band brightening (mag) ending on a band's latest detection,
     against detections up to `window` days before it; that latest detection
     must fall within `window` days of now. Detections only. None if no pair.
+
+    persistent (old objects, user 2026-10-03): the elevated level - at least
+    RAPID_RISE_MAG above the rise's baseline - must be seen on two nights. An
+    asteroid passes a position once and a bad detection does not repeat, while a
+    real re-brightening is still bright the next night. Old objects need it most:
+    they sit at one position for years while asteroids keep passing (the
+    2026-10-03 asteroid probe found asteroid detections merged into 3 genuine
+    loci). Cost: a one-night delay, as for the two-night rule on new objects.
     """
     best = None
     dets = [p for p in detections(points) if p.flux > 0]
@@ -350,7 +360,12 @@ def rapid_rise(points: list[PhotPoint], now: float, window: float = RAPID_RISE_D
         prior = [p for p in pts if latest.mjd - window <= p.mjd < latest.mjd]
         if not prior:
             continue
-        rise = max(njy_to_mag(p.flux) for p in prior) - njy_to_mag(latest.flux)
+        base = max(prior, key=lambda p: njy_to_mag(p.flux))  # the faintest: what the rise is measured from
+        if persistent:
+            up = [p for p in pts if p.mjd > base.mjd and njy_to_mag(p.flux) <= njy_to_mag(base.flux) - RAPID_RISE_MAG]
+            if not up or not spans_nights(up[0].mjd, up[-1].mjd):
+                continue
+        rise = njy_to_mag(base.flux) - njy_to_mag(latest.flux)
         best = rise if best is None else max(best, rise)
     return best
 
@@ -418,10 +433,14 @@ def evaluate(
         return Evaluation(reason="solar_system")
     dets = detections(obj.points)
     if not dets:
-        # an object the listing says has detections but was not worth a light-curve call
-        # (needs_photometry) is "not_fetched", not "no_detections"
-        return Evaluation(reason="no_photometry" if obj.fetch_errors else
-                          "not_fetched" if obj.summary.get("n_det") else "no_detections")
+        # an object the listing says has detections but that was not worth a light-curve call
+        # carries the criterion that skipped it (photometry_skip_reason), never "no_detections";
+        # one that was worth the call and still has no detections is said as such
+        if obj.fetch_errors:
+            return Evaluation(reason="no_photometry")
+        if not obj.summary.get("n_det"):
+            return Evaluation(reason="no_detections")
+        return Evaluation(reason=photometry_skip_reason(obj, now, since_mjd) or "empty_light_curve")
     if not spans_nights(dets[0].mjd, dets[-1].mjd):  # every path, rising and rapid rise included
         return Evaluation(reason="single_night")
 
@@ -430,7 +449,7 @@ def evaluate(
     v = judge_new(obj.survey, obj.points, now, now - since_mjd, bracket_days, min_detections, old_ids, extra)
     recent = v.first_det_mjd is not None and v.first_det_mjd >= since_mjd and not old_ids
     rise = rising(obj.points, v.first_det_mjd) if recent else None
-    rapid = rapid_rise(obj.points, now)
+    rapid = rapid_rise(obj.points, now, persistent=not recent)  # an old object's rise must persist
     rapid_hit = rapid is not None and rapid >= RAPID_RISE_MAG
     moving = rise is not None or rapid_hit
 
@@ -462,19 +481,28 @@ def evaluate(
 # ------------------------------------------------------------------ gathering
 
 
-def needs_photometry(obj: SurveyObject, now: float, since_mjd: float) -> bool:
+def photometry_skip_reason(obj: SurveyObject, now: float, since_mjd: float) -> str | None:
     """
-    One ALeRCE light-curve call per object is the run's main cost, so decide from
-    the listing first: a recent onset, or recent enough activity for a rapid rise,
-    with at least two detections.
+    Why the listing alone rules the object out, or None when its light curve is
+    worth the call. One ALeRCE light-curve call per object is the run's main cost.
+    The reason is the criterion that decided it, and it is what evaluate reports:
+    a skip for a bad reason must not hide under a harmless-looking label.
     """
     dets = detections(obj.points)
     first = obj.summary.get("firstmjd") or (dets[0].mjd if dets else None)
     last = obj.summary.get("lastmjd") or (dets[-1].mjd if dets else None)
     n = obj.summary.get("n_det") or len(dets)
-    if first is None or n < 2:
-        return False
-    return first >= since_mjd or (last is not None and last >= now - RAPID_RISE_DAYS)
+    if first is None:
+        return "no_first_detection_listed"
+    if n < 2:
+        return "single_detection"  # no path can use one detection
+    if first >= since_mjd or (last is not None and last >= now - RAPID_RISE_DAYS):
+        return None
+    return "old_no_recent_detection"  # onset before the window, too quiet for a rapid rise
+
+
+def needs_photometry(obj: SurveyObject, now: float, since_mjd: float) -> bool:
+    return photometry_skip_reason(obj, now, since_mjd) is None
 
 
 def _merge(into: SurveyObject, new: SurveyObject) -> None:

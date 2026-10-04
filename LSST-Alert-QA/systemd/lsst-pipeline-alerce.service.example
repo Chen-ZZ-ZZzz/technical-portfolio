@@ -8,6 +8,7 @@ Type=oneshot
 SyslogIdentifier=lsst-pipeline-alerce
 ExecStartPre=/usr/bin/nm-online -q -t 36
 WorkingDirectory=/path/to/LSST-Alert-QA/
+Environment=UV_NO_SYNC=1
 ExecStart=/path/to/uv run pipeline.py lsst 100
 
 # No StandardOutput=/StandardError=: both default to the journal under

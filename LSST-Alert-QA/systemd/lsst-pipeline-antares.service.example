@@ -11,6 +11,7 @@ WorkingDirectory=/path/to/LSST-Alert-QA/
 # 256 requested locus IDs yields ~217-228 unique ones: ANTARES' random_score query
 # repeats loci across pages. A short report is that, not a row drop.
 # -q keeps stdout to the summary table; the CSV holds the full detail either way.
+Environment=UV_NO_SYNC=1
 ExecStart=%h/.local/bin/uv run pipeline.py antares 256 -q
 
 # No StandardOutput=/StandardError=: both default to the journal under

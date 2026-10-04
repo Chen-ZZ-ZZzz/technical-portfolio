@@ -10,6 +10,7 @@ from . import retry_budget
 from .classifier import classify_antares, classify_object
 from .client import fetch_candidates, fetch_object_data
 from .config import (
+    AB_NJY_ZP,
     DEADLINE_FLOOR,
     DEADLINE_SLACK,
     DEFAULT_PAGE_SIZE,
@@ -40,7 +41,7 @@ def deadline_for(n: int, survey: str = DEFAULT_SURVEY) -> float:
 def _psfflux_to_mag(flux_series: pd.Series) -> pd.Series:
     """Convert LSST psfFlux (nanojanskies) to AB magnitudes. Drops non-positive values."""
     positive = flux_series[flux_series > 0].dropna()
-    return positive.apply(lambda f: -2.5 * math.log10(f) + 31.4)
+    return positive.apply(lambda f: -2.5 * math.log10(f) + AB_NJY_ZP)
 
 
 def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:

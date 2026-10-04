@@ -13,6 +13,9 @@ DEFAULT_PAGE_SIZE = 100
 # Single source of truth for the survey list: __main__ (argparse choices), profiler
 # (same), and both tools/ benchmarks import this rather than restating the tuple.
 SURVEYS = ("ztf", "lsst", "antares")
+# The surveys the transient monitor watches live: both listed and fetched from ALeRCE
+# (2026-10-03). ANTARES is a broker, not a survey: it stays in the QA pipeline's SURVEYS.
+LIVE_SURVEYS = ("ztf", "lsst")
 
 # Output paths anchor to the project root, never the caller's CWD — the systemd
 # units and manual runs start from arbitrary directories, and a bare relative
@@ -23,6 +26,15 @@ PROJECT_ROOT = pathlib.Path(
     os.environ.get("RUBIN_QA_ROOT") or pathlib.Path(__file__).resolve().parents[2]
 )
 REPORTS_DIR  = PROJECT_ROOT / "reports"
+# Runtime directories, one rule (the user's, 2026-10-02): cache/ holds what can be fetched
+# again (deleting it only costs time), state/ what can't be recreated (deleting it loses
+# information), logs/ run output (deletable any time). Modules and tools build their own
+# subdirectories under these; a writer into cache/ or state/ writes a temp file and renames
+# it. State is never kept in logs/: that is the directory people clean up and rotate, so a
+# tidy-up there would silently reset it (the transient monitor's state moved, 2026-10-02).
+CACHE_DIR    = PROJECT_ROOT / "cache"
+STATE_DIR    = PROJECT_ROOT / "state"
+LOGS_DIR     = PROJECT_ROOT / "logs"
 
 
 def from_root(path: str | os.PathLike) -> pathlib.Path:
@@ -45,6 +57,20 @@ def now_mjd() -> float:
     epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
     now = datetime.datetime.now(datetime.timezone.utc)
     return MJD_J2000 + (now - epoch).total_seconds() / 86400  # 86400s = 1 day
+
+# Sky footprints: cones (ra, dec, radius), the only shape ALeRCE searches. Shared by the
+# transient monitor, its replay and the tools that check catalogues against a footprint.
+DEFAULT_RADIUS_DEG = 2.82  # pi r^2 = 25 deg2; membership is angular separation <= radius
+FOOTPRINTS = {
+    "C": ((35.7, -9.0, DEFAULT_RADIUS_DEG), "former live candidate v1: just south of the XMM-LSS deep field"),
+    "D": ((150.1, 2.5, DEFAULT_RADIUS_DEG), "test replay: COSMOS, Rubin data 2026-02-15..05-15"),
+    "ecdfs": ((53.1, -27.8, DEFAULT_RADIUS_DEG), "the live footprint: ECDFS deep field"),
+}
+LIVE_FOOTPRINT = "ecdfs"  # decided 2026-10-02; scanned when neither --footprint nor --cone is given
+
+# Survey data facts used by more than one module (photometry, profiler, reporting).
+AB_NJY_ZP = 31.4  # m_AB = 31.4 - 2.5 log10(flux / nJy)
+ZTF_FID_BAND = {1: "g", 2: "r", 3: "i"}  # ZTF filter id -> band
 
 # Classification QA thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.90   # weighted consensus → clean label, no flag

@@ -104,7 +104,8 @@ import numpy as np
 import pandas as pd
 import requests
 
-from .config import PROJECT_ROOT, WARN_PREFIX
+from .config import CACHE_DIR as CACHE_ROOT
+from .config import WARN_PREFIX
 
 TAP_URL = "https://datalab.noirlab.edu/tap/sync"
 TABLE = "ls_dr10.tractor"
@@ -118,12 +119,12 @@ ATLAS_COLUMNS = {"atlas_pa": "pa", "atlas_ba": "ba", "atlas_sma": "sma_moment"} 
 ATLAS_REF_CAT = "L3"
 GALAXY_MASKBIT = 12  # DR10 maskbits: inside a Siena Galaxy Atlas ellipse
 CATALOG_VERSION = f"{TABLE.split('.')[0]}+{ATLAS_TABLE.split('.')[0]}"  # ls_dr10+sga2020
-CACHE_DIR = PROJECT_ROOT / "cache" / CATALOG_VERSION / "tiles"
-ATLAS_CACHE_DIR = PROJECT_ROOT / "cache" / CATALOG_VERSION / "atlas"
+CACHE_DIR = CACHE_ROOT / CATALOG_VERSION / "tiles"
+ATLAS_CACHE_DIR = CACHE_ROOT / CATALOG_VERSION / "atlas"
 BRICKS_TABLE = "ls_dr10.bricks"
 BRICK_COLUMNS = ("brickname", "ra1", "ra2", "dec1", "dec2")
-BRICKS_CACHE_DIR = PROJECT_ROOT / "cache" / CATALOG_VERSION / "bricks"
-MASKBITS_CACHE_DIR = PROJECT_ROOT / "cache" / CATALOG_VERSION / "maskbits"
+BRICKS_CACHE_DIR = CACHE_ROOT / CATALOG_VERSION / "bricks"
+MASKBITS_CACHE_DIR = CACHE_ROOT / CATALOG_VERSION / "maskbits"
 MASKBITS_URL = ("https://portal.nersc.gov/cfs/cosmo/data/legacysurvey/dr10/south/coadd/"
                 "{group}/{brick}/legacysurvey-{brick}-maskbits.fits.fz")
 MASKBITS_TIMEOUT = 120.0

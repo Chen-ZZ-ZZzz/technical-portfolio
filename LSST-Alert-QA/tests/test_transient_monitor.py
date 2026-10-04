@@ -40,6 +40,9 @@ FIRST = NOW - 5
 NEW_ZTF = [lim(FIRST - 1, 20.5), det(FIRST), det(NOW - 3), det(NOW - 1, band="g")]
 OLD_ZTF = [det(NOW - 900, 18.0), det(NOW - 400, 18.1), det(NOW - 2, 18.0)]
 RAPID = [det(NOW - 2.0, 20.0), det(NOW - 0.3, 18.7)]  # 1.3 mag in 1.7 d
+# an old object's baseline, then a spike (1.3 mag) that is still up the next night: persistent
+SPIKE = [det(NOW - 900, 20.0), det(NOW - 2.5, 20.0), det(NOW - 1.3, 18.7)]
+REBRIGHT = SPIKE + [det(NOW - 0.3, 18.8)]
 
 
 def xm(verdict, *evidence):
@@ -240,10 +243,19 @@ def test_cheap_rejections_do_not_consult_the_catalogue():
     assert mon.evaluate(obj(NEW_ZTF, sso_id="41025"), NOW, SINCE, classify=boom).reason == "solar_system"
     assert mon.evaluate(obj([]), NOW, SINCE, classify=boom).reason == "no_detections"
     assert mon.evaluate(obj([], fetch_errors=["alerce: 504"]), NOW, SINCE, classify=boom).reason == "no_photometry"
-    listed_only = obj([], summary={"firstmjd": NOW - 90, "lastmjd": NOW - 20, "n_det": 1})
-    assert mon.evaluate(listed_only, NOW, SINCE, classify=boom).reason == "not_fetched"  # not worth a call, not empty
     assert mon.evaluate(obj(OLD_ZTF), NOW, SINCE, classify=boom).reason == "old_no_rise"
-    assert mon.evaluate(obj(NEW_ZTF, oid="ZTF19x"), NOW, SINCE, classify=boom).reason == "preexisting_ztf_object"
+    assert mon.evaluate(obj(NEW_ZTF, oid="ZTF19x"), NOW, SINCE, classify=boom).reason == "preexisting_ztf_no_rise"
+
+
+@pytest.mark.parametrize("summary,reason", [
+    ({"firstmjd": NOW - 90, "lastmjd": NOW - 20, "n_det": 1}, "single_detection"),
+    ({"firstmjd": NOW - 90, "lastmjd": NOW - 10, "n_det": 9}, "old_no_recent_detection"),
+    ({"lastmjd": NOW - 1, "n_det": 9}, "no_first_detection_listed"),
+    ({"firstmjd": NOW - 5, "lastmjd": NOW - 1, "n_det": 4}, "empty_light_curve"),  # worth the call, came back empty
+])
+def test_an_unfetched_object_is_rejected_on_the_criterion_that_skipped_it(summary, reason):
+    """Never a generic "not fetched": a skip for a bad reason must not hide under a harmless label."""
+    assert mon.evaluate(obj([], summary=summary), NOW, SINCE, classify=boom).reason == reason
 
 
 # --- the decision table: sky context -> category, path -> confidence label ---------------
@@ -255,7 +267,7 @@ PATH_CASES = {  # one light curve per path combination evaluate can produce, wit
     "bracketed, rising, rapid_rise": (obj([lim(NOW - 4, 21.5), det(NOW - 3, 20.5)] + RAPID), ["bracketed", "rising", "rapid_rise"]),
     "rising": (obj(LSST_RISER, survey="lsst", oid="1706"), ["rising"]),
     "rising, rapid_rise": (obj([det(NOW - 3.5, 20.6), det(NOW - 2.0, 20.0), det(NOW - 0.3, 18.7)]), ["rising", "rapid_rise"]),
-    "re_brightening": (obj([det(NOW - 900, 20.0)] + RAPID, oid="ZTF18old"), ["re_brightening"]),
+    "re_brightening": (obj(REBRIGHT, oid="ZTF18old"), ["re_brightening"]),
 }
 SKY_CASES = {  # one crossmatch per decision-table key
     "host": Crossmatch("host", ['EXP r=21.0 sep=2.0" d_DLR=0.8']),
@@ -301,9 +313,39 @@ def test_a_star_is_reported_as_stellar_on_every_path():
     assert (c.category, c.conditions) == ("stellar", ["bracketed"])
 
 
-def test_old_object_rapidly_rising_is_re_brightening():
-    c = mon.evaluate(obj([det(NOW - 900, 20.0)] + RAPID, oid="ZTF18old"), NOW, SINCE, classify=xm("host", "EXP")).candidate
-    assert (c.category, c.conditions, c.rapid) == ("host", ["re_brightening"], pytest.approx(1.3))
+def test_an_old_ztf_object_rising_fast_is_re_brightening_never_preexisting():
+    """
+    The age check must not pre-empt the rise paths: ZTF18 is old by its ID, and its
+    spike is still up the next night. Rejecting old IDs before rapid_rise runs would
+    make re_brightening impossible for ZTF.
+    """
+    c = mon.evaluate(obj(REBRIGHT, oid="ZTF18old"), NOW, SINCE, classify=xm("host", "EXP")).candidate
+    assert (c.category, c.conditions, c.rapid) == ("host", ["re_brightening"], pytest.approx(1.2))
+
+
+@pytest.mark.parametrize("oid,label", [("ZTF18old", "preexisting_ztf_no_rise"), ("ZTF26old", "old_no_rise")])
+@pytest.mark.parametrize("spike", [
+    [],                                    # one spike detection
+    [det(NOW - 1.25, 18.8)],               # two on the same night: still one night
+], ids=["one detection", "two the same night"])
+def test_a_spike_on_one_night_only_is_no_alert(oid, label, spike):
+    """
+    An old object's rapid rise must persist (user, 2026-10-03): an asteroid passes a
+    position once and a bad detection does not repeat. Old by ID or by date alike.
+    """
+    ev = mon.evaluate(obj(SPIKE + spike, oid=oid), NOW, SINCE, classify=boom)
+    assert ev.candidate is None and ev.reason == label
+
+
+def test_the_same_spike_still_up_the_next_night_is_re_brightening():
+    c = mon.evaluate(obj(REBRIGHT, oid="ZTF26old"), NOW, SINCE, classify=xm("host", "EXP")).candidate
+    assert c.conditions == ["re_brightening"]
+
+
+def test_persistence_is_asked_of_old_objects_only():
+    """A new object's rapid rise is unchanged: RAPID is up on one night only."""
+    c = mon.evaluate(obj([lim(NOW - 4, 21.5), det(NOW - 3, 20.5)] + RAPID), NOW, SINCE, classify=xm("host", "EXP")).candidate
+    assert "rapid_rise" in c.conditions
 
 
 def test_unbracketed_and_flat_is_parked():
@@ -364,22 +406,24 @@ def test_ztf_limits_do_not_bracket_ztf_objects_through_association():
 def test_preexisting_ztf_object_cannot_be_rising_only_re_brightening():
     pts = [det(FIRST, 21.0), det(FIRST + 1, 20.5), det(NOW - 0.3, 19.0)]
     ev = mon.evaluate(obj(pts, oid="ZTF20old"), NOW, SINCE, classify=xm("none"))
-    assert ev.reason == "preexisting_ztf_object"
+    assert ev.reason == "preexisting_ztf_no_rise"
 
 
 # --- gathering -----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("summary,points,needed", [
-    ({"firstmjd": NOW - 5, "lastmjd": NOW - 1, "n_det": 4}, [], True),     # recent onset
-    ({"firstmjd": NOW - 90, "lastmjd": NOW - 1, "n_det": 9}, [], True),    # old but active: could rise fast
-    ({"firstmjd": NOW - 90, "lastmjd": NOW - 10, "n_det": 9}, [], False),  # old and quiet
-    ({"firstmjd": NOW - 5, "lastmjd": NOW - 5, "n_det": 1}, [], False),    # single detection
-    ({}, LSST_ONSET, True),                                                 # from its own detections
-    ({}, [], False),
+@pytest.mark.parametrize("summary,points,skip", [
+    ({"firstmjd": NOW - 5, "lastmjd": NOW - 1, "n_det": 4}, [], None),                         # recent onset
+    ({"firstmjd": NOW - 90, "lastmjd": NOW - 1, "n_det": 9}, [], None),                        # old but active: could rise fast
+    ({"firstmjd": NOW - 90, "lastmjd": NOW - 10, "n_det": 9}, [], "old_no_recent_detection"),  # old and quiet
+    ({"firstmjd": NOW - 5, "lastmjd": NOW - 5, "n_det": 1}, [], "single_detection"),
+    ({}, LSST_ONSET, None),                                                                     # from its own detections
+    ({}, [], "no_first_detection_listed"),
 ])
-def test_needs_photometry(summary, points, needed):
-    assert mon.needs_photometry(obj(points, survey="lsst", oid="1706", summary=summary), NOW, SINCE) is needed
+def test_photometry_is_skipped_only_on_a_named_criterion(summary, points, skip):
+    o = obj(points, survey="lsst", oid="1706", summary=summary)
+    assert mon.photometry_skip_reason(o, NOW, SINCE) == skip
+    assert mon.needs_photometry(o, NOW, SINCE) is (skip is None)
 
 
 def test_merge_dedups_points_and_unions_context():

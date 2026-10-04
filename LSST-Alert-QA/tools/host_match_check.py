@@ -77,23 +77,23 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from rubin_qa import sky_catalog as sc  # noqa: E402
 from rubin_qa.antares_api import sky_distance_clause  # noqa: E402
-from rubin_qa.config import PROJECT_ROOT  # noqa: E402
+from rubin_qa.config import CACHE_DIR, LOGS_DIR, PROJECT_ROOT, STATE_DIR  # noqa: E402
 from rubin_qa.tns import (  # noqa: E402,F401  (re-exported for replay_tns_check and the tests)
     TNS_CANARY, TNS_MAX_WAIT, TNS_PAUSE, TNS_THROTTLE_WAIT, TNS_WINDOW_SECONDS, tns_batch, tns_lookup, tns_once,
 )
-from rubin_qa.transient_monitor import FOOTPRINTS  # noqa: E402
+from rubin_qa.config import FOOTPRINTS  # noqa: E402
 
-OUT_DIR = PROJECT_ROOT / "logs" / "host_check"  # scores, sidecars, reports
+OUT_DIR = LOGS_DIR / "host_check"  # scores, sidecars, reports
 # State, not logs: the TNS sample (sample skips what it holds; evaluate reads it) and the
 # pending list (asked first next run) must outlive a tidy-up of logs/ (2026-10-02)
-SAMPLE_DIR = PROJECT_ROOT / "state" / "host_check"
+SAMPLE_DIR = STATE_DIR / "host_check"
 SESAME_URL = "https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/SNV"
 SN_TYPE_PREFIXES = ("SN", "SLSN")
 REQUEST_PAUSE = 1.0  # seconds between calls to the public services
 PENDING_FILE = "pending.jsonl"
 REQUEST_TIMEOUT = 60
 WARN_PREFIX = "WARN: "
-DES_HEAD = PROJECT_ROOT / "cache" / "des_sn5yr" / "DES-SN5YR_DES_HEAD.FITS.gz"
+DES_HEAD = CACHE_DIR / "des_sn5yr" / "DES-SN5YR_DES_HEAD.FITS.gz"
 # DES-SN5YR SNTYPE codes of spectroscopically classified SNe (from its README)
 DES_SN_TYPES = {1: "SNIa", 4: "SNIa-pec", 5: "SNI", 23: "SNIIb", 29: "SNII", 32: "SNIb", 33: "SNIc", 39: "SNIbc",
                 41: "SLSN-I", 66: "SLSN-II", 122: "SNIIn?", 129: "SNII?", 139: "SNIbc?", 141: "SLSN-I?"}

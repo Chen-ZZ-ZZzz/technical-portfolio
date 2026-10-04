@@ -19,11 +19,10 @@ import pandas as pd
 
 from .classifier import classify_antares, classify_object
 from .client import _api_call, _client
-from .config import DEFAULT_SURVEY, ERROR_PREFIX, SURVEYS
+from .config import DEFAULT_SURVEY, ERROR_PREFIX, SURVEYS, ZTF_FID_BAND
 from .reporting import _psfflux_to_mag
 
 # ZTF filter-id → band name. LSST and ANTARES both name their bands in the payload.
-FID_MAP = {1: "g", 2: "r", 3: "i"}
 
 _RULE = "=" * 64
 
@@ -118,7 +117,7 @@ def _profile_alerce(oid: str, survey: str) -> None:
         ms = ms if ms is not None else pd.DataFrame()
         ndet = int(ms["ndet"].sum()) if not ms.empty else 0
         if not ms.empty:
-            ms = ms.assign(band=ms["fid"].map(FID_MAP))
+            ms = ms.assign(band=ms["fid"].map(ZTF_FID_BAND))
         table = ms[[c for c in ("band", "ndet", "magmin", "magmax", "magmean",
                                 "magsigma", "firstmjd", "lastmjd") if c in ms.columns]] \
             if not ms.empty else pd.DataFrame()
@@ -149,7 +148,7 @@ def _profile_alerce(oid: str, survey: str) -> None:
         print(f"  MJD range:      {dets['mjd'].min():.1f} – {dets['mjd'].max():.1f}")
     if band_col in dets.columns:
         bands = sorted(dets[band_col].dropna().unique().tolist())
-        print(f"  Bands seen:     {[FID_MAP.get(b, b) for b in bands] if not is_lsst else bands}")
+        print(f"  Bands seen:     {[ZTF_FID_BAND.get(b, b) for b in bands] if not is_lsst else bands}")
     if mag_col in dets.columns:
         mags = _psfflux_to_mag(dets[mag_col]) if is_lsst else dets[mag_col].dropna()
         if not mags.empty:

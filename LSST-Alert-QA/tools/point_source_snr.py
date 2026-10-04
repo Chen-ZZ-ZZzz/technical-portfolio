@@ -46,14 +46,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import host_match_check as h  # noqa: E402
 
 from rubin_qa import sky_catalog as sc  # noqa: E402
-from rubin_qa.config import ERROR_PREFIX, PROJECT_ROOT  # noqa: E402
-from rubin_qa.transient_monitor import FOOTPRINTS  # noqa: E402
+from rubin_qa.config import CACHE_DIR, ERROR_PREFIX, LOGS_DIR, PROJECT_ROOT  # noqa: E402
+from rubin_qa.config import FOOTPRINTS  # noqa: E402
 
 ROOT = PROJECT_ROOT
-OUT = ROOT / "cache" / "host_check" / "psf_snr.jsonl"  # fetched rows: refetchable
-REPLAY = ROOT / "logs" / "replay_D_2026-03-12_2026-05-15.json"
-REPLAY_TNS = ROOT / "logs" / "replay_tns_D_2026-03-12_2026-05-15.json"
-CANDIDATES = ROOT / "cache" / "replay" / "candidates"
+OUT = CACHE_DIR / "host_check" / "psf_snr.jsonl"  # fetched rows: refetchable
+REPLAY = LOGS_DIR / "replay_D_2026-03-12_2026-05-15.json"
+REPLAY_TNS = LOGS_DIR / "replay_tns_D_2026-03-12_2026-05-15.json"
+CANDIDATES = CACHE_DIR / "replay" / "candidates"
 BANDS = ("g", "r", "i", "z")
 MATCH_ARCSEC = 0.1  # the counterpart's own position, to 6 decimals in the scored files
 FLOORS = (5, 6, 6.5, 7, 7.5, 8, 10, 15, 20)

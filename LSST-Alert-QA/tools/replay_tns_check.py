@@ -29,11 +29,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import host_match_check as h  # noqa: E402
 
-from rubin_qa.config import ERROR_PREFIX, PROJECT_ROOT, from_root  # noqa: E402
+from rubin_qa.config import CACHE_DIR, ERROR_PREFIX, LOGS_DIR, PROJECT_ROOT, from_root  # noqa: E402
 
-CANDIDATE_CACHE = PROJECT_ROOT / "cache" / "replay" / "candidates"
+CANDIDATE_CACHE = CACHE_DIR / "replay" / "candidates"
 MATCH_ARCSEC = 2.0
-DEFAULT_REPLAY = PROJECT_ROOT / "logs" / "replay_D_2026-03-12_2026-05-15.json"
+DEFAULT_REPLAY = LOGS_DIR / "replay_D_2026-03-12_2026-05-15.json"
 
 
 def positions(footprint: str) -> dict[str, tuple[float, float]]:
@@ -101,7 +101,7 @@ def run(replay: pathlib.Path) -> int:
                   f"sep={r['sep']:.1f}\" discovered {r['discovered']} from {r['discovery_source'] or '-'} data, "
                   f"reported by {r['reported_by'] or '-'} (alert {r['day']}){own}")
 
-    out = PROJECT_ROOT / "logs" / f"replay_tns_{replay.stem.removeprefix('replay_')}.json"
+    out = LOGS_DIR / f"replay_tns_{replay.stem.removeprefix('replay_')}.json"
     out.write_text(json.dumps({"replay": replay.name, "match_arcsec": MATCH_ARCSEC,
                                "rows": rows}, indent=1))
     print(f"\nwritten: {out.relative_to(PROJECT_ROOT)}")

@@ -22,6 +22,11 @@ Usage:
     uv run tools/asteroid_probe.py --limit 100 --out /tmp/probe.csv
     uv run tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv
 
+Each report is a dated snapshot, not a reproducible result: it lists the new
+loci a live broker returned on the day it ran, so a rerun on another day lists
+different loci and will not match it. Rows carry collected_mjd, the file name
+the date. What does reproduce is --report, the offline reduction of a saved CSV.
+
 Evidence: reports/asteroid_probe_20260927.csv is the run the monitor's asteroid
 rules cite. It was collected by this probe's first draft, before it was a tool,
 and converted to this format: same attribution rule, but gal_b rounded to 0.1 deg

@@ -43,10 +43,10 @@ from bench_latency import (  # noqa: E402
     bench_candidates,
     bench_objects,
 )
-from rubin_qa.config import PROJECT_ROOT, SURVEYS, from_root  # noqa: E402
+from rubin_qa.config import STATE_DIR, SURVEYS, from_root  # noqa: E402
 
 # state, not logs: past latencies cannot be measured again (the campaign behind SECONDS_PER_OBJECT)
-LOG_PATH = PROJECT_ROOT / "state" / "latency_samples.jsonl"
+LOG_PATH = STATE_DIR / "latency_samples.jsonl"
 SAMPLE_OBJECTS = 5          # per survey; keeps a manual run to ~2.5 min
 CANDIDATE_PAGE_SIZE = 100   # the size the daily runs actually use
 CANDIDATE_REPEATS = 1       # one shot per sample; the spread comes from many samples

@@ -59,7 +59,7 @@ import requests
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
 
-from rubin_qa.config import PROJECT_ROOT, from_root  # noqa: E402
+from rubin_qa.config import CACHE_DIR, from_root  # noqa: E402
 
 URL = "https://api-lsst.alerce.online/object_api/list_objects"
 CLASSIFIER = "stamp_classifier_rubin_beta"
@@ -69,7 +69,7 @@ RETRY_WAITS = (15, 30, 60)
 # cache, not logs: the rows can be fetched again (the stream stopped 07-14, so ALeRCE's answers are
 # final), only at a cost of hours. done.jsonl (the resume checkpoint) stays with the <box>.jsonl rows
 # it vouches for: a rerun with only the rows left would append every chunk again
-OUT_DIR = PROJECT_ROOT / "cache" / "lsst_census"
+OUT_DIR = CACHE_DIR / "lsst_census"
 WARN_PREFIX = "WARN: "
 
 WINDOW_MJD = (61086, 61236)  # 2026-02-15 .. 2026-07-14 inclusive: the stream's last night

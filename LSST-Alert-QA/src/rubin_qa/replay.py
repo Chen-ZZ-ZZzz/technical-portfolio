@@ -48,11 +48,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import sky_catalog as sc
 from . import transient_monitor as mon
-from .config import CONFIRM_THRESHOLD_SECONDS, PROJECT_ROOT, WARN_PREFIX
+from .config import CACHE_DIR as CACHE_ROOT
+from .config import CONFIRM_THRESHOLD_SECONDS, LOGS_DIR, WARN_PREFIX
 from .photometry import PhotPoint, SurveyObject, fetch_alerce_lsst, fetch_alerce_ztf, truncate
 
-CACHE_DIR = PROJECT_ROOT / "cache" / "replay"
-REPORT_DIR = PROJECT_ROOT / "logs"
+CACHE_DIR = CACHE_ROOT / "replay"
+REPORT_DIR = LOGS_DIR
 LISTING_CHUNK_DAYS = 7
 PAGE_SIZE = 1000
 MAX_PAGES = 200

@@ -12,8 +12,9 @@ from urllib.parse import unquote
 
 import requests
 
+from .config import REQUEST_TIMEOUT
+
 ALERCE_TNS_URL = "https://tns.alerce.online/search"
-REQUEST_TIMEOUT = 60
 # A TNS object ALeRCE's TNS service must know, asked to tell "not in TNS" from "throttled".
 # The service runs on a quota of 10 answers per 60 s window and answers 200 with an empty
 # record once it is spent, until the window turns (measured 2026-10-01: exactly 10 full

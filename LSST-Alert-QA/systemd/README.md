@@ -139,7 +139,7 @@ systemctl --user --failed
 - `Persistent=true`: a run missed while the machine was off or asleep is made up at
   the next start. A catch-up plus the daily run on the same day is harmless: each run
   reports only what changed against the state.
-- **No arguments, on purpose** (pinned by `tests/test_systemd_units.py`). The footprint
+- **No arguments, on purpose.** The footprint
   is the CLI default, so it is named in one place. Never `--init` (see above), and never
   `--dry-run`: nothing would be saved, so every alert would repeat daily.
 - **Exit 1 means look**: a listing failed (an outage, not a quiet sky), the state is
@@ -151,6 +151,7 @@ systemctl --user --failed
 - `PYTHONUNBUFFERED=1`: without it Python buffers stdout when it is not a terminal,
   so the report would reach the journal in one block at the end of the run, stamped
   at flush time and out of order with the `WARN:`/`ERROR:` lines (stderr).
+- `Environment=UV_NO_SYNC=1`, in every active unit here: the same rule, set the same way, as Claude Code's settings (`env.UV_NO_SYNC`). A unit runs outside Claude Code, so without it `uv run` would sync the venv to the lockfile, and install packages, whenever the lockfile got ahead of it. Dependency changes are a deliberate step the user takes with `uv add` / `uv sync`. No-sync implies frozen, so `uv.lock` is never rewritten either (uv 0.10.11's own help). The frozen SSO example keeps its original lines.
 - `WorkingDirectory` is for `uv`, which finds the project from it. The monitor resolves
   every path from the repo root (`config.PROJECT_ROOT`), never the working directory.
 - `ReadWritePaths` must cover `state/` (the footprint's state, the point-source watch)

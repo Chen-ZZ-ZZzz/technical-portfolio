@@ -28,9 +28,9 @@ from dataclasses import dataclass, field
 
 from requests.exceptions import RequestException
 
-AB_NJY_ZP = 31.4  # m_AB = 31.4 - 2.5 log10(flux / nJy)
+from .config import AB_NJY_ZP, ZTF_FID_BAND  # noqa: F401  (shared survey facts)
+
 ZTF_LIMIT_SIGMA = 5.0  # ZTF diffmaglim is a 5-sigma limit
-ZTF_FID_BAND = {1: "g", 2: "r", 3: "i"}
 NEGATIVE_DIFF = {"f", "0", "-1", "false"}  # isdiffpos spellings meaning flux went down
 # What a broker call can raise past its own retry (ALeRCE errors come back as values).
 NETWORK_ERRORS = (RequestException,)

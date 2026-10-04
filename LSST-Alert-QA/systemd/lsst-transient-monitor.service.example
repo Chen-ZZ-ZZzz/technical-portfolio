@@ -9,6 +9,7 @@ SyslogIdentifier=lsst-transient-monitor
 ExecStartPre=/usr/bin/nm-online -q -t 36
 WorkingDirectory=/path/to/LSST-Alert-QA/
 Environment=PYTHONUNBUFFERED=1
+Environment=UV_NO_SYNC=1
 # No arguments: never --init, never --dry-run.
 ExecStart=/path/to/uv run python -m rubin_qa.transient_monitor
 TimeoutStartSec=2h

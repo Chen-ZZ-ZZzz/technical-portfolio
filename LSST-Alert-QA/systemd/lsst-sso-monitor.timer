@@ -1,5 +1,3 @@
-# Rename to lsst-sso-monitor.timer
-
 [Unit]
 Description=Run SSO monitor daily
 

@@ -408,6 +408,7 @@ All tests use mock data — no live API calls.
 | `test_photometry.py` | broker-neutral fetch layer: survey objects, ALeRCE listings for both surveys (both answer shapes, paging, partial answers), newest-in-cone, light curves |
 | `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, the LSST listing guard, one event one alert, the TNS line's four states, the point-source watch (only spectroscopic SNe count, threshold 3, notice until the rule or threshold changes, never fails the run), state, footprint atlas loading and its outage flags |
 | `test_live_without_antares.py` | the monitor's daily run (`--dry-run`) in a fresh interpreter where ANTARES cannot be imported, only the network faked; any import attempt fails it, even a swallowed one |
+| `test_stay_inside_hook.py` | `.claude/hooks/stay_inside.py`, run as Claude Code runs it: writes pass only inside the project, the session scratchpad and the memory directory; `..`, look-alike prefixes and symlinks out are blocked, and so is any input it cannot check |
 | `test_replay.py` | replay: listing in chunks, light-curve cache (failures never cached), day slicing (the future never leaks into a day), the span cut's equivalence on synthetic data, catalogue prefetch, suspend-aware stage timer |
 | `test_sky_catalog.py` | DR10 host matching: ellipse conventions pinned to pixel-measured fixtures, atlas pieces (NGC 873), two-step candidates and the margin (with a q3c-reading fake TAP service, `tests/fake_tap.py`), catalogue gaps, cache rules (no failure or empty answer ever cached) |
 | `test_host_match_check.py` | `tools/host_match_check.py` — every fetch-failure path fed its failure (empty TNS record, Sesame down, tile and atlas errors) must come back as "fetch error" or pending, never "no host"; truth mapping; mixed-version detection |
@@ -658,6 +659,7 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 | point_source · rising | 1 / 1 | — |
 | stellar · any path | 0 / 2, plus 3* | 0 / 1 |
 
+- *An old object's rapid rise must persist (2026-10-03).* The elevated level has to be seen on two nights: an asteroid passes a position once and a bad detection does not repeat, while a real re-brightening is still bright the next night. Rerun from cache, the replay now gives **42 alerts and 3 notes**. The one dropped is LSST `stellar · re_brightening` on 05-02, a Gaia star: its r-band difference flux read +762 nJy on one detection, 1.2 mag above two nights earlier, with −182 nJy six minutes before it the same night and −192 nJy on the next r detection (05-12). Every other alert and note is unchanged, field by field; no new object's alert moved, so `rising` keeps its scope. The table above is the TNS check as run on the 46.
 - *One event, one alert.* Three events — SN 2026ezw, SN 2026fgl and SN 2026ivl — first alerted as LSST `host · rising`, then again days later as ZTF `host · bracketed`, 0.26–0.34″ apart. Another survey's detection of an already reported position (within the monitor's 1.5″ association radius) is now a note on the first alert, keeping its own path: the ZTF notes carry the stronger evidence, the bracketed onset. So 46 detections make 43 alerts and 3 notes.
 - *ZTF matched as expected.* All 6 ZTF objects bracketed on a host are in TNS (3 of them now as notes on the LSST alerts). Five list our own ZTF ID among their internal names.
 - *LSST matched far more than expected (22 of 32), and the reason is the reporting, not the selection.* TNS records every one of the 22 as discovered from Rubin data. They were reported by SGLF (15), Lasair (5) and ALeRCE (1), and 21 carry our diaObjectId as `LSST-AP-DO-<id>`. Brokers were reporting COSMOS Rubin transients systematically that spring, so the rate measures that practice.
@@ -681,6 +683,20 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 **First live run.** The monitor reports changes relative to what it has already reported, so a run from an empty state would report everything that currently qualifies, as the replay's first day did. A live scan with no state file is therefore an error, and a footprint's first run is explicit: `uv run python -m rubin_qa.transient_monitor --footprint ecdfs --init` records what already qualifies without reporting it. From the next run on, only new objects and real changes are reported; something genuinely new on exactly that day is absorbed, and still shows up once its category or path changes.
 
 **Tools:** `uv run python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]`, `uv run tools/replay_tns_check.py`. Results are kept locally in `logs/` (replay JSON and log, TNS rows with reporting groups).
+
+---
+
+## Asteroid Probe (transient monitor)
+
+*Dated snapshots: unlike the census and the host-matching reports, these cannot be regenerated. A probe report lists the new loci a live broker (ANTARES) returned on the day it ran. A rerun a week later lists different loci, so it will not match an earlier report, and is not meant to. Each row carries `collected_mjd`, and the file name the collection date.*
+
+`tools/asteroid_probe.py` asks whether the monitor's first cuts (a new locus, enough detections, high Galactic latitude) already keep asteroids out, and what an asteroid locus looks like when they do not. It walks new loci all over the sky and attributes every detection to a known asteroid or not, using each alert's own `ztf_ssnamenr`. One CSV row per locus.
+
+The snapshot kept here, [`reports/asteroid_probe_20260927.csv`](reports/asteroid_probe_20260927.csv) (159 new loci at high Galactic latitude), is the evidence the monitor's asteroid rules cite. What is reproducible is the reduction: `uv run tools/asteroid_probe.py --report reports/asteroid_probe_20260927.csv` turns a saved snapshot into the same numbers every time, offline.
+
+Because each run sees different loci, a later run can show what an earlier one could not. A rerun on 2026-10-03 did, twice:
+- *A single slow asteroid can hold one position across two nights.* The 09-27 snapshot had only one multi-night case among its asteroid-only loci, two different asteroids crossing the same spot. The rerun had two loci where one asteroid stayed for about a day. Since the live monitor lost ZTF's asteroid ID (2026-10-03), such an object can pass the two-night rule. It is rare (3 in 185 new loci that day) and would surface as an alert a human can dismiss: accepted as it is.
+- *Asteroid detections can merge into a real object's locus.* Three named loci held asteroid detections alongside a genuine object's own. On an old object, a passing asteroid then looks like a sudden rise, which is why an old object's rapid rise must persist (see Replay Validation).
 
 ---
 

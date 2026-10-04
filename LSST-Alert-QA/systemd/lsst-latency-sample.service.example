@@ -15,6 +15,7 @@ WorkingDirectory=/path/to/LSST-Alert-QA/
 # --quiet suppresses the full JSON printout, leaving one summary line per run. The
 # sample itself is written by the script, straight to state/latency_samples.jsonl —
 # stdout is a digest of it, never the record, so --quiet costs no data.
+Environment=UV_NO_SYNC=1
 ExecStart=/path/to/uv run tools/sample_latency.py --quick --quiet
 
 # No StandardOutput=/StandardError= on purpose: both default to the journal, under
