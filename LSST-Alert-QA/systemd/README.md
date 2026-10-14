@@ -137,7 +137,7 @@ Things that catch people out:
 # Transient Monitor Setup — active since 2026-10-03
 
 Daily systemd user timer that runs the transient monitor on the live footprint
-(`LIVE_FOOTPRINT` in `config.py`, ecdfs). Its report goes to the journal
+(`LIVE_FOOTPRINT` in `config.py`). Its report goes to the journal
 under `lsst-transient-monitor`, like every active and dormant unit here. The point-source watch
 runs inside it; nothing else to install.
 

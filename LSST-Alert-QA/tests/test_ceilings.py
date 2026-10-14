@@ -23,6 +23,7 @@ from rubin_qa.config import (
     RETRY_ATTEMPTS,
     RETRY_BUDGET_SECONDS,
     SECONDS_PER_OBJECT,
+    SURVEYS,
 )
 from rubin_qa.reporting import deadline_for, estimate_runtime
 
@@ -61,6 +62,10 @@ class TestEstimateRuntime:
 
     def test_unknown_survey_assumes_slowest(self):
         assert estimate_runtime(10, "nonesuch") == 10 * DEFAULT_SECONDS_PER_OBJECT
+
+    def test_every_survey_the_clis_accept_is_measured(self):
+        # the fallback is for a broker nobody has measured, never for one the CLIs accept
+        assert set(SURVEYS) <= set(SECONDS_PER_OBJECT)
 
     def test_zero_objects(self):
         assert estimate_runtime(0, "ztf") == 0

@@ -6,8 +6,8 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
 
   discover   every survey object in the cone active within N days
              (ALeRCE cone listings of ZTF and LSST; light curves from ALeRCE)
-  reject     galactic plane, the survey's own asteroid association,
-             Legacy Surveys DR10 star (Gaia astrometry) unless moving
+  reject     galactic plane, the survey's own asteroid association. Nothing
+             is rejected on the sky context: a star is stellar (classify)
   new        judged per survey, on that survey's own history:
                first detection within N days            (--lookback-days, 14)
                >= MIN_DETECTIONS detections, over more than one night

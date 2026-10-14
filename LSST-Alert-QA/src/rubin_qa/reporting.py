@@ -25,7 +25,17 @@ from .validators import validate_antares, validate_completeness
 
 
 def estimate_runtime(n: int, survey: str = DEFAULT_SURVEY) -> float:
-    """Estimated wall-clock seconds for an n-object run, from measured per-object cost."""
+    """
+    Estimated wall-clock seconds for an n-object run, from measured per-object cost
+    (SECONDS_PER_OBJECT). It sizes the long-run confirm prompt and, through
+    deadline_for, the run deadline; never correctness.
+
+    A survey without a measurement gets DEFAULT_SECONDS_PER_OBJECT, and its two uses
+    pull opposite ways: a large value makes the confirm prompt fire early (good: a
+    human looks at the first run against a new broker) and the deadline lax (bad: an
+    unknown broker gets the weakest run ceiling in the system, exactly where least is
+    known).
+    """
     return n * SECONDS_PER_OBJECT.get(survey, DEFAULT_SECONDS_PER_OBJECT)
 
 

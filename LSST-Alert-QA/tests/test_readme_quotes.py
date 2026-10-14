@@ -14,8 +14,10 @@ to them (CLAUDE.md, "Documentation: one home per fact").
 The same table guards systemd/README.md's summary of the unit files (cadence, command,
 start timeouts) against the files, its "frozen" against the files test_sso_frozen pins
 (active and dormant cannot be read from a file: arming is the install), and the README's
-antares-client version against the lock. It checks what the docs say about the units, never that a unit works: that is
-the user's install.
+antares-client version against the lock. It checks what the docs say about the units,
+never that a unit works: that is the user's install. And it guards the README's in-page
+links, the one kind of pointer a test can check in full: GitHub builds an anchor from
+its heading's text, so renaming a heading breaks every link to it without a sound.
 
 Adding the next guarded quote is one row.
 """
@@ -76,6 +78,21 @@ def locked(package: str) -> str:
     return next(p["version"] for p in lock["package"] if p["name"] == package)
 
 
+def anchors(text: str) -> frozenset[str]:
+    """The anchors GitHub builds from a doc's headings: lower case, punctuation dropped,
+    each space a hyphen, a repeated heading suffixed -1, -2. A # line inside a code fence
+    is not a heading."""
+    made, seen, fenced = set(), {}, False
+    for line in text.splitlines():
+        fenced ^= line.startswith("```")
+        heading = None if fenced else re.match(r"#{1,6} (.+)", line)
+        if heading:
+            slug = re.sub(r"[^\w\- ]", "", heading[1].strip().lower()).replace(" ", "-")
+            made.add(f"{slug}-{seen[slug]}" if slug in seen else slug)
+            seen[slug] = seen.get(slug, 0) + 1
+    return frozenset(made)
+
+
 TIMERS = sorted(p.stem for p in SYSTEMD.glob("*.timer"))
 MONITOR_TIMER = "lsst-transient-monitor.timer"
 
@@ -107,6 +124,7 @@ GUARDED = {
         ("seconds per object, antares", _latency_row("antares"), SECONDS_PER_OBJECT["antares"]),
         ("unmeasured-survey fallback", r"The ([\d.]+)s figure was an episode", DEFAULT_SECONDS_PER_OBJECT),
         ("antares-client version", r"antares-client ([\d.]+) \(the pinned version\)", locked("antares-client")),
+        ("in-page links", r"\]\(#([^)]+)\)", anchors(DOCS["README.md"])),
     ],
     "systemd/README.md": [
         *[(f"unit table, {t}", rf"(?m)^\| `{t}` \| (\w+)[^|]*\| `([^`]+)` \| (?:\*\*(frozen)\*\*)?",
@@ -132,10 +150,18 @@ def quotes(pattern: str, text: str) -> list[tuple[str, ...]]:
     return [tuple(g for g in m.groups() if g is not None) for m in re.finditer(pattern, text)]
 
 
+def matches(quote: str, value) -> bool:
+    """A number to within rounding, a set as any of its members (an anchor), anything else exactly."""
+    if isinstance(value, frozenset):
+        return quote in value
+    if isinstance(value, (int, float)):
+        return float(quote) == pytest.approx(value)
+    return quote == value
+
+
 def says(quote: tuple[str, ...], value) -> bool:
     expected = value if isinstance(value, tuple) else (value,)
-    return len(quote) == len(expected) and all(
-        float(q) == pytest.approx(v) if isinstance(v, (int, float)) else q == v for q, v in zip(quote, expected))
+    return len(quote) == len(expected) and all(matches(q, v) for q, v in zip(quote, expected))
 
 
 @pytest.mark.parametrize("doc,pattern,value", [
@@ -143,4 +169,6 @@ def says(quote: tuple[str, ...], value) -> bool:
 def test_the_docs_quote_what_they_describe(doc, pattern, value):
     found = quotes(pattern, DOCS[doc])
     assert found, f"{doc} no longer quotes it ({pattern!r}): drop the row, or the quote was reworded"
-    assert all(says(q, value) for q in found), f"{doc} says {found}, the source says {value}"
+    wrong = [q for q in found if not says(q, value)]
+    shown = sorted(value) if isinstance(value, frozenset) else value
+    assert not wrong, f"{doc} says {wrong}, the source says {shown}"
