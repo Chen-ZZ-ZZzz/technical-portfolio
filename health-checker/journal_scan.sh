@@ -38,6 +38,9 @@ main(){
     require_cmd jq
     require_cmd python3
 
+    # Delay catching up scans to after full wakeup
+    sleep "${SCAN_DELAY:-0}"
+
     # systemd provides these; fall back for interactive runs
     local state_dir="${STATE_DIRECTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/checker-journal-scan}"
     if [[ -n "${RUNTIME_DIRECTORY:-}" ]]; then
@@ -61,6 +64,8 @@ main(){
     if [[ -s "$tmp_json" ]]; then
         python3 journal2log.py "$tmp_json" "$tmp_log"
         python3 log_scan.py "$tmp_log" -q -s json
+    else
+        printf 'No new above-warning-level entries\n'
     fi
 
     new_cursor="$(tail -n 1 "$tmp_json" | jq -r '.__CURSOR // empty')"
