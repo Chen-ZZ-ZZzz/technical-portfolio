@@ -21,7 +21,7 @@ Network and log health tools for lab and CI environments. Ping-based host reacha
 | [Python](Python/) | File system utilities, regex tools, CLI automation, data parsing |
 | [Bash](Bash/) | Shell scripting — safe iteration, error handling, archiving |
 | [Linux](Linux/) | CLI tools — filename sanitizer, date converter, file renumbering, whitespace normalizer |
-| [QA_Automation](QA_Automation/) | Test automation scaffolding, HIL/SIL stubs, log analysis |
+| [Automation](Automation/) | Automation Tools |
 | [C](C/) | Embedded / low-level practice |
 | [HIL-SIL](HIL-SIL/) | Hardware-in-the-loop test exploration |
 
