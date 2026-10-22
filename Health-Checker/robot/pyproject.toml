@@ -7,4 +7,5 @@ requires-python = ">=3.13"
 dependencies = [
     "docutils>=0.23",
     "robotframework>=7.5",
+    "robotframework-sshlibrary>=3.8.0",
 ]
