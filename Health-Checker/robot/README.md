@@ -18,6 +18,6 @@ uv run robot -d results/ --exclude live scanner_units.robot scanner_script.robot
 
 `systemctl show` exits 0 even if a unit does not exist at all, and returns mostly default values. `Result` reads `success`. So a unit's `LoadState` property is tested first.
 
-To safety guard the live state files and live production directories, `STATE_DIRECTORY` is directed to temporary directory, the script is run as a copy there too.
+To protect the live state files and production directories, `STATE_DIRECTORY` points to temporary directory, and the script runs as a copy there.
 
-`LC_ALL=C` sets outputs to English regardless language used by local operating system.
+`LC_ALL=C` forces English output regardless of the system locale.
