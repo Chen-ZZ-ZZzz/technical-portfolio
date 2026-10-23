@@ -9,10 +9,10 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
   reject     galactic plane, the survey's own asteroid association. Nothing
              is rejected on the sky context: a star is stellar (classify)
   new        judged per survey, on that survey's own history:
-               first detection within N days            (--lookback-days, 14)
-               >= MIN_DETECTIONS detections, over more than one night
-               a quiet point within X days before it     (--bracket-days, 10)
-               deep enough: QUIET_SIGMA * flux_err(quiet) < flux(first detection)
+                 first detection within N days            (--lookback-days, 14)
+                 >= MIN_DETECTIONS detections, over more than one night
+                 a quiet point within X days before it     (--bracket-days, 10)
+                 deep enough: QUIET_SIGMA * flux_err(quiet) < flux(first detection)
              An LSST onset may also be bracketed by a ZTF upper limit on a ZTF
              object at the same position ("bracketed_by_ztf"): Rubin's forced
              photometry never precedes the first detection at any broker.
