@@ -4,7 +4,7 @@ Kleine CLI-Werkzeuge für den täglichen Einsatz unter Linux.
 
 Small CLI tools (Python and Bash) for everyday file management on Linux.
 
-`log_scan.py` and `net_check.py` are the original scripts for the **[Health Checker](../health-checker/)** project — a standalone network and log health toolkit with structured output (JSON, CSV, table), timestamped reports, and pytest tests.
+`log_scan.py` and `net_check.py` are the original scripts for the **[Health Checker](../Health-Checker/)** project — a standalone network and log health toolkit with structured output (JSON, CSV, table), timestamped reports, and pytest tests.
 
 ---
 

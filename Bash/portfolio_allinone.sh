@@ -43,7 +43,7 @@ main(){
     cd "$home_dir"
 
     local project
-    for project in health-checker LSST-Alert-QA; do
+    for project in Health-Checker LSST-Alert-QA; do
         echo "=== $project ==="
         (cd "$project"
          uv sync

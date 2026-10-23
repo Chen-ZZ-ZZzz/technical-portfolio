@@ -6,4 +6,4 @@ A suite lives next to the project it applies to, and this page links to it. A to
 
 | Tool | Suites | What They Do |
 |---|---|---|
-| Robot Framework | [health-checker/robot](../health-checker/robot/) | Test the journal scanner's systemd units and its shell wrapper |
+| Robot Framework | [Health-Checker/robot](../Health-Checker/robot/) | Test the journal scanner's systemd units and its shell wrapper |
