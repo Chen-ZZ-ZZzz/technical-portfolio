@@ -106,6 +106,8 @@ uv run python -m rubin_qa.transient_monitor --dry-run
 uv run python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 --estimate
 ```
 
+Each live or `--init` run also writes its report as JSON, `reports/transient_<footprint>_<timestamp>.json`; what it holds is in `scan`'s docstring. `--dry-run` writes none; a replay writes its results to `logs/`.
+
 The daily unit and its setup: [`systemd/README.md`](systemd/README.md).
 
 ---
@@ -602,7 +604,7 @@ A first attempt was discarded. It judged from a cold catalogue cache, fetching t
 - *Tested.* A test runs all 5 path cases × 8 sky contexts through the monitor. An unmapped context raises an error.
 - *Re-reporting.* A report is repeated when either axis changes, so an `unchecked` object is reported again once the catalogue gives a verdict.
 
-**First live run.** The monitor reports changes relative to what it has already reported, so a run from an empty state would report everything that currently qualifies, as the replay's first day did. A live scan with no state file is therefore an error, and a footprint's first run is explicit: `uv run python -m rubin_qa.transient_monitor --footprint ecdfs --init` records what already qualifies without reporting it. From the next run on, only new objects and real changes are reported; something genuinely new on exactly that day is absorbed, and still shows up once its category or path changes.
+**First live run.** The monitor reports changes relative to what it has already reported, so a run from an empty state would report everything that currently qualifies, as the replay's first day did. A live scan with no state file is therefore an error, and a footprint's first run is explicit: `uv run python -m rubin_qa.transient_monitor --footprint ecdfs --init` records what already qualifies without reporting it, and lists it in its report (`absorbed`). From the next run on, only new objects and real changes are reported; something genuinely new on exactly that day is absorbed, and still shows up once its category or path changes.
 
 **Tools:** `uv run python -m rubin_qa.transient_monitor --footprint D --replay 2026-03-12 2026-05-15 [--estimate | --compare-cuts]`, `uv run tools/replay_tns_check.py`. Results are kept locally in `logs/` (replay JSON and log, TNS rows with reporting groups).
 
@@ -654,6 +656,8 @@ tools/                 — measurement scripts, outside the monitor's imports:
 tests/                 — pytest, mock data only
 systemd/               — example user units (Deployment, below)
 pyproject.toml
+reports/               — report outputs: the QA CSVs, the transient monitor's run reports,
+                         the evidence files the docs cite
 cache/                 — anything that can be fetched again; deleting it only costs time (gitignored)
 state/                 — anything that can't be recreated: monitor state, the point-source watch,
                          pending TNS lookups, latency samples; deleting it loses information (gitignored)
@@ -684,10 +688,10 @@ All tests use mock data — no live API calls.
 | `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
 | `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
 | `test_photometry.py` | broker-neutral fetch layer: survey objects, ALeRCE listings for both surveys (both answer shapes, paging, partial answers), newest-in-cone, light curves |
-| `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, the listing guard (ZTF and LSST), one event one alert, the TNS line's three states, the point-source watch (only spectroscopic SNe count, threshold 3, notice until the rule or threshold changes, never fails the run), state, footprint atlas loading and its outage flags |
+| `test_transient_monitor.py` | monitor paths (bracketed, rising, rapid rise, re-brightening), the decision table (every path × sky context through `evaluate`; an unmapped context raises), re-reporting on the (category, path) pair, the listing guard (ZTF and LSST), one event one alert, the TNS line's three states, the point-source watch (only spectroscopic SNe count, threshold 3, notice until the rule or threshold changes, never fails the run), state, footprint atlas loading and its outage flags, the run report (what the printed report said, named in local time while run_utc and an alert's day stay UTC, every TNS status, none on a dry run, written after the state, init without alerts, a short one on a network failure, whole or not at all, strict JSON) |
 | `test_live_without_antares.py` | the monitor's daily run (`--dry-run`) in a fresh interpreter where ANTARES cannot be imported, only the network faked; any import attempt fails it, even a swallowed one |
 | `test_stay_inside_hook.py` | `.claude/hooks/stay_inside.py`, run as Claude Code runs it: writes pass only inside the project, the session scratchpad and the memory directory; `..`, look-alike prefixes and symlinks out are blocked, and so is any input it cannot check |
-| `test_replay.py` | replay: listing in chunks, light-curve cache (failures never cached), day slicing (the future never leaks into a day), the span cut's equivalence on synthetic data, catalogue prefetch, suspend-aware stage timer |
+| `test_replay.py` | replay: listing in chunks, light-curve cache (failures never cached), day slicing (the future never leaks into a day), the span cut's equivalence on synthetic data, catalogue prefetch, suspend-aware stage timer, the same alert record as the live report |
 | `test_sky_catalog.py` | DR10 host matching: ellipse conventions pinned to pixel-measured fixtures, atlas pieces (NGC 873), two-step candidates and the margin (with a q3c-reading fake TAP service, `tests/fake_tap.py`), catalogue gaps, cache rules (no failure or empty answer ever cached) |
 | `test_host_match_check.py` | `tools/host_match_check.py` — every fetch-failure path fed its failure (empty TNS record, Sesame down, tile and atlas errors) must come back as "fetch error" or pending, never "no host"; truth mapping; mixed-version detection |
 | `test_tns.py` | `rubin_qa/tns.py` — the throttle rule against a fake clock and a simulated throttled service at every window phase; an empty answer is "not in TNS" only when vouched for; names decoded where they come in |

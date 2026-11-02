@@ -52,13 +52,13 @@ sys.path.insert(0, sys.argv[1])
 import host_match_check as h, lsst_box_census as c, sample_latency as s, point_source_snr as p, replay_tns_check as r
 from rubin_qa import config, replay, sky_catalog as sc, transient_monitor as m
 for path in (h.OUT_DIR, h.SAMPLE_DIR, h.DES_HEAD, c.OUT_DIR, s.LOG_PATH, p.OUT, r.CANDIDATE_CACHE, r.DEFAULT_REPLAY,
-             config.REPORTS_DIR, replay.CACHE_DIR, replay.REPORT_DIR, sc.CACHE_DIR, sc.MASKBITS_CACHE_DIR, m.STATE_DIR):
+             config.REPORTS_DIR, replay.CACHE_DIR, replay.REPORT_DIR, sc.CACHE_DIR, sc.MASKBITS_CACHE_DIR, m.STATE_DIR, m.REPORTS_DIR):
     print(path)
 """
     env = {**os.environ, "RUBIN_QA_ROOT": str(tmp_path)}
     out = subprocess.run([sys.executable, "-c", code, str(TOOLS)], env=env, capture_output=True, text=True, check=True)
     paths = [pathlib.Path(line) for line in out.stdout.splitlines()]
-    assert len(paths) == 14
+    assert len(paths) == 15
     assert all(path.is_relative_to(tmp_path) for path in paths), [str(p) for p in paths if not p.is_relative_to(tmp_path)]
 
 

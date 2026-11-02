@@ -134,13 +134,13 @@ def _rows(survey: str, cone, lo: float, hi: float, min_ndet: int, query=None) ->
 
 
 def list_candidates(survey: str, cone, lo: float, hi: float, cut: bool = True, query=None,
-                    notes: list[str] | None = None) -> list[dict]:
+                    warnings: list[str] | None = None) -> list[dict]:
     """
     Objects first detected in [lo, hi], in LISTING_CHUNK_DAYS chunks; with cut, at least
     2 detections (server side) spanning more than one night (here). An empty chunk is
-    asked again day by day before it is believed.
+    asked again day by day before it is believed (a contradicted one goes into warnings).
     """
-    notes = notes if notes is not None else []
+    warnings = warnings if warnings is not None else []
     min_ndet = 2 if cut else 1
     rows: dict[str, dict] = {}
     start = lo
@@ -154,7 +154,7 @@ def list_candidates(survey: str, cone, lo: float, hi: float, cut: bool = True, q
                 daily += _rows(survey, cone, d, min(d + 1, end), min_ndet, query)
                 d += 1
             if daily:
-                notes.append(f"{survey} {start:.0f}-{end:.0f}: empty chunk answer contradicted by daily queries "
+                warnings.append(f"{survey} {start:.0f}-{end:.0f}: empty chunk answer contradicted by daily queries "
                              f"({len(daily)} objects); daily answers used")
             chunk = daily
         for r in chunk:
@@ -212,13 +212,13 @@ def _read_json(path: Path, valid):
     return None
 
 
-def cached_candidates(name: str, survey: str, cone, lo: float, hi: float, cut: bool, notes: list[str]) -> list[dict]:
+def cached_candidates(name: str, survey: str, cone, lo: float, hi: float, cut: bool, warnings: list[str]) -> list[dict]:
     """The candidate list, from the cache or listed once: first detections in a past window do not change."""
     path = CACHE_DIR / "candidates" / f"{name}_{survey}_{lo:.1f}_{hi:.1f}_{'cut' if cut else 'all'}.json"
     rows = _read_json(path, _candidates_ok)
     if rows is not None:
         return rows
-    rows = list_candidates(survey, cone, lo, hi, cut, notes=notes)
+    rows = list_candidates(survey, cone, lo, hi, cut, warnings=warnings)
     _write_json(path, rows)
     return rows
 
@@ -366,18 +366,18 @@ def confirm_cost(seconds: float, yes: bool, what: str) -> None:
 
 
 def price(name: str, cone, first_day: str, last_day: str, lookback_days: float, cut: bool, say=print,
-          notes: list[str] | None = None) -> tuple[list[dict], list, list, dict]:
+          warnings: list[str] | None = None) -> tuple[list[dict], list, list, dict]:
     """
     List the candidates (cached after the first time) and estimate the fetching, printing
     it. Returns (rows, tiles, bricks, estimate); estimate["seconds"] is the total.
     """
-    notes = [] if notes is None else notes
+    warnings = [] if warnings is None else warnings
     lo, hi, days = window(first_day, last_day, lookback_days)
     say(f"\nReplay {name}: {first_day} .. {last_day} ({len(days)} days), candidates first detected MJD {lo:.1f}-{hi:.1f}"
         f"{'' if cut else ', NO CUT'}", flush=True)
     rows = []
     for survey in ("lsst", "ztf"):
-        got = cached_candidates(name, survey, cone, lo, hi, cut, notes)
+        got = cached_candidates(name, survey, cone, lo, hi, cut, warnings)
         say(f"  {survey}: {len(got)} candidates", flush=True)
         rows += got
     lsst = [r for r in rows if r["survey"] == "lsst"]
@@ -408,8 +408,8 @@ def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = m
     say = (lambda *a, **k: None) if quiet else print
     timer = StageTimer()
     lo, hi, days = window(first_day, last_day, lookback_days)
-    notes: list[str] = []
-    rows, tiles, bricks, estimate = price(name, cone, first_day, last_day, lookback_days, cut, say, notes)
+    warnings: list[str] = []  # not the alert notes (result.notes): those are records with note_on
+    rows, tiles, bricks, estimate = price(name, cone, first_day, last_day, lookback_days, cut, say, warnings)
     timer.mark("listing")
     lsst = [r for r in rows if r["survey"] == "lsst"]
     if estimate_only:
@@ -461,11 +461,7 @@ def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = m
         result = mon.judge_day(today, now, since, state, classify, bracket_days, min_detections,
                                context=_as_of(context, now, need_detection=False))
         for c, new_conditions, anchor in [(c, n, None) for c, n in result.alerts] + result.notes:
-            records.append({"day": day, "key": c.obj.key, "ra": c.obj.ra, "dec": c.obj.dec,
-                            "category": c.category, "conditions": new_conditions,
-                            "onset": c.onset.code if c.onset else None,
-                            "crossmatch": c.match.verdict, "evidence": c.match.evidence,
-                            **({"note_on": anchor} if anchor else {})})
+            records.append(mon.alert_record(c, new_conditions, anchor, day))  # the live report's builder too
         say(f"  {day}: {len(today):5d} objects, {len(result.alerts)} alerts"
             + (f", {len(result.notes)} notes" if result.notes else "")
             + "".join(f"\n      {c.category:13s} {c.obj.key}  {', '.join(n)}" for c, n in result.alerts)
@@ -480,12 +476,12 @@ def run(name: str, cone, first_day: str, last_day: str, lookback_days: float = m
     out = REPORT_DIR / f"replay_{name}_{first_day}_{last_day}{'' if cut else '_nocut'}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"footprint": name, "cone": list(cone), "first_day": first_day, "last_day": last_day,
-                               "cut": cut, "candidates": len(rows), "fetch_errors": errors, "notes": notes,
+                               "cut": cut, "candidates": len(rows), "fetch_errors": errors, "warnings": warnings,
                                "crossmatch_unavailable": {"catalogue_gap": gaps, "fetch_failure": len(unavailable) - gaps},
                                "estimate": estimate, "timings": timer.stages,
                                "alerts": records}, indent=1, default=str))
-    for n in notes:
-        print(f"{WARN_PREFIX}{n}", file=sys.stderr)
+    for w in warnings:
+        print(f"{WARN_PREFIX}{w}", file=sys.stderr)
     # the point-source watch counts replayed alerts too (TNS as it stands today)
     ps = [(r["key"], r["ra"], r["dec"], mon.date_to_mjd(r["day"]), f"replay {name} {first_day}..{last_day}")
           for r in records if r["category"] == "point_source"]

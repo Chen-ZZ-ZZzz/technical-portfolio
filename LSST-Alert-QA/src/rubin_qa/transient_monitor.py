@@ -34,7 +34,8 @@ photometry, per survey object (a ZTF objectId, an LSST diaObjectId).
 
 Each survey object is reported again whenever its (category, path) pair is
 new: a new path, or a new category (unchecked becoming a real verdict). State is keyed
-on survey IDs, in state/transient_monitor_<footprint>.json.
+on survey IDs, in state/transient_monitor_<footprint>.json. Each run also writes a
+JSON report to reports/ (scan, alert_record).
 
     uv run python -m rubin_qa.transient_monitor --footprint D --dry-run
     uv run python -m rubin_qa.transient_monitor --cone RA DEC RADIUS
@@ -45,6 +46,8 @@ package's relative imports.
 """
 
 import argparse
+import contextlib
+import glob
 import hashlib
 import inspect
 import bisect
@@ -69,6 +72,7 @@ from .config import (  # noqa: F401  (FOOTPRINTS & co. re-exported: replay and t
     LIVE_FOOTPRINT,
     LIVE_SURVEYS,
     MJD_J2000,
+    REPORTS_DIR,
     STATE_DIR,
     WARN_PREFIX,
     now_mjd,
@@ -625,6 +629,35 @@ def _save_state(path, state: dict) -> None:
     tmp.rename(path)
 
 
+def report_file(name: str, mode: str, started: datetime.datetime) -> Path:
+    """reports/transient_<footprint>_<YYYYMMDD_HHMMSS>[_init].json: the run's start, in local time like the QA CSVs."""
+    return REPORTS_DIR / f"transient_{name}_{started:%Y%m%d_%H%M%S}{'_init' if mode == 'init' else ''}.json"
+
+
+def _write_report(name: str, path: Path, report: dict) -> bool:
+    """
+    Write a run report as a temp file renamed into place: the unit can be killed at
+    TimeoutStartSec, and a report is there whole or not at all. The names are timestamped,
+    so no later write meets such a kill's .tmp by name: this footprint's leftovers
+    (transient_<footprint>_*.tmp, nothing else in reports/) are removed here. allow_nan=False
+    backs alert_record's nulls: a non-finite float fails the write, never becomes Infinity.
+    Returns False, after an ERROR, when the report could not be written.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        for orphan in path.parent.glob(f"transient_{glob.escape(name)}_*.tmp"):
+            orphan.unlink()
+        tmp.write_text(json.dumps(report, indent=1, allow_nan=False))
+        tmp.rename(path)
+    except (OSError, TypeError, ValueError) as e:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        print(f"{ERROR_PREFIX}run report not written to {path} ({type(e).__name__}: {e})", file=sys.stderr)
+        return False
+    return True
+
+
 def update_parked(prev: dict, parked_now: dict, seen: set[str], since_mjd: float, now: float):
     """
     Returns (parked, resolved, expired). An object stays parked while its first
@@ -671,6 +704,52 @@ def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = 
         print(f"  classifications: {', '.join(o.classifications)}")
     if tns is not None:
         print(f"  TNS: {tns}")
+
+
+def _json_float(x) -> float | None:
+    """A float as JSON can hold it: a non-finite one (inf, nan) becomes null."""
+    return float(x) if _finite(x) else None
+
+
+def alert_record(c: Candidate, new_conditions: list[str], anchor: str | None, day: str) -> dict:
+    """
+    One alert or note as a JSON record, built here for the live report and the replay
+    alike (user, 2026-10-23), so both say the same thing under the same keys. The replay's
+    keys from before the live report come first, unchanged:
+      day          replay: the simulated day; live: the run's UTC date
+      key, ra, dec, category
+      conditions   the paths new this time (all_conditions: every path it has now)
+      onset        the onset verdict's code ("bracketed", "no_quiet_point", ...)
+      crossmatch   the DR10 verdict; evidence: its lines
+      note_on      a note only: the key of the alert it is a note on
+    then what the printed report shows besides: gal_b; onset_status, first_det_mjd,
+    last_quiet_mjd (the bracketing quiet point) and n_det; rise {band, mag, sigma, days},
+    whose mag is null when the object rose from nothing (the only non-finite case there);
+    rapid_rise_mag; crossmatch_flags (the AGN flags the category depends on); context;
+    brokers; classifications. Any non-finite float is null. The live report adds an
+    optional tns {status, line} to alerts (scan); notes and replay records have none.
+    """
+    o, v, r = c.obj, c.onset, c.rise
+    return {
+        "day": day, "key": o.key, "ra": _json_float(o.ra), "dec": _json_float(o.dec),
+        "category": c.category, "conditions": list(new_conditions),
+        "onset": v.code if v else None,
+        "crossmatch": c.match.verdict, "evidence": list(c.match.evidence),
+        **({"note_on": anchor} if anchor else {}),
+        "all_conditions": list(c.conditions),
+        "gal_b": _json_float(c.gal_b),
+        "onset_status": v.status if v else None,
+        "first_det_mjd": _json_float(v.first_det_mjd) if v else None,
+        "last_quiet_mjd": _json_float(v.last_quiet_mjd) if v else None,
+        "n_det": v.n_det if v else None,
+        "rise": None if r is None else {"band": r.band, "mag": _json_float(r.mag), "sigma": _json_float(r.sigma),
+                                        "days": _json_float(r.days)},
+        "rapid_rise_mag": _json_float(c.rapid),
+        "crossmatch_flags": list(c.match.flags),
+        "context": list(c.context),
+        "brokers": dict(o.broker_refs),
+        "classifications": list(o.classifications),
+    }
 
 
 # TNS, via ALeRCE's TNS service (rubin_qa/tns.py; ANTARES's crossmatch until 2026-10-03,
@@ -797,8 +876,9 @@ def _tns_line(rec: dict) -> str:
 def _add_tns(c: Candidate, now: float) -> tuple[str, dict | None]:
     """
     The alert's TNS line, looked up after its verdict: TNS is display context, never an
-    input. Returns (line, watch entry): the record, or TNS_NONE_YET / TNS_UNAVAILABLE with
-    an entry scan keeps in the state and asks again each run for TNS_RECHECK_DAYS.
+    input. Returns (line, watch entry, status): the record ("record"), or TNS_NONE_YET
+    ("none_yet") / TNS_UNAVAILABLE ("unavailable") with an entry scan keeps in the state
+    and asks again each run for TNS_RECHECK_DAYS.
     """
     entry = {"ra": c.obj.ra, "dec": c.obj.dec, "alerted_mjd": now}
     try:
@@ -808,11 +888,11 @@ def _add_tns(c: Candidate, now: float) -> tuple[str, dict | None]:
         rec = None
     if rec is None:
         print(f"{WARN_PREFIX}{c.obj.key}: TNS unavailable; asked again next run", file=sys.stderr)
-        return TNS_UNAVAILABLE, entry
+        return TNS_UNAVAILABLE, entry, "unavailable"
     if _tns_match(rec, c.obj.ra, c.obj.dec):
         c.obj.tns = [_tns_line(rec)]
-        return c.obj.tns[0], None
-    return TNS_NONE_YET, entry
+        return c.obj.tns[0], None, "record"
+    return TNS_NONE_YET, entry, "none_yet"
 
 
 def _retry_tns(watch: dict, now: float) -> tuple[dict, list[str]]:
@@ -852,9 +932,15 @@ def footprint_classifier(cone: Cone):
     version, then from the cache, with the footprint's DR10 brick list for the
     catalogue-gap check. If either cannot be loaded the run goes on without it: it says
     so once, and every crossmatch made without it says so too, so an orphan from an
-    outage is never mistaken for a real one.
+    outage is never mistaken for a real one. What it said is kept in classify.warnings,
+    for the run's report.
     """
     loaded: dict = {}
+    warnings: list[str] = []
+
+    def warn(message: str) -> None:
+        print(f"{WARN_PREFIX}{message}", file=sys.stderr)
+        warnings.append(message)
 
     def classify(ra: float, dec: float):
         if "atlas" not in loaded:
@@ -862,14 +948,13 @@ def footprint_classifier(cone: Cone):
                 loaded["atlas"] = sky_catalog.footprint_atlas(cone)
             except sky_catalog.CatalogError as e:
                 loaded["atlas"] = None
-                print(f"{WARN_PREFIX}Siena Galaxy Atlas unavailable ({e}): hosts searched within "
-                      f'{sky_catalog.SEARCH_RADIUS_ARCSEC:g}" only this run', file=sys.stderr)
+                warn(f"Siena Galaxy Atlas unavailable ({e}): hosts searched within "
+                     f'{sky_catalog.SEARCH_RADIUS_ARCSEC:g}" only this run')
             try:
                 loaded["bricks"] = sky_catalog.footprint_bricks(cone)
             except sky_catalog.CatalogError as e:
                 loaded["bricks"] = None
-                print(f"{WARN_PREFIX}DR10 brick list unavailable ({e}): catalogue gaps not checked this run",
-                      file=sys.stderr)
+                warn(f"DR10 brick list unavailable ({e}): catalogue gaps not checked this run")
         bricks = loaded["bricks"]
         coverage = (lambda r, d: sky_catalog.catalogue_gap(r, d, bricks)) if bricks is not None else None
         xm = sky_catalog.classify(ra, dec, atlas=loaded["atlas"], coverage=coverage)
@@ -879,6 +964,7 @@ def footprint_classifier(cone: Cone):
             xm.evidence.append("catalogue gaps not checked")
         return xm
 
+    classify.warnings = warnings
     return classify
 
 
@@ -980,6 +1066,24 @@ def scan(
     at once, instead of a run that silently starts over and reports everything that
     already qualifies. init is the footprint's first run: it records what already
     qualifies without reporting it, so the next run reports only what changes.
+
+    The run report (user, 2026-10-23): a run past the state check writes one JSON file,
+    report_file(), after the state is saved, a run that exits 1 on a failed listing
+    included; one that fails on the network writes a short one (the run's fields, error,
+    warnings, exit_code). --dry-run writes none. It goes to reports/, not logs/: it
+    records what ALeRCE and TNS answered and the state as it was then, which nothing can
+    regenerate. The file name and run_utc are one moment, the run's start (now): the name
+    in local time, like the QA CSVs; run_utc in UTC, the time of record. Keys: mode
+    ("live" or "init"), footprint, cone, run_utc, run_mjd, since_mjd, settings
+    {lookback_days, bracket_days, min_detections}, state_before
+    {reported, parked}, listings {survey: {status, detail, newest_mjd}}, photometry
+    {fetched, not_fetched, failed}, fetch_errors ["<key>: <error>"], objects {total,
+    by_survey, kept}, rejected {reason: n}, parked {count, new [{key, first_det_mjd,
+    code}], resolved, expired}; then, live, alerts (alert_record for each alert, with tns,
+    then for each note), or, init, no alerts but recorded {by_category, parked} (the INIT
+    line) and absorbed (the same records, none of them reported); then tns_earlier and
+    point_source_watch (the printed lines), warnings (what was warned about and has no
+    key above) and exit_code.
     """
     path = state_file(name)
     if init and path.exists():
@@ -992,8 +1096,16 @@ def scan(
         return 1
     state = _load_state(path)
     now = now_mjd()
+    started = mjd_to_datetime(now).astimezone()  # the same moment in local time: the file name
     since = now - lookback_days
     retry_budget.reset()  # ALeRCE calls draw on it
+    mode = "init" if init else "live"
+    report: dict = {"mode": mode, "footprint": name, "cone": list(cone),
+                    "run_utc": mjd_to_datetime(now).isoformat(timespec="seconds"), "run_mjd": now, "since_mjd": since,
+                    "settings": {"lookback_days": lookback_days, "bracket_days": bracket_days,
+                                 "min_detections": min_detections},
+                    "state_before": {"reported": len(state["reported"]), "parked": len(state["parked"])}}
+    warnings: list[str] = []  # for the report: what was warned about and has no key of its own
 
     ra, dec, radius = cone
     print(f"\n\nFootprint {name}: cone RA {ra:g} Dec {dec:g} radius {radius:g} deg")
@@ -1010,15 +1122,20 @@ def scan(
             break
         except NETWORK_ERRORS as e:
             if attempt < MAX_RETRIES - 1:
-                print(f"{WARN_PREFIX}network error (attempt {attempt + 1}/{MAX_RETRIES}): {e}; "
-                      f"retrying in {RETRY_WAIT}s", file=sys.stderr)
+                warnings.append(f"network error (attempt {attempt + 1}/{MAX_RETRIES}): {e}; retrying in {RETRY_WAIT}s")
+                print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
                 time.sleep(RETRY_WAIT)
             else:
-                print(f"{ERROR_PREFIX}network error after {MAX_RETRIES} attempts: {e}. "
-                      "State not updated - will retry next run.", file=sys.stderr)
+                error = f"network error after {MAX_RETRIES} attempts: {e}. State not updated - will retry next run."
+                print(f"{ERROR_PREFIX}{error}", file=sys.stderr)
+                if not dry_run:  # a short report: a day without one then means the run never happened
+                    _write_report(name, report_file(name, mode, started),
+                                  {**report, "error": error, "warnings": warnings, "exit_code": 1})
                 return 1
 
-    day = judge_day(objs, now, since, state, footprint_classifier(cone), bracket_days, min_detections)
+    classify = footprint_classifier(cone)
+    day = judge_day(objs, now, since, state, classify, bracket_days, min_detections)
+    warnings += getattr(classify, "warnings", [])
 
     by_survey = Counter(o.survey for o in objs)
     listings = {survey: stats[f"{survey}_listing"] for survey in LIVE_SURVEYS}
@@ -1041,6 +1158,7 @@ def scan(
     print()
 
     tns_watch, tns_lines = _retry_tns(state.get("tns_watch", {}), now)
+    tns_said: dict[str, dict] = {}  # per alert, for the report
     if init:
         recorded = Counter(c.category for c, _ in day.alerts) + Counter(c.category for c, _, _ in day.notes)
         print(f"INIT: recorded {sum(recorded.values())} survey objects that already qualify, not reported"
@@ -1054,9 +1172,10 @@ def scan(
                 continue
             print(f"--- {category} ({len(group)}) ---")
             for c, new_conditions in group:
-                tns_text, watch_entry = _add_tns(c, now)
+                tns_text, watch_entry, tns_status = _add_tns(c, now)
                 if watch_entry:
                     tns_watch[c.obj.key] = watch_entry
+                tns_said[c.obj.key] = {"status": tns_status, "line": tns_text}
                 _print_candidate(c, new_conditions, tns_text)
             print()
     else:
@@ -1074,19 +1193,50 @@ def scan(
                           for c in [a[0] for a in day.alerts] + [n[0] for n in day.notes] if c.category == "point_source"]
     watch_file = STATE_DIR / PS_WATCH_FILE
     if not init and not watch_file.exists():  # state, like the monitor's: a missing one loses its evidence count
-        print(f"{WARN_PREFIX}no point-source watch file at {watch_file} although this footprint has state: "
-              "deleted? Its evidence count restarts from zero.", file=sys.stderr)
+        warnings.append(f"no point-source watch file at {watch_file} although this footprint has state: "
+                        "deleted? Its evidence count restarts from zero.")
+        print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
         print(f"\nPoint-source watch file missing at {watch_file}: evidence count restarts from zero.")
-    print("\n" + "\n".join(point_source_watch(ps, now, save=not dry_run)))
+    watch_lines = point_source_watch(ps, now, save=not dry_run)
+    print("\n" + "\n".join(watch_lines))
 
     cutoff = now - STATE_RETENTION_DAYS
     reported = {k: v for k, v in state["reported"].items() if v["first_reported_mjd"] >= cutoff}
+    exit_code = 1 if any(lc.status == "failed" for lc in listings.values()) else 0
     if dry_run:
-        print("\n(dry run: state not saved)")
-    else:
-        _save_state(path, {"last_mjd": now, "reported": reported, "parked": day.parked,
-                           "newest_mjd": {s: lc.newest_mjd for s, lc in listings.items()}, "tns_watch": tns_watch})
-    return 1 if any(lc.status == "failed" for lc in listings.values()) else 0
+        print("\n(dry run: state not saved, no report written)")
+        return exit_code
+    _save_state(path, {"last_mjd": now, "reported": reported, "parked": day.parked,
+                       "newest_mjd": {s: lc.newest_mjd for s, lc in listings.items()}, "tns_watch": tns_watch})
+
+    today = _date(now)
+    records = ([alert_record(c, n, None, today) | ({"tns": tns_said[c.obj.key]} if c.obj.key in tns_said else {})
+                for c, n in day.alerts]
+               + [alert_record(c, n, anchor, today) for c, n, anchor in day.notes])
+    report.update({
+        "listings": {s: {"status": lc.status, "detail": lc.detail, "newest_mjd": _json_float(lc.newest_mjd)}
+                     for s, lc in listings.items()},
+        "photometry": {"fetched": stats.get("fetched", 0), "not_fetched": stats.get("not_fetched", 0),
+                       "failed": stats.get("fetch_errors", 0)},
+        "fetch_errors": [f"{o.key}: {e}" for o in objs for e in o.fetch_errors],
+        "objects": {"total": len(objs), "by_survey": dict(sorted(by_survey.items())), "kept": len(day.candidates)},
+        "rejected": dict(sorted(day.rejected.items())),
+        "parked": {"count": len(day.parked),
+                   "new": [{"key": k, "first_det_mjd": _json_float(day.parked[k]["first_det_mjd"]),
+                            "code": day.parked[k]["code"]} for k in day.newly_parked],
+                   "resolved": list(day.resolved), "expired": list(day.expired)},
+        **({"recorded": {"by_category": dict(sorted(recorded.items())), "parked": len(day.parked)},
+            "absorbed": records} if init else {"alerts": records}),
+        "tns_earlier": tns_lines,
+        "point_source_watch": watch_lines,
+        "warnings": warnings,
+        "exit_code": exit_code,
+    })
+    out = report_file(name, mode, started)
+    if not _write_report(name, out, report):
+        return 1
+    print(f"\nReport: {out}")
+    return exit_code
 
 
 # ------------------------------------------------------------------ CLI

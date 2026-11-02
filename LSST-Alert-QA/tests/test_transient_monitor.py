@@ -1,8 +1,11 @@
 """transient_monitor.py — survey objects built by hand; no live broker or catalogue calls."""
 
 import dataclasses
+import datetime
 import json
 import math
+import os
+import time
 
 import pandas as pd
 import pytest
@@ -660,6 +663,7 @@ def test_footprint_classifier_atlas_outage_warns_once_and_runs_step_1(monkeypatc
 @pytest.fixture
 def env(tmp_path, monkeypatch, sources):
     monkeypatch.setattr(mon, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(mon, "REPORTS_DIR", tmp_path / "reports")
     monkeypatch.setattr(mon, "now_mjd", lambda: NOW)
     monkeypatch.setattr(mon.time, "sleep", lambda s: None)
     monkeypatch.setattr(mon.sky_catalog, "classify", xm("host", 'EXP r=21.0 sep=1.0" d_DLR=0.8'))
@@ -1164,6 +1168,237 @@ def test_update_parked_lifecycle():
 
 def test_state_file_names():
     assert mon.state_file("ecdfs") == PROJECT_ROOT / "state" / "transient_monitor_ecdfs.json"  # state, not logs/
+
+
+# --- the run report: one JSON file per run in reports/ (user, 2026-10-23) ----------------------
+
+
+def strict(path):
+    """A report parsed as strict JSON: NaN or Infinity fails it."""
+    def refuse(constant):
+        raise ValueError(f"non-standard JSON: {constant}")
+    return json.loads(path.read_text(), parse_constant=refuse)
+
+
+def report(pattern="transient_D_*.json"):
+    """The one report a test's run wrote."""
+    (path,) = mon.REPORTS_DIR.glob(pattern)
+    return strict(path)
+
+
+def test_a_live_report_says_what_the_printed_report_said(env, capsys, monkeypatch):
+    env["objects"] = [obj(NEW_ZTF), obj(OLD_ZTF, oid="ZTF26old")]
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: tns_record("2026abc", ra, dec))
+    assert mon.scan("D", (150, 12, 1)) == 0
+    out = capsys.readouterr().out
+    r = report()
+    assert (r["mode"], r["footprint"], r["cone"], r["run_utc"], r["exit_code"]) == (
+        "live", "D", [150, 12, 1], "2026-09-27T00:00:00+00:00", 0)
+    assert r["settings"] == {"lookback_days": 14.0, "bracket_days": 10.0, "min_detections": 3}
+    for survey, listing in r["listings"].items():
+        assert f"{survey.upper()} listing (ALeRCE): {listing['detail']}" in out
+    assert r["objects"] == {"total": 2, "by_survey": {"ztf": 2}, "kept": 1} and r["rejected"] == {"old_no_rise": 1}
+    (alert,) = r["alerts"]
+    assert (alert["key"], alert["category"], alert["conditions"], alert["onset"], alert["onset_status"]) == (
+        "ztf:ZTF26aaa", "host", ["bracketed"], "bracketed", mon.NEW)
+    assert (alert["first_det_mjd"], alert["last_quiet_mjd"], alert["n_det"]) == (FIRST, FIRST - 1, 3)
+    assert alert["tns"] == {"status": "record", "line": "SN 2026abc, SN Ia, discovered 2026-09-24"}
+    assert f"  TNS: {alert['tns']['line']}" in out and f"Report: {mon.REPORTS_DIR}" in out
+    assert r["point_source_watch"] and r["point_source_watch"][0] in out and r["warnings"] == []
+
+
+def test_every_count_and_line_the_report_shares_with_the_printed_one_agrees(env, capsys, monkeypatch):
+    """Rebuild each printed line from the report: a field that drifts from what stdout said fails here."""
+    mon._save_state(mon.state_file("D"), {
+        "last_mjd": NOW - 1, "parked": {},
+        "reported": {"ztf:ZTF25old": {"first_reported_mjd": NOW - 3, "category": "host",
+                                      "pairs": [["host", "bracketed"]], "ra": 10.0, "dec": -30.0}},
+        "tns_watch": {"ztf:ZTF25old": {"ra": 10.0, "dec": -30.0, "alerted_mjd": NOW - 3}}})
+    (mon.STATE_DIR / mon.PS_WATCH_FILE).unlink()  # a warning of the run's own
+
+    def no_atlas(cone):
+        raise mon.sky_catalog.CatalogError("atlas: ReadTimeout")  # and one of the classifier's
+
+    monkeypatch.setattr(mon.sky_catalog, "footprint_atlas", no_atlas)
+    monkeypatch.setattr(mon.tns, "tns_once", lambda ra, dec: tns_record("2026old", ra, dec, found="2026-09-25 01:00:00"))
+    env["objects"] = [obj(NEW_ZTF), obj(OLD_ZTF, oid="ZTF26old"),
+                      obj(NEW_ZTF[1:], oid="ZTF26prk", ra=HIGH_B[0] + 0.02),   # parked: no quiet point
+                      obj(NEW_ZTF, oid="ZTF26bad", ra=HIGH_B[0] + 0.04)]       # its light curve fails
+    env["fail"] = {"ztf:ZTF26bad"}
+    mon.scan("D", (150, 12, 1))
+    out, err = capsys.readouterr()
+    r = report()
+
+    s, p, o, k = r["state_before"], r["photometry"], r["objects"], r["parked"]
+    assert (s, p["failed"], k["count"]) == ({"reported": 1, "parked": 0}, 1, 1)  # each part has something to say
+    assert f"Previously reported: {s['reported']}  parked: {s['parked']}" in out
+    assert f"Photometry from ALeRCE: fetched {p['fetched']}, not needed {p['not_fetched']}, failed {p['failed']}" in out
+    assert (f"Survey objects: {o['total']} ({', '.join(f'{v} {n}' for v, n in o['by_survey'].items())})  "
+            f"kept: {o['kept']}") in out
+    assert all(f"  rejected {why}: {n}" in out for why, n in r["rejected"].items()) and "no_photometry" in r["rejected"]
+    assert (f"Parked, onset not bracketed: {k['count']}  (new {len(k['new'])}, resolved {len(k['resolved'])}, "
+            f"expired unbracketed {len(k['expired'])})") in out
+    assert all(f"  {e['key']}  first detection {mon._date(e['first_det_mjd'])}  {e['code']}" in out for e in k["new"])
+    assert len(r["fetch_errors"]) == p["failed"]
+    assert all(f"{e.split(': ')[0]}: ALeRCE photometry unavailable" in err for e in r["fetch_errors"])
+    assert r["tns_earlier"] and all(line in out for line in r["tns_earlier"])
+    assert len(r["warnings"]) == 2 and all(f"WARN: {w}" in err for w in r["warnings"])
+
+
+@pytest.fixture
+def nine_hours_ahead():
+    """Local time 9 h ahead of UTC (a POSIX zone: no tz database needed), so a local and a UTC
+    stamp can never agree, whatever zone the machine running the suite is in."""
+    old, zone = os.environ.get("TZ"), (time.timezone, time.tzname)
+    os.environ["TZ"] = "JST-9"
+    time.tzset()
+    yield
+    if old is None:
+        os.environ.pop("TZ")
+    else:
+        os.environ["TZ"] = old
+    time.tzset()  # after TZ is restored: before it, or without it, every later test would run at +9 h
+    assert (time.timezone, time.tzname) == zone, "the machine's zone was not restored"
+
+
+def test_a_run_names_its_report_by_its_start_in_local_time(env, nine_hours_ahead, monkeypatch):
+    """The name and run_utc are one moment, the run's start: the clock is not read again, however long the run."""
+    def slow(*a, **kw):
+        monkeypatch.setattr(mon, "now_mjd", lambda: NOW + 25 / 1440)  # 25 min of photometry later
+        return listing(*a, **kw)
+
+    listing = mon.discover_alerce
+    monkeypatch.setattr(mon, "discover_alerce", slow)
+    mon.scan("D", (150, 12, 1))
+    (path,) = mon.REPORTS_DIR.glob("transient_D_*.json")
+    assert path.name == "transient_D_20260927_090000.json"  # NOW, 00:00 UTC, at +9 h
+    assert strict(path)["run_utc"] == "2026-09-27T00:00:00+00:00"
+
+
+def test_at_20_utc_9_hours_ahead_the_file_name_is_tomorrow_but_run_utc_and_day_are_today(env, nine_hours_ahead,
+                                                                                       monkeypatch):
+    """The file name is local time; run_utc and a live alert's day are the run's UTC date, like the replay's day."""
+    monkeypatch.setattr(mon, "now_mjd", lambda: NOW + 20 / 24)  # 2026-09-27 20:00 UTC
+    env["objects"] = [obj(NEW_ZTF)]
+    assert mon.scan("D", (150, 12, 1)) == 0
+    (path,) = mon.REPORTS_DIR.glob("transient_D_*.json")
+    r = strict(path)
+    assert path.name == "transient_D_20260928_050000.json"  # 05:00 local, the next day
+    assert r["run_utc"] == "2026-09-27T20:00:00+00:00" and r["alerts"][0]["day"] == "2026-09-27"
+
+
+@pytest.mark.parametrize("answer,status,line", [
+    (lambda ra, dec: tns_record("2026abc", ra, dec), "record", "SN 2026abc, SN Ia, discovered 2026-09-24"),
+    (lambda ra, dec: {}, "none_yet", mon.TNS_NONE_YET),
+    (lambda ra, dec: None, "unavailable", mon.TNS_UNAVAILABLE),
+])
+def test_every_alert_in_the_report_carries_its_tns_status_and_line(env, monkeypatch, answer, status, line):
+    env["objects"] = [obj(NEW_ZTF)]
+    monkeypatch.setattr(mon.tns, "tns_lookup", answer)
+    mon.scan("D", (150, 12, 1))
+    assert report()["alerts"][0]["tns"] == {"status": status, "line": line}
+
+
+@pytest.mark.parametrize("init", [False, True], ids=["live", "init"])
+def test_a_dry_run_leaves_reports_untouched(env, init):
+    if init:
+        mon.state_file("D").unlink()
+    env["objects"] = [obj(NEW_ZTF)]
+    mon.REPORTS_DIR.mkdir(parents=True)
+    for name in ("qa_alerce_lsst_20261001_071300_n256.csv", "transient_D_20261001_160000.json.tmp"):
+        (mon.REPORTS_DIR / name).write_text("x")  # not even a killed run's leftover is cleaned
+    before = sorted(p.name for p in mon.REPORTS_DIR.iterdir())
+    assert mon.scan("D", (150, 12, 1), dry_run=True, init=init) == 0
+    assert sorted(p.name for p in mon.REPORTS_DIR.iterdir()) == before
+
+
+def test_a_failed_listing_writes_its_report_after_the_state_and_exits_1(env, monkeypatch):
+    env["newest"]["ztf"] = ({"oid": "ZTF26x", "lastmjd": NOW - 1}, None)  # ZTF has data; its listing says none
+    seen, write = [], mon._write_report
+
+    def after_the_state(name, path, rep):
+        seen.append(state()["last_mjd"])
+        return write(name, path, rep)
+
+    monkeypatch.setattr(mon, "_write_report", after_the_state)
+    assert mon.scan("D", (150, 12, 1)) == 1
+    assert seen == [NOW]  # one report, written once the state was saved
+    r = report()
+    assert r["exit_code"] == 1 and r["listings"]["ztf"]["status"] == "failed" and r["listings"]["lsst"]["status"] == "quiet"
+
+
+def test_an_init_report_has_no_alerts_but_what_it_recorded_and_absorbed(env, capsys, monkeypatch):
+    mon.state_file("D").unlink()
+    env["objects"] = [obj(NEW_ZTF), obj(NEW_ZTF, oid="ZTF26bbb", ra=HIGH_B[0] + 0.01)]
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: pytest.fail("TNS looked up for an unreported object"))
+    assert mon.scan("D", (150, 12, 1), init=True) == 0
+    assert "INIT: recorded 2 survey objects that already qualify, not reported (host 2); parked 0." in capsys.readouterr().out
+    r = report("transient_D_*_init.json")
+    assert r["mode"] == "init" and "alerts" not in r
+    assert r["recorded"] == {"by_category": {"host": 2}, "parked": 0}
+    assert [a["key"] for a in r["absorbed"]] == ["ztf:ZTF26aaa", "ztf:ZTF26bbb"]
+    assert not any("tns" in a for a in r["absorbed"])
+    assert r["point_source_watch"][0].startswith("Point-source watch:")  # the watch runs during --init too
+
+
+def test_a_network_failure_writes_a_short_report(env, monkeypatch):
+    def down(*a, **kw):
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(mon, "discover_alerce", down)
+    assert mon.scan("D", (150, 12, 1)) == 1
+    r = report()
+    assert r["exit_code"] == 1 and r["error"].startswith("network error after 3 attempts") and "listings" not in r
+    assert len(r["warnings"]) == mon.MAX_RETRIES - 1 and r["warnings"][0].startswith("network error (attempt 1/3)")
+
+
+def test_a_report_is_written_whole_or_not_at_all(env, capsys, monkeypatch):
+    env["objects"] = [obj(NEW_ZTF)]
+    rename = mon.Path.rename
+
+    def read_only(self, target):
+        if self.parent == mon.REPORTS_DIR:
+            raise OSError(30, "Read-only file system")
+        return rename(self, target)
+
+    monkeypatch.setattr(mon.Path, "rename", read_only)
+    assert mon.scan("D", (150, 12, 1)) == 1
+    assert "ERROR: run report not written" in capsys.readouterr().err
+    assert list(mon.REPORTS_DIR.iterdir()) == []  # its temp file removed, nothing half-written
+    assert state()["last_mjd"] == NOW  # the state is saved all the same
+
+
+def test_a_rise_from_nothing_is_null_and_the_report_strict_json(env, monkeypatch):
+    env["objects"] = [obj(NEW_ZTF)]
+    monkeypatch.setattr(mon, "rising", lambda points, first: mon.Rise("r", math.inf, 6.0, 4.0))
+    assert mon.scan("D", (150, 12, 1)) == 0
+    assert report()["alerts"][0]["rise"] == {"band": "r", "mag": None, "sigma": 6.0, "days": 4.0}
+
+
+def test_a_non_finite_float_past_the_builder_fails_the_write_not_the_json(env, capsys, monkeypatch):
+    env["objects"] = [obj(NEW_ZTF)]
+    build = mon.alert_record
+    monkeypatch.setattr(mon, "alert_record", lambda *a: {**build(*a), "gal_b": math.nan})
+    assert mon.scan("D", (150, 12, 1)) == 1
+    assert "ERROR: run report not written" in capsys.readouterr().err and list(mon.REPORTS_DIR.iterdir()) == []
+
+
+def test_a_killed_runs_leftover_is_removed_and_nothing_else_in_reports(env):
+    mon.REPORTS_DIR.mkdir(parents=True)
+    others = {"transient_ecdfs_20261001_160000.json.tmp", "qa_alerce_lsst_20261001_071300_n256.csv",
+              "transient_D_20261001_160000.json"}
+    for name in others | {"transient_D_20261001_160000.json.tmp"}:
+        (mon.REPORTS_DIR / name).write_text("x")
+    mon.scan("D", (150, 12, 1))
+    left = {p.name for p in mon.REPORTS_DIR.iterdir()}
+    assert "transient_D_20261001_160000.json.tmp" not in left and others <= left
+
+
+def test_report_file_names_are_local_time_and_say_init(nine_hours_ahead):
+    started = datetime.datetime(2026, 10, 23, 16, 0, 5)
+    assert mon.report_file("ecdfs", "live", started) == mon.REPORTS_DIR / "transient_ecdfs_20261023_160005.json"
+    assert mon.report_file("ecdfs", "init", started).name == "transient_ecdfs_20261023_160005_init.json"
+    assert mon.REPORTS_DIR == PROJECT_ROOT / "reports"  # reports/, not logs/
 
 
 # --- CLI ---------------------------------------------------------------------------------------

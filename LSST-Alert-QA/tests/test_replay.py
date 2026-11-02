@@ -8,7 +8,7 @@ import pytest
 
 from rubin_qa import replay
 from rubin_qa import transient_monitor as mon
-from rubin_qa.photometry import PhotPoint, mag_to_njy
+from rubin_qa.photometry import PhotPoint, SurveyObject, mag_to_njy
 from rubin_qa.sky_catalog import Crossmatch
 
 CONE = (150.1, 2.5, 2.82)
@@ -21,6 +21,7 @@ def tmp_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(replay, "CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(replay, "REPORT_DIR", tmp_path / "logs")
     monkeypatch.setattr(mon, "STATE_DIR", tmp_path / "state")  # the point-source watch file
+    monkeypatch.setattr(mon, "REPORTS_DIR", tmp_path / "reports")  # the live run, where a test runs one
     monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: pytest.fail("TNS asked in a test that set no answer"))
     return tmp_path
 
@@ -77,16 +78,16 @@ def test_an_empty_chunk_is_asked_again_day_by_day():
     """ALeRCE's LSST listing can answer a heavy query with an empty result instead of an error."""
     q = fake_query({(100.0, 107.0): [],  # the silent-empty answer
                     (103.0, 104.0): [item("1706", 103.2, 105.0, 4, "lsst")]})
-    notes = []
-    got = replay.list_candidates("lsst", CONE, 100.0, 107.0, cut=True, query=q, notes=notes)
+    warnings = []
+    got = replay.list_candidates("lsst", CONE, 100.0, 107.0, cut=True, query=q, warnings=warnings)
     assert [r["oid"] for r in got] == ["1706"]
-    assert notes and "empty chunk answer contradicted by daily queries" in notes[0]
+    assert warnings and "empty chunk answer contradicted by daily queries" in warnings[0]
 
 
 def test_a_genuinely_empty_chunk_stays_empty_after_the_daily_check():
     q = fake_query({})
-    notes = []
-    assert replay.list_candidates("lsst", CONE, 100.0, 107.0, query=q, notes=notes) == [] and notes == []
+    warnings = []
+    assert replay.list_candidates("lsst", CONE, 100.0, 107.0, query=q, warnings=warnings) == [] and warnings == []
     assert len(q.calls) == 1 + 7
 
 
@@ -126,7 +127,7 @@ def world(monkeypatch):
     """One footprint's worth of candidates and light curves, all in memory."""
     data = {"rows": [], "curves": {}}
     monkeypatch.setattr(replay, "cached_candidates",
-                        lambda name, survey, cone, lo, hi, cut, notes: [r for r in data["rows"] if r["survey"] == survey
+                        lambda name, survey, cone, lo, hi, cut, warnings: [r for r in data["rows"] if r["survey"] == survey
                                                                          and (not cut or mon.spans_nights(r["first"], r["last"]))])
     monkeypatch.setattr(replay, "ztf_neighbours", lambda row: data.get("neighbours", {}).get(row["oid"], []))
     monkeypatch.setattr(replay, "light_curve", lambda survey, oid: (data["curves"][oid], None, None))
@@ -192,6 +193,32 @@ def test_the_replay_writes_its_alerts_with_the_window_and_the_cut(world, tmp_dir
     replay.run("D", CONE, "2026-04-06", "2026-04-10", cut=False, classify=HOST, quiet=True)
     report = json.loads((tmp_dirs / "logs" / "replay_D_2026-04-06_2026-04-10_nocut.json").read_text())
     assert report["cut"] is False and report["alerts"][0]["key"] == "ztf:ZTF26sn"
+    assert report["warnings"] == [] and "notes" not in report  # warnings; the alert notes are records with note_on
+
+
+def test_live_and_replay_write_the_same_record_for_the_same_object(world, tmp_dirs, monkeypatch):
+    """One builder, mon.alert_record: the same object judged on the same day is the same record, live or
+    replayed, but for the live alert's optional tns."""
+    points = [lim(NOW0 - 4.0), det(NOW0 - 2.4), det(NOW0 - 2.38), det(NOW0 - 0.4)]
+    add(world, "ZTF26sn", points)
+    (replayed,) = replay.run("D", CONE, DAY0, DAY0, classify=HOST, quiet=True)
+
+    def gather(cone, now, since, until, stats, newest=None):
+        for survey in mon.LIVE_SURVEYS:
+            stats[f"{survey}_listing"] = mon.ListingCheck("objects", "1 objects", now)
+        return [SurveyObject("ztf", "ZTF26sn", 150.0, 12.0, points=list(points), broker_refs={"alerce": "ZTF26sn"})]
+
+    monkeypatch.setattr(mon, "gather", gather)
+    monkeypatch.setattr(mon, "now_mjd", lambda: NOW0 - 1 / 86400)  # a second before the replayed day ends
+    monkeypatch.setattr(mon, "footprint_classifier", lambda cone: HOST)
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: {})
+    mon._save_state(mon.state_file("D"), {"last_mjd": None, "reported": {}, "parked": {}})
+    assert mon.scan("D", CONE) == 0
+    (path,) = (tmp_dirs / "reports").glob("transient_D_*.json")
+    (live,) = json.loads(path.read_text())["alerts"]
+    assert live.pop("tns")["status"] == "none_yet"
+    assert set(live) == set(replayed)
+    assert live == json.loads(json.dumps(replayed))
 
 
 def test_the_window_reaches_back_one_lookback():
