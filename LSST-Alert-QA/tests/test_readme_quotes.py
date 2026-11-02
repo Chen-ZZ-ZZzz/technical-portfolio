@@ -12,7 +12,7 @@ Operational settings (timeouts, retries, deadlines) are not quoted: the README p
 to them (CLAUDE.md, "Documentation: one home per fact").
 
 The same table guards systemd/README.md's summary of the unit files (cadence, command,
-start timeouts) against the files, its "frozen" against the files test_sso_frozen pins
+start timeouts, write paths) against the files, its "frozen" against the files test_sso_frozen pins
 (active and dormant cannot be read from a file: arming is the install), and the README's
 antares-client version against the lock. It checks what the docs say about the units,
 never that a unit works: that is the user's install. And it guards the README's in-page
@@ -71,6 +71,11 @@ def agreed(*values: str) -> str:
 def frozen(timer: str) -> tuple[str, ...]:
     """('frozen',) for a unit whose files are SHA-pinned, else nothing: the status column's marker."""
     return ("frozen",) if any(f"systemd/{timer}.{s}" in FROZEN_FILES for s in ("timer", "service.example")) else ()
+
+
+def writes(service: str) -> str:
+    """A unit's ReadWritePaths as the write-path table spells them: `dir/`, in the file's order."""
+    return ", ".join(f"`{Path(p).name}/`" for p in unit(f"{service}.service.example", "ReadWritePaths").split())
 
 
 def locked(package: str) -> str:
@@ -141,6 +146,9 @@ GUARDED = {
          unit("lsst-transient-monitor.service.example", "TimeoutStartSec")),
         ("sampler schedule", r"`OnCalendar=(\w+)` \+ `RandomizedDelaySec=(\d+)`",
          (unit("lsst-latency-sample.timer", "OnCalendar"), unit("lsst-latency-sample.timer", "RandomizedDelaySec"))),
+        # the write-path table: every unit not frozen has a row naming it (a row may name two)
+        *[(f"write paths, {t}", rf"\| (?:`[\w-]+`, )*`{t}`(?:, `[\w-]+`)* \| ((?:`\w+/`(?:, )?)+) \|", writes(t))
+          for t in TIMERS if not frozen(t)],
     ],
 }
 

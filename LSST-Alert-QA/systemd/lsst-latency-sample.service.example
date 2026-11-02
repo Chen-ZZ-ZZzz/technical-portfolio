@@ -1,4 +1,4 @@
-# Rename to lsst-latency-sample.service and replace /path/to/dir/ with your path
+# Rename to lsst-latency-sample.service and replace __PROJECT_ROOT__ with your path
 
 [Unit]
 Description=Broker latency sample (feeds SECONDS_PER_OBJECT in config.py)
@@ -7,13 +7,13 @@ Description=Broker latency sample (feeds SECONDS_PER_OBJECT in config.py)
 Type=oneshot
 SyslogIdentifier=lsst-latency-sample
 ExecStartPre=/usr/bin/nm-online -q -t 36
-WorkingDirectory=/path/to/LSST-Alert-QA
+WorkingDirectory=__PROJECT_ROOT__
 # --quick skips the page_size=100 candidate fetch: it is the heaviest query in the
 # sample and does not need to run every hour. Drop --quick on a few manual runs
 # instead, or on a second timer at daily cadence.
 # --quiet keeps the journal to one line per run; the full record still goes to the
 # JSONL log regardless.
-Environment=PYTHONPYCACHEPREFIX=/path/to/LSST-Alert-QA/cache/pycache
+Environment=PYTHONPYCACHEPREFIX=__PROJECT_ROOT__/cache/pycache
 Environment=PYTHONUNBUFFERED=1
 Environment=UV_NO_SYNC=1
 ExecStart=%h/.local/bin/uv run tools/sample_latency.py --quiet --quick
@@ -22,7 +22,7 @@ TimeoutStartSec=5min
 # hardening — see "Sandboxing" in README.md before editing.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/path/to/LSST-Alert-QA/cache /path/to/LSST-Alert-QA/state
+ReadWritePaths=__PROJECT_ROOT__/cache __PROJECT_ROOT__/state
 PrivateTmp=yes
 PrivateDevices=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

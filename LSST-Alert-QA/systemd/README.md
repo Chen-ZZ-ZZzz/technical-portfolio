@@ -8,7 +8,7 @@ the unit to inspect without a lookup table.
 
 | unit (`.service` + `.timer`) | cadence | runs | status |
 |---|---|---|---|
-| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 256 -q` | active |
+| `lsst-pipeline-alerce` | weekly | `pipeline.py lsst 196 -q` | active |
 | `lsst-pipeline-antares` | daily | `pipeline.py antares 256 -q` | active |
 | `lsst-transient-monitor` | daily, 16:00 (your choice) | `python -m rubin_qa.transient_monitor` | active since 2026-10-03 |
 | `lsst-sso-monitor` | daily | `antares_sso_monitor.py` | **frozen**; stopped 2026-08-18 |
@@ -98,7 +98,7 @@ Things that catch people out:
 
   | unit | `ReadWritePaths` |
   |---|---|
-  | `lsst-transient-monitor` | `state/`, `cache/` |
+  | `lsst-transient-monitor` | `state/`, `cache/`, `reports/` |
   | `lsst-pipeline-alerce`, `lsst-pipeline-antares` | `cache/`, `reports/` |
   | `lsst-latency-sample` | `cache/`, `state/` |
 
@@ -125,9 +125,9 @@ Things that catch people out:
   home directory can be written. Adding `ProtectHome=yes` hides it entirely and breaks
   the units with a confusing cache error. So anything a run writes goes under the
   project (matplotlib's font cache, for one: the comment in `client.py`).
-- `%h/.local/bin/uv` in the ANTARES example is a systemd specifier for the user's
-  home, so that `ExecStart` needs no editing if `uv` is on the usual path. The other
-  examples spell out `/path/to/uv`; either form works.
+- `%h` in `%h/.local/bin/uv`, in every active and dormant example, is a systemd specifier
+  for the user's home, so `ExecStart` needs no editing if `uv` is on the usual path. The
+  frozen SSO example spells out `/path/to/uv`; either form works.
 - A syscall denial shows up as `EPERM` from an ordinary library call, not a crash —
   check `journalctl --user -u <unit> -n 50` if a run starts failing right after a
   dependency upgrade, and verify with `systemd-analyze --user security <unit>`.
@@ -138,8 +138,10 @@ Things that catch people out:
 
 Daily systemd user timer that runs the transient monitor on the live footprint
 (`LIVE_FOOTPRINT` in `config.py`). Its report goes to the journal
-under `lsst-transient-monitor`, like every active and dormant unit here. The point-source watch
-runs inside it; nothing else to install.
+under `lsst-transient-monitor`, like every active and dormant unit here, and each run
+also writes it as JSON to `reports/` (what is in it, and when one is written: `scan`'s
+docstring in `transient_monitor.py`). The point-source watch runs inside it; nothing else
+to install.
 
 ## Files
 
@@ -169,6 +171,7 @@ systemctl --user enable --now lsst-transient-monitor.timer
 systemctl --user list-timers lsst-transient-monitor.timer
 systemctl --user start lsst-transient-monitor.service   # a real run now: saves state, like the daily one
 journalctl --user -u lsst-transient-monitor.service --since today -o cat   # the day's report
+ls -t reports/transient_ecdfs_*.json | head -1   # the same run, as JSON
 systemctl --user --failed
 ```
 
@@ -193,6 +196,12 @@ systemctl --user --failed
   missing, or the network failed after retries. The `ERROR:` line in the journal says
   which, and the unit shows in `systemctl --user --failed`. A missed listing loses
   nothing: parked objects stay parked, and the 14-day window lets the next run catch up.
+- **A day without a report in `reports/` means the monitor never got to ALeRCE**: the
+  machine was off or asleep (`Persistent=true` makes the run up later), `nm-online` failed
+  in `ExecStartPre` (the monitor never started), `uv` or the import failed, the state was
+  missing, or the unit was killed at `TimeoutStartSec` (its `.tmp` is removed by the next
+  report). Every run past the state check writes one, also when it exits 1 on a failed
+  listing or on the network.
 - `WorkingDirectory` is for `uv`, which finds the project from it. The monitor resolves
   every path from the repo root (`config.PROJECT_ROOT`), never the working directory.
 - User timers fire only while the user's systemd manager runs (a login session, or
@@ -315,9 +324,9 @@ uv run tools/sample_latency.py --report --by-hour
 
 ---
 
-# Automated ALeRcE LSST Pipeline Setup
+# Automated ALeRCE LSST Pipeline Setup
 
-Weekly systemd user timer that runs `pipeline.py` on ALeRcE broker.
+Weekly systemd user timer that runs `pipeline.py` on ALeRCE broker.
 
 ## Files
 
