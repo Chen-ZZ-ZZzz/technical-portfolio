@@ -97,13 +97,14 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
     all_flags = []
     if issues:
         all_flags.append("completeness: " + ", ".join(issues))
+    all_flags += [f"unknown_classifier: {u}" for u in cl.get("unknown", [])]
     if cl.get("n_classifiers", 0) < 2:
         all_flags.append("insufficient_classifiers")
     if cl.get("flag"):
         all_flags.append(cl["flag"])
     flag = "; ".join(all_flags) or None
 
-    if issues:
+    if issues or cl.get("unknown"):  # an unknown classifier: the registry needs its line (classifier.py)
         status = "FLAG"
     elif cl.get("n_classifiers", 0) < 2:
         status = "FLAG"

@@ -13,12 +13,8 @@ cannot change afterwards (design: the user, 2026-10-01):
                night (transient_monitor.spans_nights on today's first and last
                detection). The span cut is lossless by construction: every path to a
                report requires it, and a span only grows, so an object below it today
-               was below it on every replayed day. No classifier filter: the LSST
-               listing has one row per object per classifier, and since the stream
-               resumed new objects carry only a new classifier's name, so a filter on
-               one name loses them; an object's rows are merged on its oid
-               (list_candidates), and they agree on every field kept (README, "Known
-               API Quirks").
+               was below it on every replayed day. No classifier filter
+               (list_candidates says why).
   neighbours   ZTF objects of any age within the association radius of each LSST
                candidate (a position never changes), for "bracketed by ZTF".
   light curves one fetch per object, cached on disk; a failed fetch is never cached.
@@ -143,6 +139,12 @@ def list_candidates(survey: str, cone, lo: float, hi: float, cut: bool = True, q
     Objects first detected in [lo, hi], in LISTING_CHUNK_DAYS chunks; with cut, at least
     2 detections (server side) spanning more than one night (here). An empty chunk is
     asked again day by day before it is believed (a contradicted one goes into warnings).
+
+    No classifier filter: the LSST listing has one row per object per classifier, and
+    since the stream resumed new objects carry only a new classifier's name, so a filter
+    on any one name would lose them without an error. Every row is read, and an object's
+    rows are merged here on its oid; they agree on every field kept (README, "Known API
+    Quirks").
     """
     warnings = warnings if warnings is not None else []
     min_ndet = 2 if cut else 1

@@ -184,6 +184,74 @@ def classify_antares(tags: list) -> dict:
     }
 
 
+# ALeRCE classifier registry (user, 2026-11-03; the rule: CLAUDE.md, "QA pipeline"). Every
+# (classifier_name, classifier_version) ALeRCE returns is listed: as a live version of a
+# voting family, or as context. A family is one line of evidence, the same input and the same
+# lineage of method, whatever the name or version. Only a live version votes, one vote per
+# family; live means present on the newest objects (the test and its findings: README,
+# "Independent Evidence in ALeRCE's Classifiers"). A pair listed nowhere is unknown: FLAG
+# unknown_classifier, never a vote, until its line is added here. When one appears, run
+# tools/alerce_live_classifiers.py: it prints what to change here, and this file is edited
+# by hand.
+#
+# VOTERS: family -> its live (name, version) pairs; where several are on one object, the last
+# listed votes.
+#   stamp_classifier_rubin_beta (LSST): the Rubin stamp CNN on the alert cutouts. _20260421
+#                     (202) is its live version; 201 is retired.
+#   stamp (ZTF):      the stamp CNN on the first alert's cutouts. 1.0.4 and the retrained
+#                     2025_beta (which adds a satellite class) are both live; 2025_beta votes.
+#   BHRF (ZTF):       the balanced hierarchical random forest. 2.1.0, on forced photometry, is
+#                     live; its alert-photometry ancestor lc_classifier and the forced-photometry
+#                     betas are the same lineage, retired.
+#   ATAT (ZTF):       a transformer on forced photometry, a different method, so its own
+#                     family. 1.0.0 is live.
+VOTERS: dict[str, tuple[tuple[str, str], ...]] = {
+    "stamp_classifier_rubin_beta": (("stamp_classifier_rubin_beta_20260421", "202"),),
+    "stamp": (("stamp_classifier", "stamp_classifier_1.0.4"), ("stamp_classifier_2025_beta", "2.1.1_beta")),
+    "BHRF": (("lc_classifier_BHRF_forced_phot", "2.1.0"),),
+    "ATAT": (("LC_classifier_ATAT_forced_phot(beta)", "1.0.0"),),
+}
+FAMILY_OF: dict[tuple[str, str], str] = {key: family for family, keys in VOTERS.items() for key in keys}
+
+# CONTEXT: known pairs that never vote, in three kinds.
+#   RETIRED:           a family's earlier versions, absent from the newest objects, with their
+#                      hierarchy levels. One model drifting is not a second opinion, and a stale
+#                      version is not the broker's current view. On a newest object it would be
+#                      live again.
+#   HIERARCHY_LEVELS:  a live hierarchical model's top level (Periodic / Stochastic / Transient)
+#                      and branches: coarser views of its own leaf row, with class lists that never
+#                      match the leaf's, not opinions of their own. Live by nature.
+#   POSITION_LABELS:   nuclear_classifier (LSST), nuclear or off-nuclear at probability 1.0. It
+#                      answers where, not what; its label stays in the probabilities, out of the
+#                      vote and out of the flag. Live by nature.
+_LEVELS = ("_top", "_periodic", "_stochastic", "_transient")
+RETIRED: frozenset[tuple[str, str]] = frozenset({
+    ("stamp_classifier_rubin_beta", "201"),
+    ("stamp_classifier", "stamp_classifier_1.0.0"),
+    ("stamp_classifier", "1.0.1"),
+    ("stamp_classifier_2025_beta", "2.0.0_beta"),
+    ("stamp_classifier_2025_beta", "2.1.0_beta"),
+    ("lc_classifier", "hierarchical_rf_1.1.0"),
+    ("lc_classifier", "lc_classifier_1.1.13"),
+    *((f"lc_classifier{level}", "hierarchical_rf_1.1.0") for level in _LEVELS),
+    *(("LC_classifier_BHRF_forced_phot(beta)", v) for v in ("1.0.7", "1.1.1", "1.1.4", "1.1.5", "2.0.0")),
+    *(("LC_classifier_ATAT_forced_phot(beta)", v) for v in ("0.2.0", "0.3.1", "0.3.4", "0.3.6")),
+})
+HIERARCHY_LEVELS: frozenset[tuple[str, str]] = frozenset(
+    (f"lc_classifier_BHRF_forced_phot{level}", "2.1.0") for level in _LEVELS)
+POSITION_LABELS: frozenset[tuple[str, str]] = frozenset({("nuclear_classifier", "1")})
+CONTEXT: frozenset[tuple[str, str]] = RETIRED | HIERARCHY_LEVELS | POSITION_LABELS
+
+
+def _version_str(version) -> str:
+    """A version as the registry spells it: ALeRCE LSST sends integers (202), ZTF strings."""
+    if isinstance(version, str):
+        return version
+    if version is None or pd.isna(version):
+        return ""
+    return str(int(version)) if float(version).is_integer() else str(version)
+
+
 def _version_score(version) -> float:
     """
     Parse a classifier version into a small recency multiplier [0.90, 1.10].
@@ -226,13 +294,25 @@ def _method_weight(classifier_name: str, ndet: int) -> float:
         return 1.0 / (1.0 + ndet / 500.0)
 
 
+_NO_VOTE = {"top_class": None, "class_prob": None, "consensus": None,
+            "n_classifiers": 0, "n_agree": 0, "n_disagree": 0, "verdict": "review_major"}
+
+
 def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
     """
-    Weighted classifier consensus.
+    Consensus of the broker's independent classifications.
 
-    Each vote (ranking=1 row per classifier) is weighted by:
+    The votes come from the registry (VOTERS, CONTEXT): one per family, its live version's
+    ranking=1 row, the version listed last where two are on the object. Context rows never
+    vote. A (name, version) the registry does not know never votes either; it is returned in
+    "unknown", and build_qa_row FLAGs it. Families are compared only when their class lists
+    match exactly, read from the object's own rows (a version lists every class it has), so
+    no class name is ever mapped onto another. The largest such group is judged (a tie goes
+    to the heavier one); a group of one is a single opinion, n_classifiers 1.
+
+    Within the group, each vote is weighted by:
       - method     — lc classifier > stamp, gap widens with ndet
-      - confidence — classifier's own probability for its top class
+      - confidence — the vote's own probability for its top class
       - recency    — small tiebreaker from classifier version string
 
     QA rules applied in order:
@@ -240,33 +320,51 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
       >= MAJORITY_THRESHOLD + outliers low → majority label, minor flag
       otherwise                            → genuine split, needs review
 
+    Also returns "families" (the families with a live vote on this object), "compared"
+    (those in the judged group) and "unknown" ("name@version" pairs).
+
     Receives an already-fetched probs DataFrame and ndet (not an oid)
     so no extra API calls are made here.
     """
     if probs.empty:
-        return {"top_class": None, "class_prob": None, "consensus": None,
-                "n_classifiers": 0, "n_agree": 0, "n_disagree": 0,
-                "flag": "no_classification", "verdict": "review_major"}
+        return {**_NO_VOTE, "flag": "no_classification", "families": [], "compared": [], "unknown": []}
 
-    top = probs[probs["ranking"] == 1].copy()
-    if top.empty:
-        return {"top_class": None, "class_prob": None, "consensus": None,
-                "n_classifiers": 0, "n_agree": 0, "n_disagree": 0,
-                "flag": "no_ranking1_rows", "verdict": "review_major"}
+    probs = probs.assign(_key=[(str(n), _version_str(v))
+                               for n, v in zip(probs["classifier_name"], probs["classifier_version"])])
+    present = set(probs["_key"])
+    unknown = sorted(f"{n}@{v}" for n, v in present if (n, v) not in FAMILY_OF and (n, v) not in CONTEXT)
+    votes = [(family, [k for k in keys if k in present][-1])
+             for family, keys in VOTERS.items() if any(k in present for k in keys)]
+    seen = {"families": [family for family, _ in votes], "unknown": unknown}
 
-    top["_w"] = (
-        top["classifier_name"].apply(lambda n: _method_weight(n, ndet))
-        * top["probability"]
-        * top["classifier_version"].apply(_version_score)
-    )
+    ranked = probs[probs["ranking"] == 1]
+    if ranked.empty:
+        return {**_NO_VOTE, "flag": "no_ranking1_rows", "compared": [], **seen}
+    if not votes:
+        return {**_NO_VOTE, "flag": "no_live_classifier", "compared": [], **seen}
+
+    groups: dict[frozenset, list[dict]] = {}
+    for family, key in votes:
+        row = ranked[ranked["_key"] == key]
+        if row.empty:
+            continue
+        row = row.iloc[0]
+        weight = (_method_weight(row["classifier_name"], ndet) * row["probability"]
+                  * _version_score(row["classifier_version"]))
+        classes = frozenset(probs.loc[probs["_key"] == key, "class_name"])
+        groups.setdefault(classes, []).append({"family": family, "class_name": row["class_name"],
+                                               "probability": float(row["probability"]), "_w": float(weight)})
+    if not groups:
+        return {**_NO_VOTE, "flag": "no_ranking1_rows", "compared": [], **seen}
+    group = max(groups.values(), key=lambda g: (len(g), sum(v["_w"] for v in g)))
+    seen["compared"] = [v["family"] for v in group]
+    top = pd.DataFrame(group)
 
     class_weights = top.groupby("class_name")["_w"].sum()
     total_weight  = class_weights.sum()
 
     if total_weight == 0:
-        return {"top_class": None, "class_prob": None, "consensus": None,
-                "n_classifiers": len(top), "n_agree": 0, "n_disagree": 0,
-                "flag": "zero_total_weight", "verdict": "review_major"}
+        return {**_NO_VOTE, "n_classifiers": len(top), "flag": "zero_total_weight", **seen}
 
     plurality    = class_weights.idxmax()
     w_consensus  = class_weights[plurality] / total_weight
@@ -307,4 +405,5 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
         "n_disagree":    int(n_total - n_agree),
         "flag":          flag,
         "verdict":       verdict,
+        **seen,
     }

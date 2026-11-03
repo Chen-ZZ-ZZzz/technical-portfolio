@@ -29,6 +29,7 @@ def test_from_root_resolves_a_relative_path_against_the_repo_root_wherever_the_r
 
 
 @pytest.mark.parametrize("tool,argv,target", [
+    ("alerce_live_classifiers", ["--report", "reports/qa_alerce_ztf.csv"], "run"),
     ("lsst_box_census", ["--boxes", "D", "--csv", "logs/census.csv"], "write_csv"),
     ("replay_tns_check", ["logs/replay_D.json"], "run"),
     ("sample_latency", ["--report", "--log", "state/samples.jsonl"], "report"),

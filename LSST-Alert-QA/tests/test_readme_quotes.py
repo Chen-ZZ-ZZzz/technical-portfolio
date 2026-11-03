@@ -129,7 +129,7 @@ GUARDED = {
         ("seconds per object, antares", _latency_row("antares"), SECONDS_PER_OBJECT["antares"]),
         ("unmeasured-survey fallback", r"The ([\d.]+)s figure was an episode", DEFAULT_SECONDS_PER_OBJECT),
         ("antares-client version", r"antares-client ([\d.]+) \(the pinned version\)", locked("antares-client")),
-        ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|`pipeline\.py lsst N` needs N ≤ (\d+)",
+        ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|N ≤ (\d+): the LSST listing's page limit",
          ALERCE_MAX_PAGE_SIZE),
         ("in-page links", r"\]\(#([^)]+)\)", anchors(DOCS["README.md"])),
     ],

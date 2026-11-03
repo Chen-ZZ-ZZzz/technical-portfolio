@@ -56,41 +56,51 @@ def lsst_dets():
     })
 
 
+# Live voters of the classifier registry (classifier.VOTERS), one per family.
+BHRF = ("lc_classifier_BHRF_forced_phot", "2.1.0")
+ATAT = ("LC_classifier_ATAT_forced_phot(beta)", "1.0.0")
+ZTF_STAMP = ("stamp_classifier", "stamp_classifier_1.0.4")
+ZTF_STAMP_2025 = ("stamp_classifier_2025_beta", "2.1.1_beta")
+LSST_STAMP = ("stamp_classifier_rubin_beta_20260421", "202")
+CLASSES = ("SN", "AGN", "VS", "asteroid", "bogus", "satellite")
+
+
+def class_rows(classifier: tuple[str, str], top: str, p: float, classes=CLASSES) -> list[dict]:
+    """One classifier version's rows as ALeRCE returns them: one row per class it has, ranked,
+    `top` at probability p and the rest below it. The class list is what decides whether two
+    families can be compared (classifier.classify_object)."""
+    name, version = classifier
+    rest = [c for c in classes if c != top]
+    share = (1 - p) / len(rest) if rest else 0.0
+    ranked = [(top, p)] + [(c, share * (1 - 0.01 * i)) for i, c in enumerate(rest)]
+    return [{"classifier_name": name, "classifier_version": version, "class_name": c,
+             "probability": q, "ranking": rank} for rank, (c, q) in enumerate(ranked, 1)]
+
+
+def probs_frame(*classifiers: list[dict]) -> pd.DataFrame:
+    return pd.DataFrame([row for rows in classifiers for row in rows])
+
+
+# The consensus fixtures give every voter one class list so that they can be compared; ALeRCE's
+# real live lists never match (README, "Independent Evidence in ALeRCE's Classifiers").
 @pytest.fixture
 def probs_clean():
-    """Both classifiers agree on 'SN' with high confidence → no flag."""
-    return pd.DataFrame({
-        "classifier_name":    ["lc_classifier", "stamp_classifier"],
-        "classifier_version": ["1.0.0",          "1.0.0"],
-        "class_name":         ["SN",              "SN"],
-        "probability":        [0.95,              0.90],
-        "ranking":            [1,                 1],
-    })
+    """Two comparable families agree on 'SN' with high confidence → no flag."""
+    return probs_frame(class_rows(BHRF, "SN", 0.95), class_rows(ATAT, "SN", 0.90))
 
 
 @pytest.fixture
 def probs_majority():
-    """Three stamp classifiers: two agree on SN, one outlier below threshold → minor flag.
-    Stamp-only so weights are equal and lc doesn't push consensus above HIGH_CONFIDENCE_THRESHOLD."""
-    return pd.DataFrame({
-        "classifier_name":    ["stamp_classifier", "stamp_classifier_02", "stamp_classifier_03"],
-        "classifier_version": ["1.0.0",             "1.0.0",               "1.0.0"],
-        "class_name":         ["SN",                "SN",                  "AGN"],
-        "probability":        [0.75,                0.70,                  0.20],
-        "ranking":            [1,                   1,                     1],
-    })
+    """Three comparable families: two agree on SN, one outlier below OUTLIER_PROB_THRESHOLD
+    → minor flag (weighted consensus 0.82: above MAJORITY, below HIGH_CONFIDENCE)."""
+    return probs_frame(class_rows(BHRF, "SN", 0.75), class_rows(ZTF_STAMP_2025, "SN", 0.75),
+                       class_rows(ATAT, "AGN", 0.25))
 
 
 @pytest.fixture
 def probs_split():
-    """lc and stamp disagree with substantial probability → genuine split."""
-    return pd.DataFrame({
-        "classifier_name":    ["lc_classifier", "stamp_classifier"],
-        "classifier_version": ["1.0.0",          "1.0.0"],
-        "class_name":         ["SN",              "AGN"],
-        "probability":        [0.60,              0.55],
-        "ranking":            [1,                 1],
-    })
+    """Two comparable families disagree with substantial probability → genuine split."""
+    return probs_frame(class_rows(BHRF, "SN", 0.60), class_rows(ATAT, "AGN", 0.55))
 
 
 @pytest.fixture

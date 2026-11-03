@@ -90,8 +90,9 @@ class TestProfileZtf:
         self._run(ztf_lc, probs_clean, ztf_ms)
         out = capsys.readouterr().out
         assert "FULL PROFILE: ZTF1   [ztf]" in out
-        assert "stamp_classifier" in out
+        assert "lc_classifier_BHRF_forced_phot" in out
         assert "Verdict:     SN" in out
+        assert "Families:    voting BHRF, ATAT; compared BHRF, ATAT" in out
         assert "Detections:     2 epochs" in out
         assert "Non-detections: 1 upper limits" in out
         assert "Corrected:      1 / 2 have magpsf_corr" in out

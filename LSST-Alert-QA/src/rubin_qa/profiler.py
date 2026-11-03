@@ -72,6 +72,7 @@ def _print_verdict(cl: dict) -> None:
     """The weighted-consensus verdict, shared by every broker."""
     if cl.get("top_class") is None:
         print(f"  No classification. ({cl.get('flag') or 'no reason given'})")
+        _print_families(cl)
         return
     prob, consensus = cl.get("class_prob"), cl.get("consensus")
     print(f"\n  Verdict:     {cl['top_class']}"
@@ -79,8 +80,19 @@ def _print_verdict(cl: dict) -> None:
           + (f", weighted consensus {consensus:.0%})" if consensus is not None else ")"))
     print(f"  Classifiers: {cl['n_agree']}/{cl['n_classifiers']} "
           f"vote for '{cl['top_class']}'")
+    _print_families(cl)
     if cl.get("flag"):
         print(f"  FLAG: {cl['flag']}")
+
+
+def _print_families(cl: dict) -> None:
+    """ALeRCE only: which model families voted and were compared (the registry: classifier.VOTERS)."""
+    if "families" not in cl:
+        return
+    print(f"  Families:    voting {', '.join(cl['families']) or 'none'}; "
+          f"compared {', '.join(cl['compared']) or 'none'}")
+    if cl["unknown"]:
+        print(f"  Unknown:     {', '.join(cl['unknown'])} (not in the registry: no vote)")
 
 
 def _profile_alerce(oid: str, survey: str) -> None:

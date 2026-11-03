@@ -45,8 +45,7 @@ def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
     # LSST magstats do not exist to be missing: the multisurvey API raises
     # NotImplementedError for every object, so this token fired on 100% of LSST
     # rows. Any issue token makes build_qa_row return FLAG, so it forced every
-    # LSST object to FLAG and hid its real verdict — including the clean
-    # two-classifier PASS that LSST probabilities actually support. A condition
+    # LSST object to FLAG and hid its real classification verdict. A condition
     # that is always true of a survey describes the survey, not the object.
     # Drop the "not implemented" case here when ALeRCE ships query_magstats.
     if ms.empty and survey != "lsst":
