@@ -21,6 +21,10 @@ from .config import (
 from .reporting import deadline_for, estimate_runtime, run_antares_pipeline, run_pipeline
 
 SUMMARY_COLUMNS = ["oid", "ndet", "top_class", "consensus", "n_classifiers", "status"]
+# Exit status of a run its deadline stopped: the partial CSV is written, and the status
+# says it is partial, so a unit shows failed instead of passing for a full report.
+# 1 means no report was written; 2 is argparse's.
+EXIT_DEADLINE = 3
 
 
 def run_label(survey: str) -> tuple[str, str]:
@@ -32,6 +36,28 @@ def run_label(survey: str) -> tuple[str, str]:
     if survey == "antares":
         return "ANTARES", "antares"
     return f"ALeRCE {survey.upper()}", f"alerce_{survey}"
+
+
+def sample_line(df: pd.DataFrame) -> str | None:
+    """
+    What an ANTARES run on the listing covered (df.attrs["sample"], set by
+    run_antares_pipeline), so a reader sees how few exposures the loci came from.
+    None for a run on given IDs or an ALeRCE run.
+    """
+    s = df.attrs.get("sample")
+    if not s:
+        return None
+    span = ""
+    if s["newest_mjd"]:
+        lo, hi = s["newest_mjd"]
+        span = f" (MJD {lo:.4f})" if lo == hi else f" (MJD {lo:.4f}–{hi:.4f})"
+    times = "1 distinct time" if s["newest_times"] == 1 else f"{s['newest_times']} distinct times"
+    by = s.get("surveys", {})
+    split = f"ZTF {by.get('ZTF', 0)} / LSST {by.get('LSST', 0)}" + (
+        f" / unknown {by['unknown']}" if by.get("unknown") else "")
+    return (f"sample: {s['checked']} loci checked of {s['listed']} unique listed "
+            f"({s['asked']} asked; the most recently updated), newest alerts at {times}{span}, "
+            f"by survey {split}")
 
 
 def _planned_count(rest: list) -> int:
@@ -160,13 +186,27 @@ def main() -> None:
     csv_path = REPORTS_DIR / f"qa_{slug}_{date}_n{len(df)}.csv"
     df.to_csv(csv_path, index=False)
 
+    sample = sample_line(df)
     if quiet:
         flagged = df["flag"].notna().sum()
-        print(f"{label}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}")
+        print(f"{label}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}"
+              + (f"  | {sample}" if sample else ""))
     else:
         print(f"\n=== {label} Data Quality Report ===")
+        if sample:
+            print(sample)
         print(df[SUMMARY_COLUMNS].to_string())
         print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
+
+    stopped = df.attrs.get("stopped_at_deadline")
+    if stopped:
+        print(
+            f"{ERROR_PREFIX}{label}: stopped at the deadline after {stopped['done']}/{stopped['of']} objects "
+            f"({stopped['elapsed']:.0f}s elapsed, deadline {stopped['deadline']:.0f}s); "
+            f"partial report written: {csv_path}",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_DEADLINE)
 
 
 if __name__ == "__main__":

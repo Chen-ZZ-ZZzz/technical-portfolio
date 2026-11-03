@@ -199,10 +199,10 @@ def test_collect_writes_csv(tmp_path, monkeypatch, capsys):
 
 
 def test_collect_network_failure_exits_1(monkeypatch, capsys):
-    from requests.exceptions import ConnectionError
+    import httpx
 
     def down(*a):
-        raise ConnectionError("down")
+        raise httpx.ConnectError("down")
 
     monkeypatch.setattr(ap, "collect", down)
     assert ap.main([]) == 1

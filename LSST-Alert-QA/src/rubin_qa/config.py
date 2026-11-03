@@ -88,14 +88,16 @@ ALERCE_MAX_PAGE_SIZE = 200
 # whole page. What happens once it is spent: retry_budget.call.
 RETRY_BUDGET_SECONDS = 300.0
 
-# Measured wall-clock seconds per object, INTER_OBJECT_DELAY included. Settled by the
-# 2026-08/09 sampling campaign: each value sits at or above its survey's measured p95
-# (the numbers: README, "Broker Latency Sampling Campaign"). Update if broker response
-# times shift. What they size: reporting.estimate_runtime.
+# Seconds one object costs a run on average, INTER_OBJECT_DELAY included: the per-object
+# term of the runtime estimate, which leaves out the one-off listing. ztf and lsst: the
+# values the 2026-08/09 sampling campaign confirmed; antares: the mean of one sitting on
+# antares-client 2.x, 2026-11-03 (both: README, "Broker Latency Sampling Campaign"). Not a
+# ceiling: a unit's run is bounded by its TimeoutStartSec, checked in the same section.
+# Update if broker response times shift. What they size: reporting.estimate_runtime.
 SECONDS_PER_OBJECT = {
-    "ztf":     3.7,  # 3 ALeRCE calls per object
-    "lsst":    2.4,  # 2: ALeRCE's client refuses LSST magstats without a request
-    "antares": 1.0,  # 1 locus fetch
+    "ztf":     3.7,   # 3 ALeRCE calls per object
+    "lsst":    2.4,   # 2: ALeRCE's client refuses LSST magstats without a request
+    "antares": 1.71,  # 2 requests: the locus, then its alerts
 }
 # Seconds per object for a survey absent from the table above. Deliberately
 # pessimistic: a new broker is likelier to be slow than fast. A judgement call, not a
@@ -131,7 +133,7 @@ ERROR_PREFIX = "ERROR: "
 INTER_OBJECT_DELAY = 0.5  # seconds between objects; increase if hitting rate limits
 
 OUTPUT_COLUMNS = [
-    "broker", "oid", "ndet", "mag_range", "timespan_days",
+    "broker", "survey", "oid", "ndet", "mag_range", "timespan_days",
     "top_class", "class_prob", "consensus", "n_classifiers",
     "n_agree", "n_disagree",
     "confirmed", "has_issues", "completeness_issues", "flag", "status",

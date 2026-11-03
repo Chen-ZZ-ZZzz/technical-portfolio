@@ -3,13 +3,22 @@
 import sys
 
 import pandas as pd
-import requests
 
 from . import retry_budget
 from .config import (
     DEFAULT_PAGE_SIZE,
     ERROR_PREFIX,
 )
+
+# HTTP statuses that are an answer, not a fault: the request itself is malformed, so
+# resending it would only burn the run's retry budget on a guaranteed failure. The same
+# codes ALeRCE's side answers (client._api_call); a 404 needs no entry here, because
+# antares-client already answers a missing locus with None.
+ANSWERED_STATUSES = (400, 422)
+
+# ANTARES's ant_survey codes on an alert, by the survey that took it (the codes: CLAUDE.md,
+# "Known API quirks"; 2 is a ZTF upper limit, not LSST). A code missing here is unknown.
+ANT_SURVEY = {1: "ZTF", 2: "ZTF", 4: "LSST"}
 
 
 # ANTARES helpers shared by everything in the repo that still reads ANTARES: this module's
@@ -20,13 +29,24 @@ from .config import (
 
 def antares_errors() -> tuple[type[BaseException], ...]:
     """
-    What an ANTARES call can raise that is a broker fault, not a bug: requests exceptions
-    (ANTARES imposes a 60 s read timeout of its own) and AntaresException (non-404 4xx,
-    all 5xx). Imported lazily: antares-client is optional for ALeRCE-only installs.
+    What an ANTARES call can raise that is a broker fault worth retrying, not a bug:
+      httpx.TransportError  timeouts and dropped connections (antares-client 2.x talks
+                            through httpx, with a 60 s timeout of its own)
+      AntaresException      an HTTP error answer with a JSON body: a 5xx, or a 4xx that
+                            is neither answered by the client (404) nor ANSWERED_STATUSES
+      json.JSONDecodeError  the same answer with a body that is not JSON, which the client
+                            fails to parse (the API's 500s come as text/plain: README,
+                            "Known API Quirks")
+    Never pydantic's ValidationError: a response that does not fit the client's schema is
+    deterministic, so it must fail at once and loudly. Imported lazily: antares-client,
+    and httpx with it, is optional for ALeRCE-only installs.
     """
+    import json
+
+    import httpx
     from antares_client.exceptions import AntaresException
 
-    return (requests.exceptions.RequestException, AntaresException)
+    return (httpx.TransportError, AntaresException, json.JSONDecodeError)
 
 
 def is_solar_system(props: dict) -> bool:
@@ -44,17 +64,54 @@ def locus_survey_ids(props: dict) -> dict[str, list[str]]:
 
 
 def sky_distance_clause(cone: tuple[float, float, float]) -> dict:
-    """ANTARES's own cone filter, built by hand (elasticsearch-dsl cannot)."""
+    """
+    ANTARES's own cone filter, built by hand (elasticsearch-dsl cannot), in the form
+    antares-client 2.x's cone_search sends: radius in degrees, centre in hmsdms. The
+    client's cone_search itself refuses radii above 1°, which is why the tools build the
+    clause instead of calling it.
+    """
+    from astropy.coordinates import SkyCoord
+
     ra, dec, radius = cone
-    return {"sky_distance": {"distance": f"{radius} degree", "htm16": {"center": f"{ra} {dec}"}}}
+    location = SkyCoord(ra, dec, unit="deg").to_string("hmsdms")
+    return {"sky_distance": {"radius": f"{radius} degree", "location": location}}
+
+
+def _raise_answered_status(response) -> None:
+    """
+    httpx response hook on antares-client's HTTP client: a status in ANSWERED_STATUSES
+    raises httpx.HTTPStatusError, which carries the status. antares-client turns every
+    error answer into AntaresException(body), and the v2 API's error body ({"detail": …})
+    holds no status code, so without this hook a malformed request could not be told
+    apart from a server fault and would be retried.
+    """
+    if response.status_code in ANSWERED_STATUSES:
+        response.read()
+        response.raise_for_status()
 
 
 def _search():
+    """
+    The antares_client.search module, with _raise_answered_status installed (once) on
+    the HTTP client it talks through. The import is deferred: ALeRCE-only installs need
+    no antares-client.
+    """
     try:
         from antares_client import search
-        return search
     except ImportError:
         raise ImportError("antares-client not installed. Run: pip install antares-client")
+    hooks = search.api_client.client.event_hooks["response"]
+    if _raise_answered_status not in hooks:
+        hooks.append(_raise_answered_status)
+    return search
+
+
+def _answered(e: BaseException) -> str | None:
+    """The answer label for an ANSWERED_STATUSES reply (see _raise_answered_status)."""
+    response = e.response
+    if response.status_code not in ANSWERED_STATUSES:
+        return None
+    return f"bad_request: HTTP {response.status_code}: {response.text[:200]}"
 
 
 def _api_call(fn, *args, **kwargs):
@@ -62,27 +119,30 @@ def _api_call(fn, *args, **kwargs):
     Call an ANTARES API function with retry (the loop: retry_budget.call).
     Returns (result, error_str). On failure: result=None, error_str set.
 
-    ANTARES's policy: requests exceptions (ANTARES imposes a 60s read timeout of its
-    own, and a timed-out candidate fetch is what costs a whole daily run) and
-    AntaresException (non-404 4xx and all 5xx) are faults worth retrying.
-
-    Note: an ANT locus ID that does not exist answers 500, not 404 (measured
-    2026-08-06), so it is indistinguishable from a server having a bad moment and
-    costs the full 63s of backoff before giving up. IDs from get_random_locus_ids
-    always exist, so the daily run never pays this; a typo'd ID on the CLI does.
-    The ZTF path is better behaved — get_by_ztf_object_id returns None for an
-    unknown object, which surfaces immediately as locus:not_found.
+    ANTARES's policy, the same rule as ALeRCE's side: a malformed request
+    (ANSWERED_STATUSES, raised as httpx.HTTPStatusError by _raise_answered_status) is an
+    answer, "bad_request: …", returned at once. A missing locus is an answer too:
+    antares-client returns None for a 404, which the caller reports as
+    locus:not_found. What antares_errors() lists is a fault worth retrying; anything
+    else, such as a response that fails the client's schema, stops at once.
     """
-    return retry_budget.call(fn, args, kwargs, transient=antares_errors(), broker="ANTARES")
+    import httpx
+
+    return retry_budget.call(
+        fn, args, kwargs,
+        transient=antares_errors(),
+        answers=((httpx.HTTPStatusError, _answered),),
+        broker="ANTARES",
+    )
 
 
 def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
     """
-    Fetch random locus IDs from ANTARES.
-    Returns a list of locus_id strings. Empty list on error.
+    Fetch the IDs of the most recently updated ANTARES loci (get_random_locus_ids, which
+    antares-client 2.x sorts on newest_alert_observation_time; the rule: CLAUDE.md, "QA
+    pipeline"). Returns a list of locus_id strings. Empty list on error.
 
-    Deduplicated here; why the list comes back short: README, Known API Quirks
-    (get_random_locus_ids).
+    Deduplicated here; why the list comes back short: README, Known API Quirks.
     """
     ids, err = _api_call(_search().get_random_locus_ids, page_size)
     if err is not None:
@@ -107,9 +167,14 @@ def fetch_antares_locus(locus_id: str) -> dict:
     Returns dict with keys: dets, ms, tags, fetch_errors.
 
       dets: DataFrame of alerts — columns include mjd, ra, dec plus alert properties.
-      ms:   1-row DataFrame with ndet, magmin, magmax from locus.properties.
-            magmin = brightest_alert_magnitude (lowest magnitude number = brightest).
-            magmax = faintest_alert_magnitude.
+      ms:   1-row DataFrame: ndet = num_mag_values from locus.properties; magmin and
+            magmax = the brightest and faintest ant_mag of the detections in dets (the
+            API serves no faintest_alert_magnitude: README, Known API Quirks);
+            brightest_alert_magnitude = the server's own value, as served, which
+            validate_antares checks against magmin; newest_alert_observation_time =
+            the MJD of the locus's latest alert, and newest_survey = the survey that
+            took it (ANT_SURVEY, None if unknown), both reported per run by
+            run_antares_pipeline (how many exposures the sample spans, from which survey).
             Compatible with build_qa_row's ms expectations (.sum() / .min() / .max()).
       tags: list of tag name strings (ANTARES discrete classification labels).
       fetch_errors: list of error tokens.
@@ -123,12 +188,13 @@ def fetch_antares_locus(locus_id: str) -> dict:
     if err is not None:
         return {"dets": empty, "ms": empty, "tags": [], "fetch_errors": [f"locus:{err}"]}
     if locus is None:
-        # 404 → None. In practice only the ZTF path reaches here; an absent ANT
-        # ID answers 500 and exits above as a retried failure.
+        # A missing locus: antares-client returns None for the API's 404 (ANT ids) and
+        # for a ZTF id no locus carries.
         return {"dets": empty, "ms": empty, "tags": [], "fetch_errors": ["locus:not_found"]}
 
-    # Alerts → dets DataFrame
+    # Alerts → dets DataFrame, and the survey of the newest alert (upper limits included)
     dets = empty
+    newest_survey = None
     try:
         alerts = locus.alerts or []
         if alerts:
@@ -139,12 +205,17 @@ def fetch_antares_locus(locus_id: str) -> dict:
                     rec.update(a.properties)
                 records.append(rec)
             dets = pd.DataFrame(records)
+            if "ant_survey" in dets.columns:
+                code = dets.loc[dets["mjd"].idxmax(), "ant_survey"]
+                newest_survey = ANT_SURVEY.get(int(code)) if pd.notna(code) else None
             if "ant_mag" in dets.columns:
                 dets = dets[dets["ant_mag"].notna()].reset_index(drop=True)
     except Exception as e:
         fetch_errors.append(f"alerts:{e}")
 
-    # Locus properties → ms-like summary row
+    # ms-like summary row: the count from the locus properties, both magnitude ends from
+    # the detections (one computation), and the server's own brightest beside them for
+    # validate_antares to check against magmin.
     ms = empty
     try:
         props = locus.properties or {}
@@ -153,10 +224,14 @@ def fetch_antares_locus(locus_id: str) -> dict:
         # because ANTARES applies additional cuts not reflected in the raw alert stream.
         # Prefer num_mag_values as the authoritative ndet for validators.
         n_mag = props.get("num_mag_values") or (len(dets) if not dets.empty else 0)
+        mags = dets["ant_mag"] if "ant_mag" in dets.columns else pd.Series(dtype=float)
         ms = pd.DataFrame([{
             "ndet":   n_mag,
-            "magmin": props.get("brightest_alert_magnitude"),
-            "magmax": props.get("faintest_alert_magnitude"),
+            "magmin": mags.min() if not mags.empty else None,
+            "magmax": mags.max() if not mags.empty else None,
+            "brightest_alert_magnitude": props.get("brightest_alert_magnitude"),
+            "newest_alert_observation_time": props.get("newest_alert_observation_time"),
+            "newest_survey": newest_survey,
         }])
     except Exception as e:
         fetch_errors.append(f"properties:{e}")

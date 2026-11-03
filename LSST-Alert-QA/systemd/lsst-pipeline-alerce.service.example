@@ -12,7 +12,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=UV_NO_SYNC=1
 Environment=PYTHONPYCACHEPREFIX=__PROJECT_ROOT__/cache/pycache
 ExecStart=%h/.local/bin/uv run pipeline.py lsst 196 -q
-TimeoutStartSec=20min
+TimeoutStartSec=65min
 
 # hardening — see "Sandboxing" in README.md before editing.
 NoNewPrivileges=yes

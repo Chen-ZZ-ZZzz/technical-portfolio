@@ -4,6 +4,12 @@ import pandas as pd
 
 from .config import DEFAULT_SURVEY
 
+# Magnitudes: how far an ANTARES locus's brightest detection may sit from the server's own
+# brightest_alert_magnitude before the two count as different. When the server counts the
+# same alerts, both are one alert's ant_mag, so this only absorbs float rounding; a real
+# difference means the server counted a different set of alerts.
+BRIGHTEST_TOLERANCE_MAG = 1e-4
+
 
 def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
     """
@@ -93,7 +99,9 @@ def validate_antares(data: dict) -> list:
       no_detections       — dets is empty
       ndet_lt_2           — fewer than 2 detections
       coordinates_missing — ra/dec absent in dets
-      mag_null            — no magnitude data in locus properties
+      mag_null            — no magnitude in the detections
+      brightest_mismatch  — the detections' brightest magnitude is not the server's
+                            brightest_alert_magnitude: it counted a different set of alerts
       no_classification   — no tags
     """
     issues = []
@@ -122,6 +130,10 @@ def validate_antares(data: dict) -> list:
 
     if ms.empty or ms["magmin"].isna().all():
         issues.append("mag_null")
+    elif "brightest_alert_magnitude" in ms.columns:
+        served, derived = ms["brightest_alert_magnitude"].iloc[0], ms["magmin"].iloc[0]
+        if pd.notna(served) and abs(float(served) - float(derived)) > BRIGHTEST_TOLERANCE_MAG:
+            issues.append("brightest_mismatch")
 
     if not tags:
         issues.append("no_classification")

@@ -148,7 +148,7 @@ uv run pipeline.py lsst
 # LSST — fetch N objects; N ≤ 200: the LSST listing's page limit
 uv run pipeline.py lsst 196
 
-# ANTARES — fetch 20 random loci
+# ANTARES — the 20 most recently updated loci
 uv run pipeline.py antares 20
 
 # ANTARES — specific locus IDs or ZTF object IDs
@@ -177,7 +177,7 @@ df = run_pipeline(page_size=50, survey="ztf")
 # ALeRCE explicit OIDs
 df = run_pipeline(survey="ztf", oids=["ZTF17aaaaahl", "ZTF18abc"])
 
-# ANTARES random loci
+# ANTARES: the most recently updated loci
 df = run_antares_pipeline(page_size=20)
 
 # ANTARES explicit locus IDs or ZTF object IDs
@@ -185,7 +185,7 @@ df = run_antares_pipeline(locus_ids=["ANT2020j7wo4", "ZTF20aafqubg"])
 
 # Deadline defaults to DEADLINE_SLACK x the job's own estimate (config.py); override or disable it
 df = run_antares_pipeline(page_size=256, max_run_seconds=900)
-df = run_antares_pipeline(page_size=5000, max_run_seconds=0)   # no deadline
+df = run_antares_pipeline(page_size=1000, max_run_seconds=0)   # no deadline; 1000 is the most the listing takes
 
 # Inspect the sizing without running
 from rubin_qa.reporting import estimate_runtime, deadline_for
@@ -281,9 +281,10 @@ One row per object. Columns:
 | Column | Description |
 |---|---|
 | `broker` | `alerce` or `antares` |
+| `survey` | `ZTF` or `LSST`: for ALeRCE the survey the run queried, for ANTARES the survey of the locus's newest alert (empty when its alerts did not say). Counted, it is the run's survey split, the input of the comparability rule (CLAUDE.md, "QA pipeline") |
 | `oid` | Object identifier |
 | `ndet` | Total detection count |
-| `mag_range` | Brightness amplitude: magmax − magmin |
+| `mag_range` | Brightness amplitude: magmax − magmin (ANTARES: the faintest minus the brightest `ant_mag` of the detections) |
 | `timespan_days` | Last − first detection epoch |
 | `top_class` | ALeRCE: plurality class from weighted consensus; ANTARES: all science tags, sorted and joined |
 | `class_prob` | Best classifier probability for `top_class` |
@@ -307,7 +308,7 @@ One row per object. Columns:
 
 Note: `PASS` and both `REVIEW` tiers need two comparable families, and since 2026-11-03 ALeRCE offers none on LSST or ZTF, so every ALeRCE row is `FLAG` ([Independent Evidence in ALeRCE's Classifiers](#independent-evidence-in-alerces-classifiers)).
 
-**Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats` (ZTF only — see below), `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`
+**Completeness issue tokens** (appear in `completeness_issues` and `flag`): `no_detections`, `no_magstats` (ZTF only — see below), `ndet_lt_2`, `coordinates_missing`, `mag_null`, `rb_absent`, `drb_absent` (ZTF only), `no_classification`, `fetch_error_<field>`, `brightest_mismatch` (ANTARES only: the detections' brightest magnitude is not the server's own `brightest_alert_magnitude`, so the server counted a different set of alerts)
 
 `no_magstats` is deliberately **not** emitted for LSST. ALeRCE raises `NotImplementedError` for every LSST object, so the token fired on 100% of rows — and since any completeness issue forces `FLAG`, it made every LSST object FLAG and hid its classification verdict. A condition that is always true of a survey describes the survey, not the object. It comes back if ALeRCE ships LSST magstats.
 
@@ -394,7 +395,7 @@ The live pair differs by one class: ATAT 1.0.0 has SNIbc where BHRF 2.1.0 has SE
 | Feature | ZTF (ALeRCE) | LSST (ALeRCE) | ANTARES |
 |---|---|---|---|
 | Detections | ✓ | ✓ | ✓ (alerts, upper limits filtered out) |
-| Magstats | ✓ | — (falls back to raw detections) | ✓ (locus properties) |
+| Magstats | ✓ | — (falls back to raw detections) | derived from the detections, checked against the server's brightest ([Known API Quirks](#known-api-quirks)) |
 | Classifiers | ✓ | ✓ (2 stamp classifiers) | ✓ (tag-based, science tags only) |
 | `rb`/`drb` scores | ✓ | `reliability` only | — (pre-filtered upstream, rb ≥ 0.55) |
 | Catalog cross-matches | — | — | ✓ (Gaia, Sloan, WISE, Chandra) |
@@ -429,11 +430,35 @@ which is what the constant has to cover:
 |---|---|---|---|---|---|
 | ztf | 3.38s | 3.76s | 3.84s | 4.31s | **3.7s** |
 | lsst | 2.19s | 2.38s | 2.50s | 2.71s | **2.4s** |
-| antares | 0.93s | 1.36s | 1.45s | 1.53s | **1.0s** |
 
-Each constant sits at or above its survey's p95, so a typical run finishes inside its
-own estimate and the deadline only trips on something genuinely stuck. **No change
-was made.**
+**No change was made.** (ANTARES, re-measured on antares-client 2.x, below.)
+
+**What the constant is.** The seconds one object costs a run on average, the
+inter-object delay included. `reporting.estimate_runtime` multiplies it by the run's
+object count, and that estimate sizes the confirm prompt and the run deadline. **The
+estimate leaves out the listing**, the one-off candidate fetch, and the deadline's clock
+starts after it. The constant is not a ceiling: what bounds a unit's run is its
+`TimeoutStartSec`, so the check is p95 × n plus the listing's worst case against that:
+
+| unit | n | p95 per object | listing, worst | p95 × n + listing | `TimeoutStartSec` |
+|---|---|---|---|---|---|
+| `lsst-pipeline-alerce` | 196 | 2.38s | 20.4s | 487s | `65min` |
+| `lsst-pipeline-antares` | 256 | 2.88s | 42.5s | 780s | `65min` |
+
+The lsst p95 is the campaign's, over per-run medians (above); the antares p95 is over the
+single objects of the 2026-11-03 sitting (below), the more cautious of the two. LSST's
+listing: the worst of the campaign's 111 listings of 100 objects (the unit asks 196).
+ANTARES's: its one timed listing of 256 on antares-client 2.x, 2026-11-03. n is what the
+unit asks for; an ANTARES run checks fewer, the listing's unique loci.
+
+**ANTARES re-measured, 2026-11-03**, after the move to antares-client 2.x and the v2 API
+([Known API Quirks](#known-api-quirks)). One sitting of `tools/bench_latency.py --targets
+antares --samples 300` (248 unique loci), timing the pipeline's own path, the locus and
+then its alerts, 2 requests (the campaign had timed the locus alone). Per object, the
+inter-object delay included: p50 1.69s, p95 2.88s, worst 4.56s; a lookup by ZTF ID, one
+request more, p50 2.00s and p95 3.39s over 20 loci. The constant for antares is now
+**1.71s**, this sitting's mean (1.7076s). It comes from one sitting, so the campaign
+method (Re-measuring, below) is what would settle it.
 
 **The 17.0s figure was an episode.** It never recurred in 21 days of hourly sampling.
 It survives only as `DEFAULT_SECONDS_PER_OBJECT`, the fallback for a survey with no
@@ -722,7 +747,8 @@ All tests use mock data — no live API calls.
 | `test_classifier.py` | the classifier registry (one vote per live family; retired versions, hierarchy levels and `nuclear_classifier` never vote; unknown pairs FLAG) and the weighted consensus |
 | `test_reporting.py` | QA row assembly, status tiers |
 | `test_ceilings.py` | request timeout, retry budget, run deadline |
-| `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes |
+| `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes (3 for a run its deadline stopped) |
+| `test_unit_sizing.py` | each pipeline unit's `TimeoutStartSec` against the longest run its settings allow: `ExecStartPre`, the listing's worst case, `deadline_for` at the unit's n, and one object in flight; reads the `.example` files, not the installed units |
 | `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
 | `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
 | `test_alerce_live_classifiers.py` | `tools/alerce_live_classifiers.py` — live vs retired from the newest objects' rows, what the registry must change, a report's `unknown_classifier` tokens |
@@ -795,11 +821,19 @@ The jobs run as systemd user units, with examples in `systemd/`. Which units exi
 
 **ANTARES:**
 - Kafka streaming requires credentials (request from ANTARES team); search/fetch API is open
-- `get_random_locus_ids` returns duplicates *within a single call* — deduplicated in `fetch_antares_candidates`, so a run returns fewer loci than the requested page size, by an amount that varies (256 requested → 217, 225, 228 unique on 2026-08-06; 207 on 2026-10-04). The ES query is unseeded and the client pages with a fresh request per page, so results reshuffle mid-walk. Not a row-drop in the pipeline — one row is emitted per deduplicated ID.
-- A nonexistent ANT locus ID returns HTTP 500, not 404, so it cannot be told apart from a transient fault and consumes the full retry backoff. ZTF IDs return `not_found` immediately.
+- **The v2 API, from 2026-11-04.** Every antares-client before 2.0 calls the v1 API, which ANTARES stops supporting on 2026-11-04 (the 2.0.2 README); 2.0.0 had a paging bug, so the floor is 2.0.1. The entries below were read from the 2.0.2 source and probed live on 2026-11-03.
+- **The candidate listing is the most recently updated loci, not a random sample.** `get_random_locus_ids` walks `search({})`, which the client always sorts on `properties.newest_alert_observation_time`, latest first. ANTARES QA reports written on 2.x (the first: 2026-11-03 14:42) are not comparable with earlier ones (the rule: CLAUDE.md, "QA pipeline"). One exposure updates hundreds of loci at the same moment (all 60 loci on the first 6 pages shared one time on 2026-11-03), so in practice the sample is the loci the last exposure or two touched, and those exposures' survey: a manual run started at 16:10 CET on 2026-11-03 drew 237 loci whose newest alerts came from 3 ZTF exposures within 1.5 minutes (13:20:54–13:22:20 UTC), and none of the 237 held an LSST detection.
+- The listing repeats loci *within a single call* — deduplicated in `fetch_antares_candidates`, so a run returns fewer loci than the requested page size: 256 requested → 183 unique on 2026-11-03. The order within a tie is not stable from one page request to the next, so pages overlap (page 6 repeated 5 loci of pages 1–5), and each repeat stands for a locus skipped. On 1.x the listing was an unseeded random sample that reshuffled between page requests the same way (256 → 217, 225, 228 unique on 2026-08-06; 207 on 2026-10-04). Not a row-drop in the pipeline — one row is emitted per deduplicated ID.
+- Each page of the listing (10 loci) links to the next with an `http://` URL, which the API redirects (301) to https: two requests a page, 51 and 42 s for 256 loci on 2026-11-03.
+- A nonexistent ANT locus ID answers 404, and the client returns `None`: `locus:not_found` at once, no retry (the v1 API answered 500, which cost the full retry backoff). ZTF IDs return `not_found` too.
+- Error answers carry no status code in their body (`{"detail": …}`), and the client raises the same `AntaresException(body)` for every error status, so `antares_api` reads the status from the response (`_raise_answered_status`): a 400 or 422, a malformed request, is an answer and not retried, the same rule as ALeRCE's side. A 500 can come as `text/plain`, on which the client's own JSON parse fails (`json.JSONDecodeError`); it is retried as a fault. A range query on a field of the wrong type answered that 500 on 2026-11-03, so a 500 is sometimes the request's fault, indistinguishable from the server's.
+- Selecting by survey (probed 2026-11-03): `exists properties.survey.lsst` works on v2, but it means LSST anywhere in the locus's history. All 10 loci it returned had a ZTF alert as their newest (`ztf_candidate:…`), because LSST alerts attach to old ZTF loci. The newest alert's survey is a `prefix` on `properties.newest_alert_id`: `lsst` returned 256 loci, every newest alert an LSST one; the `.keyword` subfield returned none. LSST alert IDs start `lsst:`, ZTF's `ztf_candidate:` or `ztf_upper_limit:`.
+- A listing request that runs past about 10 s answers HTTP 500 (`text/plain`): every slow 500 on 2026-11-03 came at 10.2–10.3 s, every success within 9.0 s, and from about 17:00 CET even a 10-locus page failed that way, while lookups by ID answered in 0.3 s. A fast 500 (0.2 s) is a query the server rejects.
+- The cone filter has a new form, `{"radius": "<r> degree", "location": "<hmsdms>"}`; the old `distance`/`htm16` form answers 422. The server does not clamp the radius (the client's own `cone_search` refuses more than 1°, so the tools build the clause: `sky_distance_clause`). It overshoots a little: a 2.82° cone on ecdfs returned loci up to 2.89° from the centre (2026-11-03).
+- The locus properties carry `brightest_alert_magnitude` but no `faintest_alert_magnitude` (none of 40 loci on 2026-11-03). `mag_range` read it, so it was empty in every ANTARES QA report from 2026-09-28 to 2026-11-03, under the v1 API too. Since then both ends come from the detections, and the server's brightest is checked against their minimum (`brightest_mismatch`).
 - Observed 2026-10-23: a search returned HTTP 500 twice; a lookup by ID later that day returned 200.
-- Both brokers' calls go through one retry loop (`retry_budget.call`; retry policy: see `RETRY_*` in config.py); each client passes only its own policy of which errors are worth retrying, and its name, which starts each retry warning. antares-client 1.14.0 (the pinned version) applies its own 60 s request timeout.
-- Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines (values in config.py). All degrade rather than abort — a short CSV still gets written:
+- Both brokers' calls go through one retry loop (`retry_budget.call`; retry policy: see `RETRY_*` in config.py); each client passes only its own policy of which errors are worth retrying, and its name, which starts each retry warning. antares-client 2.0.2 (the pinned version) applies its own 60 s request timeout.
+- Because retry is per-object, a stalled broker is bounded by three ceilings, applied to both pipelines (values in config.py). All degrade rather than abort — a short CSV still gets written, and a run the deadline stopped then exits 3 (`__main__.EXIT_DEADLINE`), so its unit shows failed instead of passing a partial report as a full one:
   - **Per request** (`REQUEST_TIMEOUT`) — forced onto the ALeRCE client, which passes no timeout of its own and would otherwise block forever. ANTARES already applies its own. It bounds inactivity, not call duration: `requests` applies it per socket operation, so it kills a dead connection, while a response that trickles in never trips it. The sampling campaign caught three LSST calls succeeding at 60.7, 60.7 and 63.3 s with the 60 s timeout then in force. A slow but live call is bounded only by the run deadline.
   - **Retry sleep per run** (`RETRY_BUDGET_SECONDS`) — shared budget; once spent, a failing call is given up at once instead of retried.
   - **Run deadline — sized to the job**, at `DEADLINE_SLACK` × the run's own estimated duration (floor `DEADLINE_FLOOR`). A large scan is entitled to take a long time; what trips the deadline is a run dragging far past what its size predicts. Pass `max_run_seconds` to override, or `0` to disable. The estimate comes from `SECONDS_PER_OBJECT` ([Broker Latency Sampling Campaign](#broker-latency-sampling-campaign), above). The slack is not there for drift — latency proved stable — but to absorb one pathological object: the retry budget caps retry *sleep*, not socket time, so a worst-case ZTF object can block for 3 calls × `RETRY_ATTEMPTS` × `REQUEST_TIMEOUT` with only this deadline to stop it.

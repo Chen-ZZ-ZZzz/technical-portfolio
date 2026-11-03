@@ -126,8 +126,12 @@ GUARDED = {
          tns.TNS_WINDOW_SECONDS),
         ("seconds per object, ztf", _latency_row("ztf"), SECONDS_PER_OBJECT["ztf"]),
         ("seconds per object, lsst", _latency_row("lsst"), SECONDS_PER_OBJECT["lsst"]),
-        ("seconds per object, antares", _latency_row("antares"), SECONDS_PER_OBJECT["antares"]),
+        ("seconds per object, antares", r"The constant for antares is now\s+\*\*([\d.]+)s\*\*", SECONDS_PER_OBJECT["antares"]),
         ("unmeasured-survey fallback", r"The ([\d.]+)s figure was an episode", DEFAULT_SECONDS_PER_OBJECT),
+        # the TimeoutStartSec check: each unit's n and start timeout, read from its unit file
+        *[(f"timeout check, {u}", rf"(?m)^\| `{u}` \| (\d+) \|.*\| `(\w+)` \|$",
+           (runs(f"{u}.service.example").split()[2], unit(f"{u}.service.example", "TimeoutStartSec")))
+          for u in ("lsst-pipeline-alerce", "lsst-pipeline-antares")],
         ("antares-client version", r"antares-client ([\d.]+) \(the pinned version\)", locked("antares-client")),
         ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|N ≤ (\d+): the LSST listing's page limit",
          ALERCE_MAX_PAGE_SIZE),

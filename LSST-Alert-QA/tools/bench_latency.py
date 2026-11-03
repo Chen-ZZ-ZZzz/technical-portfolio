@@ -38,6 +38,9 @@ from rubin_qa.config import SURVEYS, from_root  # noqa: E402
 ALERCE_SURVEYS = ("ztf", "lsst")
 OBJECT_CALLS = ("query_detections", "query_magstats", "query_probabilities")
 DEFAULT_SAMPLES = 10
+# Loci looked up a second time by ZTF ID: that path is the CLI's and the profiler's, not
+# the daily run's, so a handful is enough to price it.
+ZTF_ID_SAMPLES = 20
 DEFAULT_PAGE_SIZES = (10, 100)
 CANDIDATE_REPEATS = 4
 
@@ -119,20 +122,47 @@ def bench_objects(survey: str, samples: int) -> list[dict]:
     return rows
 
 
-def bench_antares_objects(samples: int) -> list[dict]:
-    """Time the per-locus fetch."""
+def bench_antares_objects(samples: int, ztf_samples: int = ZTF_ID_SAMPLES) -> list[dict]:
+    """
+    Time the per-locus fetch the pipeline makes (antares_api.fetch_antares_locus): the
+    locus, then its alerts, 2 requests. The loci are the pipeline's own sample, the
+    listing's most recently updated, deduplicated (so fewer than `samples` may come back).
+
+    A second row times a lookup by ZTF ID, one request more (the search that finds the
+    locus), on up to `ztf_samples` of those loci. The daily run looks loci up by ANT ID,
+    so that row has its own kind and never feeds SECONDS_PER_OBJECT.
+    """
     from antares_client import search
 
     ids = list(dict.fromkeys(search.get_random_locus_ids(samples)))[:samples]
-    timings = [_timed(search.get_by_id, locus_id) for locus_id in ids]
+    ztf_ids: list[str] = []
+
+    def by_ant_id(locus_id: str) -> None:
+        locus = search.get_by_id(locus_id)
+        locus.alerts  # noqa: B018 — the second request, as fetch_antares_locus makes it
+        if locus.properties.get("ztf_object_id"):
+            ztf_ids.append(locus.properties["ztf_object_id"])
+
+    def by_ztf_id(ztf_id: str) -> None:
+        search.get_by_ztf_object_id(ztf_id).alerts  # noqa: B018
+
+    timings = [_timed(by_ant_id, locus_id) for locus_id in ids]
     row = _summarize(
-        "antares:PER-OBJECT (get_by_id, excl. INTER_OBJECT_DELAY)",
+        "antares:PER-OBJECT (get_by_id + alerts, excl. INTER_OBJECT_DELAY)",
         timings,
         survey="antares",
         kind="per_object",
     )
     row["raw"] = [round(t, 2) for t, err in timings if err is None]
-    return [row]
+    ztf_timings = [_timed(by_ztf_id, ztf_id) for ztf_id in ztf_ids[:ztf_samples]]
+    ztf_row = _summarize(
+        "antares:PER-OBJECT by ZTF id (search + get_by_id + alerts, excl. INTER_OBJECT_DELAY)",
+        ztf_timings,
+        survey="antares",
+        kind="per_object_ztf_id",
+    )
+    ztf_row["raw"] = [round(t, 2) for t, err in ztf_timings if err is None]
+    return [row, ztf_row]
 
 
 def bench_candidates(

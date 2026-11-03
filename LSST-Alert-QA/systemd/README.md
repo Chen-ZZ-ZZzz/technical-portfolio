@@ -37,8 +37,11 @@ which apply to plain `.service`/`.timer` units.
   stdin, so a run logs its estimate to stderr and proceeds rather than hanging the
   unit; `-y` skips the prompt for the same command run by hand.
 - A pipeline run that hits its deadline logs `WARN: ... Upstream or network is
-  stalled` and still writes a partial CSV: a truncated report means the broker was
-  unwell, not that the unit is misconfigured.
+  stalled`, still writes a partial CSV, then logs `ERROR: ... stopped at the deadline
+  ... partial report written: <path>` and exits 3, so the unit shows failed: a truncated
+  report means the broker was unwell, not that the unit is misconfigured. Exit 1 means
+  no report was written. For the deadline to stop a run before systemd kills it, the
+  unit's `TimeoutStartSec` must outlast it: `tests/test_unit_sizing.py`.
 - After editing an installed unit, run `systemctl --user daemon-reload`: until then
   systemd keeps the definition it loaded, and a machine that suspends rather than
   reboots keeps it for days.
@@ -117,8 +120,10 @@ Things that catch people out:
   No-sync implies `--frozen`, so `uv.lock` is never rewritten either (uv 0.10.11's own
   help). The frozen SSO example keeps its original lines.
 - Each active and dormant unit carries a `TimeoutStartSec` sized to its run (`5min` for the sampler,
-  `20min` for the pipelines, `2h` for the transient monitor): a oneshot has no start
-  timeout by default, and a hung run would make its timer skip every later day.
+  `65min` for the pipelines, `2h` for the transient monitor): a oneshot has no start
+  timeout by default, and a hung run would make its timer skip every later day. The
+  pipelines' outlasts the longest run their settings allow, so the deadline stops a
+  stalled run with a partial CSV before systemd kills it (`tests/test_unit_sizing.py`).
 - `$HOME` stays **readable, not writable** (`ProtectHome` is deliberately **not** set):
   `uv` reads its binary from `~/.local/bin`, its cache at `~/.cache/uv` and any
   interpreters at `~/.local/share/uv`, but under `ProtectSystem=strict` nothing in the
@@ -218,6 +223,8 @@ systemctl --user --failed
 > **Frozen.** The unit ran daily from 2026-04-13 to 2026-08-17 (115 scans); it is not
 > armed and its files are never edited. The section below is the deployment record. Why it was stopped, and what
 > its alerts were: "Bright Solar System Objects (SSO) Monitor" in the project README.
+> It can't run again without a port to antares-client 2.x: it was written and run on 1.x
+> and the v1 API, which ANTARES retires on 2026-11-04.
 
 Implementation of daily systemd user timer that ran `antares_sso_monitor.py` and logged brightness alerts.
 
@@ -377,13 +384,12 @@ journalctl --user -u lsst-pipeline-antares.service -n 50
 
 ## Notes
 
-- Why the report has fewer rows than the 256 asked for: `get_random_locus_ids` under
-  "Known API Quirks" in the project README.
+- What the loci are (the n most recently updated, n from `ExecStart`, since the switch to antares-client 2.x on 2026-11-03), and why the report
+  has fewer rows than that: the ANTARES entries under "Known API Quirks" in the project
+  README.
 - `-q` trims stdout to the summary table. The CSV in `reports/` is unaffected.
 - Output goes to the journal under `SyslogIdentifier=lsst-pipeline-antares` — see
   "Logging" above.
 - `ExecStartPre=/usr/bin/nm-online -q -t 36` waits up to 36s for the network. On a
   machine without NetworkManager, swap it for `/bin/sleep 60` as the SSO monitor
   does, or drop it if the timer never fires near boot.
-- A non-existent `ANT...` locus ID answers **500, not 404**, so it burns the full
-  retry backoff before being given up on. `ZTF...` IDs return a clean not-found.

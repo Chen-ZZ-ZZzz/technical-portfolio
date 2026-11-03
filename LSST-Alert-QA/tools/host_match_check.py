@@ -148,13 +148,21 @@ J_DEG = re.compile(r"J(\d{1,3}\.\d+)([+-]\d{1,2}\.\d+)")
 
 
 def antares_tns_sne(footprint: str) -> list[dict]:
-    """Classified TNS supernovae among ANTARES loci in the footprint cone."""
+    """
+    Classified TNS supernovae among ANTARES loci in the footprint cone. ANTARES's cone is a
+    superset (README, "Known API Quirks"), so a locus is kept only inside the footprint by
+    the test every position here passes: sep_arcsec to the centre <= radius.
+    """
     from antares_client.search import search
 
-    query = {"query": {"bool": {"filter": [sky_distance_clause(FOOTPRINTS[footprint][0]),
+    cone = FOOTPRINTS[footprint][0]
+    ra0, dec0, radius = cone
+    query = {"query": {"bool": {"filter": [sky_distance_clause(cone),
                                            {"term": {"catalogs": "tns_public_objects"}}]}}}
     out = {}
     for locus in search(query):
+        if sep_arcsec(locus.ra, locus.dec, ra0, dec0) > radius * 3600:
+            continue
         for r in (locus.catalog_objects or {}).get("tns_public_objects", []):
             if str(r.get("type") or "").startswith(SN_TYPE_PREFIXES):
                 out[r["name"]] = {"footprint": footprint, "name": r["name"], "type": r["type"],

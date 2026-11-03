@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import httpx
 import requests
 from alerce.exceptions import APIError
 
@@ -217,7 +218,7 @@ class TestBudgetBoundsClientRetries:
         from rubin_qa.antares_api import _api_call as antares_api_call
 
         retry_budget.reset(12.0)
-        fn = MagicMock(side_effect=requests.exceptions.ReadTimeout("timed out"))
+        fn = MagicMock(side_effect=httpx.ReadTimeout("timed out"))
         fn.__name__ = "get_by_id"
         with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
             for _ in range(5):
@@ -387,6 +388,43 @@ class TestRunDeadline:
             )
         err = capsys.readouterr().err
         assert "stalled" in err and "partial report" in err
+
+    def test_a_stop_is_marked_on_the_result_both_pipelines(self):
+        """__main__ reads the mark to exit with EXIT_DEADLINE after writing the partial CSV."""
+        from rubin_qa import antares_api, reporting
+
+        clock = FakeClock(step=10.0)
+
+        def slow(*a, **k):
+            clock.advance()
+            return _empty_alerce_data() if not a[0].startswith("ANT") else _empty_antares_data()
+
+        with patch.object(reporting.time, "monotonic", clock), \
+             patch.object(reporting, "fetch_object_data", slow), \
+             patch.object(antares_api, "fetch_antares_locus", slow):
+            alerce = reporting.run_pipeline(oids=[f"ZTF{i}" for i in range(50)], inter_object_delay=0,
+                                            quiet=True, max_run_seconds=35.0)
+            antares = reporting.run_antares_pipeline(locus_ids=[f"ANT{i}" for i in range(50)],
+                                                     inter_object_delay=0, quiet=True, max_run_seconds=35.0)
+        for df in (alerce, antares):
+            mark = df.attrs["stopped_at_deadline"]
+            assert (mark["done"], mark["of"], mark["deadline"]) == (len(df), 50, 35.0)
+            assert mark["elapsed"] > 35.0
+
+    @pytest.mark.parametrize("survey", ["ztf", "lsst"])
+    def test_every_alerce_row_records_the_survey_the_run_queried(self, survey):
+        from rubin_qa import reporting
+
+        with patch.object(reporting, "fetch_object_data", _empty_alerce_data):
+            df = reporting.run_pipeline(oids=["1", "2"], survey=survey, inter_object_delay=0, quiet=True)
+        assert list(df["survey"]) == [survey.upper()] * 2
+
+    def test_a_run_that_finishes_carries_no_stop_mark(self):
+        from rubin_qa import reporting
+
+        with patch.object(reporting, "fetch_object_data", lambda oid, survey="ztf": _empty_alerce_data()):
+            df = reporting.run_pipeline(oids=["ZTF1", "ZTF2"], inter_object_delay=0, quiet=True)
+        assert "stopped_at_deadline" not in df.attrs
 
     def test_zero_disables_the_deadline(self):
         from rubin_qa import reporting

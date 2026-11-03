@@ -79,6 +79,26 @@ class TestExitCodes:
         assert len(pd.read_csv(written[0])) == 4
 
 
+class TestDeadlineExit:
+    def _stopped(self):
+        df = _report(3)
+        df.attrs["stopped_at_deadline"] = {"done": 3, "of": 196, "elapsed": 2830.0, "deadline": 2822.4}
+        return df
+
+    @pytest.mark.parametrize("quiet", [[], ["-q"]])
+    def test_a_run_stopped_at_its_deadline_writes_its_csv_and_exits_3(self, tmp_path, capsys, quiet):
+        with pytest.raises(SystemExit) as exc:
+            _run_cli(["lsst", "196", *quiet], tmp_path, result=self._stopped())
+        assert exc.value.code == main_module.EXIT_DEADLINE == 3
+        (csv,) = _csvs(tmp_path)
+        err = capsys.readouterr().err
+        assert err.startswith("ERROR: ALeRCE LSST: stopped at the deadline after 3/196 objects")
+        assert f"partial report written: {csv}" in err
+
+    def test_a_full_run_exits_0(self, tmp_path):
+        _run_cli(["lsst", "3"], tmp_path, result=_report(3))  # no SystemExit
+
+
 class TestReportFile:
     def test_filename_records_survey_and_row_count(self, tmp_path):
         _run_cli(["antares", "5"], tmp_path, result=_report(3))
@@ -107,6 +127,32 @@ class TestOutput:
         out = capsys.readouterr().out.strip().splitlines()
         assert len(out) == 1
         assert out[0].startswith("ALeRCE ZTF  n=3  flagged=2/3  → ") and "qa_alerce_ztf_" in out[0]
+
+    def test_an_antares_listing_run_states_its_sample_on_the_one_line(self, tmp_path, capsys):
+        df = _report(3)
+        df.attrs["sample"] = {"asked": 256, "listed": 183, "checked": 183, "newest_times": 2,
+                              "newest_mjd": (61347.4756, 61347.4812), "surveys": {"ZTF": 150, "LSST": 33}}
+        _run_cli(["antares", "256", "-q"], tmp_path, result=df)
+        out = capsys.readouterr().out.strip().splitlines()
+        assert len(out) == 1
+        assert out[0].endswith("| sample: 183 loci checked of 183 unique listed (256 asked; the most "
+                               "recently updated), newest alerts at 2 distinct times "
+                               "(MJD 61347.4756–61347.4812), by survey ZTF 150 / LSST 33")
+
+    def test_a_sample_from_one_exposure_says_so_plainly(self):
+        df = _report(1)
+        df.attrs["sample"] = {"asked": 60, "listed": 60, "checked": 60, "newest_times": 1,
+                              "newest_mjd": (61347.5079, 61347.5079), "surveys": {"ZTF": 59, "unknown": 1}}
+        assert main_module.sample_line(df).endswith(
+            "newest alerts at 1 distinct time (MJD 61347.5079), by survey ZTF 59 / LSST 0 / unknown 1")
+
+    def test_the_full_report_states_the_sample_with_its_survey_split(self, tmp_path, capsys):
+        df = _report(3)
+        df.attrs["sample"] = {"asked": 256, "listed": 237, "checked": 237, "newest_times": 3,
+                              "newest_mjd": (61347.5562, 61347.5572), "surveys": {"ZTF": 237}}
+        _run_cli(["antares", "256"], tmp_path, result=df)
+        out = capsys.readouterr().out
+        assert "sample: 237 loci checked" in out and "by survey ZTF 237 / LSST 0" in out
 
     def test_verbose_prints_summary_table_and_flag_count(self, tmp_path, capsys):
         _run_cli(["ztf", "3"], tmp_path, result=_report(3, flagged=2))

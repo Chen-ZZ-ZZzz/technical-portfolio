@@ -230,3 +230,27 @@ def test_report_header_names_the_version_and_flags_mixed_stages(tmp_path, monkey
     assert "MIXED VERSIONS: scores 'known'" in "\n".join(h.version_header())
 
 
+
+
+def _tns_locus(name: str, ra: float, dec: float):
+    from types import SimpleNamespace
+    return SimpleNamespace(locus_id=f"ANT_{name}", ra=ra, dec=dec, catalog_objects={"tns_public_objects": [
+        {"name": name, "type": "SN Ia", "redshift": 0.05, "ra": ra, "declination": dec}]})
+
+
+def test_the_sample_keeps_only_loci_inside_the_footprint(monkeypatch):
+    """
+    ANTARES's cone overshoots by about 4' (a 2.82 deg cone returned loci out to 2.89 deg,
+    2026-11-03), so the sample trims to the footprint by the tool's own test. The points sit
+    1" either side of the radius, due north of the centre, where the separation is exactly
+    the declination offset: a threshold off by more than 1" (radius plus a tolerance, a
+    rounded radius) fails one of them.
+    """
+    import antares_client.search
+
+    ra0, dec0, radius = h.FOOTPRINTS["ecdfs"][0]
+    one_arcsec = 1 / 3600
+    loci = [_tns_locus("inside", ra0, dec0 + radius - one_arcsec),
+            _tns_locus("outside", ra0, dec0 + radius + one_arcsec)]
+    monkeypatch.setattr(antares_client.search, "search", lambda query: iter(loci))
+    assert [sn["name"] for sn in h.antares_tns_sne("ecdfs")] == ["inside"]

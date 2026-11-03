@@ -1,5 +1,6 @@
 """QA row assembly and full pipeline orchestration."""
 
+import collections
 import math
 import sys
 import time
@@ -54,10 +55,13 @@ def _psfflux_to_mag(flux_series: pd.Series) -> pd.Series:
     return positive.apply(lambda f: -2.5 * math.log10(f) + AB_NJY_ZP)
 
 
-def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
+def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | None = None) -> dict:
     """
     Assemble one output row from pre-computed inputs. No API calls.
     status: PASS (no flag) / REVIEW (genuine split) / FLAG (everything else)
+    survey: the survey the run queried ("ztf" / "lsst"), written as "ZTF" / "LSST" so
+    every row records it, as an ANTARES row records its newest alert's; run_pipeline
+    always passes it (a caller that does not leaves the cell empty, never wrong).
     """
     dets = data["dets"]
     ms   = data["ms"]
@@ -117,6 +121,7 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict) -> dict:
 
     return {
         "broker":             "alerce",
+        "survey":             survey.upper() if survey else None,
         "oid":                oid,
         "ndet":               ndet,
         "mag_range":          mag_range,
@@ -157,7 +162,9 @@ def run_pipeline(
       costs a short report rather than an open-ended job. Retry backoff is capped
       separately by the run-wide retry budget.
 
-    Returns a DataFrame (one row per object).
+    Returns a DataFrame (one row per object). A run the deadline stopped also sets
+    df.attrs["stopped_at_deadline"]: "done" and "of" (objects), "elapsed" and "deadline"
+    (seconds); __main__ then exits with EXIT_DEADLINE.
     """
     retry_budget.reset()
 
@@ -173,6 +180,7 @@ def run_pipeline(
 
     started = time.monotonic()
     rows = []
+    stopped = None
     for i, oid in enumerate(oids, 1):
         elapsed = time.monotonic() - started
         if max_run_seconds and elapsed > max_run_seconds:
@@ -183,6 +191,7 @@ def run_pipeline(
                 f"stalled; returning partial report",
                 file=sys.stderr, flush=True,
             )
+            stopped = {"done": i - 1, "of": len(oids), "elapsed": elapsed, "deadline": max_run_seconds}
             break
         if not quiet:
             print(f"[{i:>3}/{len(oids)}] {oid}", end="  ", flush=True)
@@ -190,14 +199,26 @@ def run_pipeline(
         issues = validate_completeness(data, survey=survey)
         ndet   = int(data["ms"]["ndet"].sum()) if not data["ms"].empty else len(data["dets"])
         cl     = classify_object(data["probs"], ndet)
-        row    = build_qa_row(oid, data, issues, cl)
+        row    = build_qa_row(oid, data, issues, cl, survey=survey)
         rows.append(row)
         if not quiet:
             print(row["status"])
         if inter_object_delay > 0:
             time.sleep(inter_object_delay)
 
-    return pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    if stopped:
+        df.attrs["stopped_at_deadline"] = stopped
+    return df
+
+
+def _newest_survey(data: dict) -> str | None:
+    """The survey of an ANTARES locus's newest alert (fetch_antares_locus), None if unknown."""
+    ms = data["ms"]
+    if ms.empty or "newest_survey" not in ms.columns:
+        return None
+    s = ms["newest_survey"].iloc[0]
+    return s if isinstance(s, str) else None
 
 
 def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> dict:
@@ -248,6 +269,7 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
 
     return {
         "broker":              "antares",
+        "survey":              _newest_survey(data),
         "oid":                 locus_id,
         "ndet":                ndet,
         "mag_range":           mag_range,
@@ -283,13 +305,21 @@ def run_antares_pipeline(
                      expiry the run stops and returns the rows gathered so far, so a
                      stalled broker costs a short report rather than an open-ended
                      job. Retry backoff is capped separately by the retry budget.
-    Returns a DataFrame (one row per locus) with the same schema as run_pipeline.
+    Returns a DataFrame (one row per locus) with the same schema as run_pipeline. A run
+    on the listing also sets df.attrs["sample"], what it covered: "asked" (page_size),
+    "listed" (unique loci the listing returned), "checked" (rows), "newest_times" (how
+    many distinct newest_alert_observation_time values the checked loci carry, about
+    the number of exposures), "newest_mjd" (their range, or None without any) and
+    "surveys" (checked loci by the survey of their newest alert, "unknown" where the
+    alerts did not say). A run the deadline stopped also sets df.attrs["stopped_at_deadline"],
+    as run_pipeline does.
     """
     from .antares_api import fetch_antares_candidates, fetch_antares_locus
 
     retry_budget.reset()
 
-    if locus_ids is None:
+    listed = locus_ids is None
+    if listed:
         locus_ids = fetch_antares_candidates(page_size=page_size)
     if not locus_ids:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
@@ -300,6 +330,9 @@ def run_antares_pipeline(
 
     started = time.monotonic()
     rows = []
+    stopped = None
+    newest = set()
+    surveys = collections.Counter()
     for i, lid in enumerate(locus_ids, 1):
         elapsed = time.monotonic() - started
         if max_run_seconds and elapsed > max_run_seconds:
@@ -310,17 +343,33 @@ def run_antares_pipeline(
                 f"stalled; returning partial report",
                 file=sys.stderr, flush=True,
             )
+            stopped = {"done": i - 1, "of": len(locus_ids), "elapsed": elapsed, "deadline": max_run_seconds}
             break
         if not quiet:
             print(f"[{i:>3}/{len(locus_ids)}] {lid}", end="  ", flush=True)
         data   = fetch_antares_locus(lid)
+        if not data["ms"].empty and "newest_alert_observation_time" in data["ms"].columns:
+            t = data["ms"]["newest_alert_observation_time"].iloc[0]
+            if pd.notna(t):
+                newest.add(float(t))
         issues = validate_antares(data)
         cl     = classify_antares(data["tags"])
         row    = build_antares_qa_row(lid, data, issues, cl)
         rows.append(row)
+        surveys[row["survey"] or "unknown"] += 1
         if not quiet:
             print(row["status"])
         if inter_object_delay > 0:
             time.sleep(inter_object_delay)
 
-    return pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    if listed:
+        df.attrs["sample"] = {
+            "asked": page_size, "listed": len(locus_ids), "checked": len(rows),
+            "newest_times": len(newest),
+            "newest_mjd": (min(newest), max(newest)) if newest else None,
+            "surveys": dict(surveys),
+        }
+    if stopped:
+        df.attrs["stopped_at_deadline"] = stopped
+    return df
