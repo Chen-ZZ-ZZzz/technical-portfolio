@@ -107,7 +107,7 @@ class TestApiCall:
         # Same shape as the ALeRCE client: N attempts → N-1 exponential backoffs.
         expected = [RETRY_DELAY * 2 ** i for i in range(RETRY_ATTEMPTS - 1)]
         assert [c.args[0] for c in mock_sleep.call_args_list] == expected
-        assert capsys.readouterr().err.count("WARN: get_by_id failed") == RETRY_ATTEMPTS - 1
+        assert capsys.readouterr().err.count("WARN: ANTARES get_by_id failed") == RETRY_ATTEMPTS - 1
 
     def test_antares_exception_is_retried(self):
         """A missing ANT id answers 500, not 404 — indistinguishable from a fault."""

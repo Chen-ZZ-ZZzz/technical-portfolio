@@ -9,7 +9,7 @@ page. One budget covers one run; each pipeline calls reset() before its loop.
 Shared rather than per-client on purpose: the budget answers "how long may this
 run stall", which is a property of the run, not of which broker it talks to. The
 loop is shared for the same reason, and because two copies drift: each client
-passes only its own exception policy (client._api_call, antares_api._api_call).
+passes only its own exception policy and its name (client._api_call, antares_api._api_call).
 """
 
 import sys
@@ -62,10 +62,14 @@ def call(
     kwargs: dict,
     transient: tuple[type[BaseException], ...],
     answers: tuple[tuple[type[BaseException], Callable[[BaseException], str]], ...] = (),
+    *,
+    broker: str,
 ) -> tuple[Any, str | None]:
     """
     One broker call with retry. Returns (result, None), or (None, error string).
 
+      broker     the broker's name, which starts every WARN line ("ALeRCE query_objects
+                 failed …"): the function name alone does not say which broker failed.
       transient  a fault worth retrying: up to RETRY_ATTEMPTS calls with exponential
                  backoff (RETRY_DELAY * 2**attempt), each sleep drawn from this run's
                  budget. Once the budget is spent, the call gives up instead of
@@ -95,10 +99,10 @@ def call(
             if attempt < RETRY_ATTEMPTS - 1:
                 granted = consume(RETRY_DELAY * (2 ** attempt))
                 if granted is None:
-                    print(f"{WARN_PREFIX}{name} failed ({last_err}) — retry budget exhausted, not retrying",
+                    print(f"{WARN_PREFIX}{broker} {name} failed ({last_err}) — retry budget exhausted, not retrying",
                           file=sys.stderr, flush=True)
                     break
-                print(f"{WARN_PREFIX}{name} failed ({last_err}) — retry {attempt + 1}/{RETRY_ATTEMPTS - 1} "
+                print(f"{WARN_PREFIX}{broker} {name} failed ({last_err}) — retry {attempt + 1}/{RETRY_ATTEMPTS - 1} "
                       f"in {granted:.0f}s ({remaining():.0f}s budget left)", file=sys.stderr, flush=True)
                 time.sleep(granted)
     return None, last_err

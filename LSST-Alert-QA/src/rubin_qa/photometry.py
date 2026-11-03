@@ -208,7 +208,9 @@ def discover_alerce(
         if err is not None:
             return list(objs.values()), f"alerce {survey} listing page {page}: {err}"
         items = items or []
-        for i in items:  # LSST lists an object once per classifier: merged here
+        # LSST lists an object once per classifier, rows that agree on the fields kept here
+        # (README, "Known API Quirks"): merged here, the first row's values kept
+        for i in items:
             oid = str(i["oid"])
             obj = objs.get(oid)
             if obj is None:

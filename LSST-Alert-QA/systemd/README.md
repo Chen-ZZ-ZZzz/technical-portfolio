@@ -181,7 +181,7 @@ systemctl --user --failed
   time, picked for a machine in Germany so that both surveys' nights are over and
   ingested. Computed over 2026 with the sun at −12°, the latest ends are 12:43 German
   time for Rubin (Cerro Pachón, late June) and 15:03 for ZTF (Palomar, late October).
-  ZTF is the only live stream while Rubin is off sky, so 16:00 leaves ALeRCE about an
+  ZTF would be the only live stream while Rubin is off sky, so 16:00 leaves ALeRCE about an
   hour for the end of the ZTF night. Elsewhere, shift it to the same moment
   (14:00 UTC), or add a time zone to `OnCalendar` (`*-*-* 16:00:00 Europe/Berlin`).
   An earlier run loses nothing (the next one sees what it missed); it only reports

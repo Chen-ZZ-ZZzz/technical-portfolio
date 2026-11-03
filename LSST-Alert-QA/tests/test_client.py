@@ -38,7 +38,7 @@ class TestApiCall:
         expected = [RETRY_DELAY * 2 ** i for i in range(RETRY_ATTEMPTS - 1)]
         assert [c.args[0] for c in mock_sleep.call_args_list] == expected
         err_out = capsys.readouterr().err
-        assert err_out.count("WARN: query_objects failed") == RETRY_ATTEMPTS - 1
+        assert err_out.count("WARN: ALeRCE query_objects failed") == RETRY_ATTEMPTS - 1
         assert f"retry 1/{RETRY_ATTEMPTS - 1} in {RETRY_DELAY:.0f}s" in err_out
 
     def test_generic_exception_no_retry(self):

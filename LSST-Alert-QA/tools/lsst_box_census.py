@@ -24,10 +24,18 @@ Method, and why each step:
     query returned identical sets), so a paged walk is a complete enumeration.
   - Objects first seen before the window but still detected in it come from the
     pre-window chunks (firstmjd before the window, lastmjd inside it), for "active".
-  - lastmjd is ALeRCE's current value; since the stream stopped on 07-14 it is final.
+  - lastmjd, n_det and n_forced are what ALeRCE answered on 2026-10-01, when the stream had
+    been stopped since 07-14. LSST alerts reached the brokers again on 2026-10-29, so a
+    refetch now sees later detections, and eligible and active would grow. The rows are a
+    snapshot and can't be fetched again as they were.
 
 Every object is kept (oid, position, first/last MJD, n_det, n_forced, stamp class) in
-cache/lsst_census/<box>.jsonl, so a different tiling is a --report away, not a refetch.
+state/lsst_census/<box>.jsonl, so a different tiling is a --report away, not a refetch.
+
+A fetch now is a new census: give it its own directory and date, and never append to this
+one. A rerun fetches 0 chunks (done.jsonl covers every box), so only a new box goes to the
+network; its rows, from after the restart, would sit next to the 2026-10-01 rows with
+nothing marking the difference, because the rows carry no fetch date.
 
 Usage:
     uv run tools/lsst_box_census.py                 # fetch (resumes), cell by cell
@@ -59,19 +67,19 @@ import requests
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
 
-from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, CACHE_DIR, from_root  # noqa: E402
+from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, STATE_DIR, from_root  # noqa: E402
 
 URL = "https://api-lsst.alerce.online/object_api/list_objects"
 CLASSIFIER = "stamp_classifier_rubin_beta"
 REQUEST_TIMEOUT = 120
 RETRY_WAITS = (15, 30, 60)
-# cache, not logs: the rows can be fetched again (the stream stopped 07-14, so ALeRCE's answers are
-# final), only at a cost of hours. done.jsonl (the resume checkpoint) stays with the <box>.jsonl rows
-# it vouches for: a rerun with only the rows left would append every chunk again
-OUT_DIR = CACHE_DIR / "lsst_census"
+# state, not cache: the rows are the 2026-10-01 snapshot (docstring, last method step).
+# done.jsonl (the resume checkpoint) stays with the <box>.jsonl rows it vouches for: a rerun
+# with only the rows left would append every chunk again
+OUT_DIR = STATE_DIR / "lsst_census"
 WARN_PREFIX = "WARN: "
 
-WINDOW_MJD = (61086, 61236)  # 2026-02-15 .. 2026-07-14 inclusive: the stream's last night
+WINDOW_MJD = (61086, 61236)  # 2026-02-15 .. 2026-07-14 inclusive: the last night before the July stop
 # 2025-08-24 (before ALeRCE's first LSST objects, 2025-10) to the window; edges sit on the
 # 7-day grid of the first box-D run, so its pre-window chunks cover these
 PRE_EDGES = (60900, 60949, 60998, 61047, 61086)

@@ -13,7 +13,12 @@ cannot change afterwards (design: the user, 2026-10-01):
                night (transient_monitor.spans_nights on today's first and last
                detection). The span cut is lossless by construction: every path to a
                report requires it, and a span only grows, so an object below it today
-               was below it on every replayed day.
+               was below it on every replayed day. No classifier filter: the LSST
+               listing has one row per object per classifier, and since the stream
+               resumed new objects carry only a new classifier's name, so a filter on
+               one name loses them; an object's rows are merged on its oid
+               (list_candidates), and they agree on every field kept (README, "Known
+               API Quirks").
   neighbours   ZTF objects of any age within the association radius of each LSST
                candidate (a position never changes), for "bracketed by ZTF".
   light curves one fetch per object, cached on disk; a failed fetch is never cached.
@@ -57,7 +62,6 @@ REPORT_DIR = LOGS_DIR
 LISTING_CHUNK_DAYS = 7
 # pages one listing chunk may run to before it is refused (a runaway guard: 200,000 rows)
 MAX_PAGES = 200_000 // ALERCE_MAX_PAGE_SIZE
-LSST_CLASSIFIER = "stamp_classifier_rubin_beta"  # one row per object (the listing repeats rows per classifier)
 # measured 2026-10-01: ALeRCE query_lightcurve, 10 footprint-D LSST objects, median 1.13 s (max 2.47 s);
 # a neighbour cone query costs about the same
 SECONDS_PER_CALL = 1.13
@@ -108,7 +112,7 @@ def _query(survey: str, cone, lo: float, hi: float, min_ndet: int, page: int):
     ra, dec, radius = cone
     kw = dict(format="json", ra=ra, dec=dec, radius=radius * 3600, firstmjd=[lo, hi], page=page, page_size=ALERCE_MAX_PAGE_SIZE)
     if survey == "lsst":
-        kw.update(survey="lsst", n_det=[min_ndet, 10 ** 6], classifier=LSST_CLASSIFIER)
+        kw.update(survey="lsst", n_det=[min_ndet, 10 ** 6])  # every classifier's row: merged in list_candidates
     else:
         kw.update(survey="ztf", ndet=[min_ndet, 10 ** 6])
     res, err = _api_call(_client.query_objects, **kw)

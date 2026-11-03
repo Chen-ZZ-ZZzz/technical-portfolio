@@ -73,6 +73,47 @@ def test_an_lsst_page_asks_the_shared_size_and_a_full_bare_list_has_a_next(monke
     assert seen[0]["page_size"] == replay.ALERCE_MAX_PAGE_SIZE
 
 
+OLD_STAMP, NEW_STAMP = "stamp_classifier_rubin_beta", "stamp_classifier_rubin_beta_20260421"
+
+
+def lsst_row(oid, classifier, first=101.0):
+    """One row of ALeRCE's LSST listing: an object's fields plus one classifier's name."""
+    return {"oid": oid, "meanra": 150.0, "meandec": 2.0, "firstmjd": first, "lastmjd": first + 2.0, "n_det": 3,
+            "classifier_name": classifier}
+
+
+def lsst_server(rows):
+    """client._api_call answering query_objects as ALeRCE's LSST listing does: filtered on firstmjd,
+    n_det and, when asked, classifier= (a row carries one classifier's name), then paged, as a bare list."""
+    def answer(fn, *a, **kw):
+        (lo, hi), (nlo, nhi) = kw["firstmjd"], kw["n_det"]
+        hits = [r for r in rows if lo <= r["firstmjd"] <= hi and nlo <= r["n_det"] <= nhi
+                and kw.get("classifier") in (None, r["classifier_name"])]
+        start = (kw["page"] - 1) * kw["page_size"]
+        return hits[start:start + kw["page_size"]], None
+    return answer
+
+
+def test_an_object_listed_only_under_a_new_classifier_name_is_a_candidate(monkeypatch):
+    """Since the stream resumed, new LSST objects carry only the new stamp classifier's name."""
+    from rubin_qa import client
+
+    monkeypatch.setattr(client, "_api_call", lsst_server(
+        [lsst_row(1, OLD_STAMP), lsst_row(1, NEW_STAMP), lsst_row(2, NEW_STAMP)]))
+    got = replay.list_candidates("lsst", (150.0, 2.0, 2.0), 100.0, 107.0)
+    assert sorted(r["oid"] for r in got) == ["1", "2"]
+
+
+def test_one_objects_rows_split_across_a_page_boundary_become_one_candidate(monkeypatch):
+    from rubin_qa import client
+
+    monkeypatch.setattr(replay, "ALERCE_MAX_PAGE_SIZE", 2)  # pages: [1, 2] [2, 3] [], object 2 on both sides
+    monkeypatch.setattr(client, "_api_call", lsst_server(
+        [lsst_row(1, OLD_STAMP), lsst_row(2, OLD_STAMP), lsst_row(2, NEW_STAMP), lsst_row(3, NEW_STAMP)]))
+    got = replay.list_candidates("lsst", (150.0, 2.0, 2.0), 100.0, 107.0)
+    assert sorted(r["oid"] for r in got) == ["1", "2", "3"]
+
+
 def test_listing_is_chunked_and_the_span_cut_is_applied():
     lo, hi = 100.0, 114.0
     q = fake_query({

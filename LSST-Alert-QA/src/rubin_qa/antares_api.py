@@ -73,7 +73,7 @@ def _api_call(fn, *args, **kwargs):
     The ZTF path is better behaved — get_by_ztf_object_id returns None for an
     unknown object, which surfaces immediately as locus:not_found.
     """
-    return retry_budget.call(fn, args, kwargs, transient=antares_errors())
+    return retry_budget.call(fn, args, kwargs, transient=antares_errors(), broker="ANTARES")
 
 
 def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:

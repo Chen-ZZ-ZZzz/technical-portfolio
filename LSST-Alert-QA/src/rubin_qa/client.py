@@ -88,6 +88,7 @@ def _api_call(fn, *args, **kwargs):
             (ParseError, lambda e: f"bad_request: {e}"),
             (APIError, _invalid_request),
         ),
+        broker="ALeRCE",
     )
 
 
