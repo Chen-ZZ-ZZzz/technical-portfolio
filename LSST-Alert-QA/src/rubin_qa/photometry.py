@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from requests.exceptions import RequestException
 
 from .config import AB_NJY_ZP, ZTF_FID_BAND  # noqa: F401  (shared survey facts)
+from .config import ALERCE_MAX_PAGE_SIZE
 
 ZTF_LIMIT_SIGMA = 5.0  # ZTF diffmaglim is a 5-sigma limit
 NEGATIVE_DIFF = {"f", "0", "-1", "false"}  # isdiffpos spellings meaning flux went down
@@ -168,7 +169,8 @@ def sep_deg(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
 
 # per survey: the listing's detection-count field, class field, classifier field
 ALERCE_LISTING_FIELDS = {"ztf": ("ndet", "class", "classifier"), "lsst": ("n_det", "class_name", "classifier_name")}
-LISTING_PAGE_SIZE = 1000
+# rows one listing may run to before it stops and reports itself capped: a runaway guard
+LISTING_MAX_ROWS = 50_000
 
 
 def _alerce_listing_query(survey: str):
@@ -185,12 +187,14 @@ def _alerce_listing_query(survey: str):
 
 
 def discover_alerce(
-    survey: str, cone: Cone, since_mjd: float, until_mjd: float | None, max_pages: int = 50, query=None
+    survey: str, cone: Cone, since_mjd: float, until_mjd: float | None,
+    max_pages: int = LISTING_MAX_ROWS // ALERCE_MAX_PAGE_SIZE, query=None
 ) -> tuple[list[SurveyObject], str | None]:
     """
     The survey's objects in the cone active since since_mjd. Points are not fetched here:
     the listing's firstmjd, lastmjd and detection count let the caller decide which objects
-    are worth a light-curve call. Returns (objects, error); on error, what was gathered before it.
+    are worth a light-curve call. Read in pages of ALERCE_MAX_PAGE_SIZE rows until a short one.
+    Returns (objects, error); on error, what was gathered before it.
     """
     query = query or _alerce_listing_query(survey)
     n_field, class_field, classifier_field = ALERCE_LISTING_FIELDS[survey]
@@ -200,7 +204,7 @@ def discover_alerce(
     objs: dict[str, SurveyObject] = {}
     for page in range(1, max_pages + 1):
         items, err = query(ra=ra0, dec=dec0, radius=radius_deg * 3600, lastmjd=last, firstmjd=first,
-                           page=page, page_size=LISTING_PAGE_SIZE)
+                           page=page, page_size=ALERCE_MAX_PAGE_SIZE)
         if err is not None:
             return list(objs.values()), f"alerce {survey} listing page {page}: {err}"
         items = items or []
@@ -217,7 +221,7 @@ def discover_alerce(
                          f"{float(i.get('probability') or 0):.2f}")
                 if label not in obj.classifications:
                     obj.classifications.append(label)
-        if len(items) < LISTING_PAGE_SIZE:
+        if len(items) < ALERCE_MAX_PAGE_SIZE:
             return list(objs.values()), None
     return list(objs.values()), f"alerce {survey} listing capped at {max_pages} pages"
 

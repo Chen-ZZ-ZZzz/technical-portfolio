@@ -190,6 +190,19 @@ class TestBudgetBoundsClientRetries:
         assert result is None and "bad_request" in err
         assert retry_budget.remaining() == RETRY_BUDGET_SECONDS
 
+    def test_refused_parameter_is_not_retried(self):
+        # alerce raises a plain APIError for HTTP 422, the API's refusal of a parameter
+        # (page_size above the LSST listing's limit, met by the live monitor 2026-11-02).
+        retry_budget.reset(RETRY_BUDGET_SECONDS)
+        fn = MagicMock(side_effect=APIError("refused", code=422))
+        fn.__name__ = "query_objects"
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
+            result, err = _api_call(fn)
+        mock_sleep.assert_not_called()
+        assert fn.call_count == 1
+        assert result is None and err.startswith("bad_request: ") and "422" in err
+        assert retry_budget.remaining() == RETRY_BUDGET_SECONDS
+
     def test_server_error_is_still_retried(self):
         # Guard the distinction: 5xx maps to APIError and must keep retrying.
         retry_budget.reset(RETRY_BUDGET_SECONDS)

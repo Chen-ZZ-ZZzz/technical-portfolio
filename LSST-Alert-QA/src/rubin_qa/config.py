@@ -78,6 +78,11 @@ RETRY_DELAY    = 9.0  # seconds: the first wait (the schedule: retry_budget.call
 # applies its own (README, "Known API Quirks").
 REQUEST_TIMEOUT = 60.0
 
+# Rows per page asked of ALeRCE's object listing (query_objects): the most its LSST listing
+# accepts; a larger page_size is refused with HTTP 422 (README, "Known API Quirks"). One
+# size serves both surveys.
+ALERCE_MAX_PAGE_SIZE = 200
+
 # Seconds one run may spend sleeping between retries, both brokers together. Retry is
 # per object, so a broker-wide outage would otherwise multiply the waits across the
 # whole page. What happens once it is spent: retry_budget.call.

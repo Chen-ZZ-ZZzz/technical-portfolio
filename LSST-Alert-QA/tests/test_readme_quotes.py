@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from rubin_qa import classifier, replay, sky_catalog, tns, transient_monitor
-from rubin_qa.config import DEFAULT_SECONDS_PER_OBJECT, SECONDS_PER_OBJECT
+from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, DEFAULT_SECONDS_PER_OBJECT, SECONDS_PER_OBJECT
 from tests.test_sso_frozen import FROZEN_FILES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +129,8 @@ GUARDED = {
         ("seconds per object, antares", _latency_row("antares"), SECONDS_PER_OBJECT["antares"]),
         ("unmeasured-survey fallback", r"The ([\d.]+)s figure was an episode", DEFAULT_SECONDS_PER_OBJECT),
         ("antares-client version", r"antares-client ([\d.]+) \(the pinned version\)", locked("antares-client")),
+        ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|`pipeline\.py lsst N` needs N ≤ (\d+)",
+         ALERCE_MAX_PAGE_SIZE),
         ("in-page links", r"\]\(#([^)]+)\)", anchors(DOCS["README.md"])),
     ],
     "systemd/README.md": [

@@ -59,11 +59,10 @@ import requests
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
 
-from rubin_qa.config import CACHE_DIR, from_root  # noqa: E402
+from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, CACHE_DIR, from_root  # noqa: E402
 
 URL = "https://api-lsst.alerce.online/object_api/list_objects"
 CLASSIFIER = "stamp_classifier_rubin_beta"
-PAGE_SIZE = 1000
 REQUEST_TIMEOUT = 120
 RETRY_WAITS = (15, 30, 60)
 # cache, not logs: the rows can be fetched again (the stream stopped 07-14, so ALeRCE's answers are
@@ -164,7 +163,7 @@ def fetch_chunk(box: Box, chunk: Chunk) -> tuple[list[dict], int]:
     kind, lo, hi = chunk
     ra0, dec0, rad = cone(box)
     params = {"survey": "lsst", "ra": ra0, "dec": dec0, "radius": rad, "classifier": CLASSIFIER,
-              "firstmjd": [lo, hi], "page_size": PAGE_SIZE}
+              "firstmjd": [lo, hi], "page_size": ALERCE_MAX_PAGE_SIZE}
     if kind == "pre":
         params["lastmjd"] = [WINDOW_MJD[0], 70000]
     rows, page = {}, 1

@@ -64,20 +64,30 @@ _client = Alerce()
 _force_session_timeout(_client)
 
 
+def _invalid_request(e: BaseException) -> str | None:
+    """HTTP 422, the API's refusal of a parameter (a page_size above its limit), as an answer; any other code: None."""
+    return f"bad_request: {e}" if getattr(e, "code", None) == 422 else None
+
+
 def _api_call(fn, *args, **kwargs):
     """
     Call an ALeRCE API function with retry (the loop: retry_budget.call).
     Returns (result, error_str). On failure: result=None, error_str set.
 
     ALeRCE's policy: APIError is a fault worth retrying. ObjectNotFoundError is an
-    answer ("not_found"), and so is ParseError, which alerce raises for HTTP 400:
-    the request itself is malformed, and resending it would only burn the run's
-    retry budget on a guaranteed failure.
+    answer ("not_found"), and so are ParseError, which alerce raises for HTTP 400, and
+    a plain APIError carrying HTTP 422 (alerce has no class for it): the request itself
+    is malformed, and resending it would only burn the run's retry budget on a
+    guaranteed failure.
     """
     return retry_budget.call(
         fn, args, kwargs,
         transient=(APIError,),
-        answers=((ObjectNotFoundError, lambda e: "not_found"), (ParseError, lambda e: f"bad_request: {e}")),
+        answers=(
+            (ObjectNotFoundError, lambda e: "not_found"),
+            (ParseError, lambda e: f"bad_request: {e}"),
+            (APIError, _invalid_request),
+        ),
     )
 
 

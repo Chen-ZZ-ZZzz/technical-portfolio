@@ -72,6 +72,9 @@ def call(
                  sleeping through the outage: this is a bad run, not a bad moment.
       answers    (exception, label) pairs that are a real answer, not a fault (an
                  unknown object, a malformed request): returned at once, never retried.
+                 The first pair whose exception matches decides; its label returning
+                 None means "not an answer after all" (an HTTP code it does not cover),
+                 and the error goes on to the rules below.
     Anything else is a bug, not a transient fault: stop without retrying.
     """
     last_err = None

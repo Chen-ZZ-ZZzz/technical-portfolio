@@ -49,14 +49,14 @@ from concurrent.futures import ThreadPoolExecutor
 from . import sky_catalog as sc
 from . import transient_monitor as mon
 from .config import CACHE_DIR as CACHE_ROOT
-from .config import CONFIRM_THRESHOLD_SECONDS, LOGS_DIR, WARN_PREFIX
+from .config import ALERCE_MAX_PAGE_SIZE, CONFIRM_THRESHOLD_SECONDS, LOGS_DIR, WARN_PREFIX
 from .photometry import PhotPoint, SurveyObject, fetch_alerce_lsst, fetch_alerce_ztf, truncate
 
 CACHE_DIR = CACHE_ROOT / "replay"
 REPORT_DIR = LOGS_DIR
 LISTING_CHUNK_DAYS = 7
-PAGE_SIZE = 1000
-MAX_PAGES = 200
+# pages one listing chunk may run to before it is refused (a runaway guard: 200,000 rows)
+MAX_PAGES = 200_000 // ALERCE_MAX_PAGE_SIZE
 LSST_CLASSIFIER = "stamp_classifier_rubin_beta"  # one row per object (the listing repeats rows per classifier)
 # measured 2026-10-01: ALeRCE query_lightcurve, 10 footprint-D LSST objects, median 1.13 s (max 2.47 s);
 # a neighbour cone query costs about the same
@@ -106,7 +106,7 @@ def _query(survey: str, cone, lo: float, hi: float, min_ndet: int, page: int):
     from .client import _api_call, _client
 
     ra, dec, radius = cone
-    kw = dict(format="json", ra=ra, dec=dec, radius=radius * 3600, firstmjd=[lo, hi], page=page, page_size=PAGE_SIZE)
+    kw = dict(format="json", ra=ra, dec=dec, radius=radius * 3600, firstmjd=[lo, hi], page=page, page_size=ALERCE_MAX_PAGE_SIZE)
     if survey == "lsst":
         kw.update(survey="lsst", n_det=[min_ndet, 10 ** 6], classifier=LSST_CLASSIFIER)
     else:
@@ -115,7 +115,7 @@ def _query(survey: str, cone, lo: float, hi: float, min_ndet: int, page: int):
     if err is not None:
         raise ListingError(f"alerce {survey} listing {lo:.1f}-{hi:.1f} page {page}: {err}")
     items = res.get("items", []) if isinstance(res, dict) else (res or [])
-    has_next = res.get("has_next") if isinstance(res, dict) else len(items) == PAGE_SIZE
+    has_next = res.get("has_next") if isinstance(res, dict) else len(items) == ALERCE_MAX_PAGE_SIZE
     return items, bool(has_next)
 
 

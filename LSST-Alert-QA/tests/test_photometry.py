@@ -95,9 +95,12 @@ def item(oid, survey="lsst", ra=150.0, dec=2.0, cls="SN", p=0.9):
             c: cls, k: "stamp", "probability": p}
 
 
+FULL = ph.ALERCE_MAX_PAGE_SIZE  # a full listing page
+
+
 @pytest.mark.parametrize("survey", ["lsst", "ztf"])
 def test_discover_alerce_pages_until_a_short_page_and_merges_repeated_rows(survey):
-    pages = {1: [item(i, survey) for i in range(1000)], 2: [item(5, survey), item(2000, survey)]}
+    pages = {1: [item(i, survey) for i in range(FULL)], 2: [item(5, survey), item(2000, survey)]}
     seen = []
 
     def query(**kw):
@@ -105,7 +108,8 @@ def test_discover_alerce_pages_until_a_short_page_and_merges_repeated_rows(surve
         return pages[kw["page"]], None
 
     objs, err = ph.discover_alerce(survey, (150.0, 2.0, 2.0), NOW - 14, NOW, query=query)
-    assert err is None and len(objs) == 1001 and {o.survey for o in objs} == {survey}
+    assert err is None and len(objs) == FULL + 1 and {o.survey for o in objs} == {survey}
+    assert [kw["page_size"] for kw in seen] == [FULL, FULL]  # never above what the LSST listing accepts
     assert seen[0]["radius"] == 7200.0  # ALeRCE takes arcsec
     assert seen[0]["lastmjd"] == [NOW - 14, 99999.0] and seen[0]["firstmjd"] == [0.0, NOW]
     o = next(o for o in objs if o.survey_object_id == "5")
@@ -116,12 +120,12 @@ def test_discover_alerce_pages_until_a_short_page_and_merges_repeated_rows(surve
 @pytest.mark.parametrize("survey", ["lsst", "ztf"])
 def test_discover_alerce_returns_partial_on_error_and_caps(survey):
     def query(**kw):
-        return ([item(i, survey) for i in range(1000)], None) if kw["page"] == 1 else (None, "timeout")
+        return ([item(i, survey) for i in range(FULL)], None) if kw["page"] == 1 else (None, "timeout")
 
     objs, err = ph.discover_alerce(survey, (150.0, 2.0, 2.0), NOW - 14, None, query=query)
-    assert len(objs) == 1000 and err == f"alerce {survey} listing page 2: timeout"
+    assert len(objs) == FULL and err == f"alerce {survey} listing page 2: timeout"
     objs, err = ph.discover_alerce(survey, (150.0, 2.0, 2.0), NOW - 14, None, max_pages=1,
-                                   query=lambda **kw: ([item(i, survey) for i in range(1000)], None))
+                                   query=lambda **kw: ([item(i, survey) for i in range(FULL)], None))
     assert err == f"alerce {survey} listing capped at 1 pages"
 
 

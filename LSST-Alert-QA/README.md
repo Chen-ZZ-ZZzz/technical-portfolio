@@ -745,6 +745,7 @@ The jobs run as systemd user units, with examples in `systemd/`. Which units exi
 - `lc_classifier` returns empty for many objects; `stamp_classifier` works reliably
 - API returns duplicate oids — deduplicated in `fetch_candidates`
 - LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
+- The LSST object listing refuses `page_size` above 200 with HTTP 422 (`less_than_equal`); the live monitor's LSST listing, then asking 1000, failed on it on 2026-11-02. ZTF's listing has no such limit (201 and 256 answered the same day). Every listing pages at `ALERCE_MAX_PAGE_SIZE` (config.py), and a 422 is not retried: like a 400, it is the request that is wrong. The QA pipeline asks for one page of the size given, so `pipeline.py lsst N` needs N ≤ 200
 - LSST oids come back as integers from the API — normalized to `str` in `fetch_candidates`
 - LSST `classifier_version` is an integer (201, 202) where ZTF sends a string (`"1.0.0"`); the version tiebreaker parses both
 - LSST: `query_lightcurve`, `query_detections`, `query_non_detections` and `query_forced_photometry` work; `query_magstats`, `query_classifiers` and `query_classes` do not

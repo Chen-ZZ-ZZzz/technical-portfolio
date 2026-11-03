@@ -56,6 +56,23 @@ def fake_query(items_by_window):
     return query
 
 
+@pytest.mark.parametrize("rows, has_next", [(replay.ALERCE_MAX_PAGE_SIZE, True), (3, False)])
+def test_an_lsst_page_asks_the_shared_size_and_a_full_bare_list_has_a_next(monkeypatch, rows, has_next):
+    """LSST answers a bare list with no has_next: a page as long as the size asked may have a successor."""
+    from rubin_qa import client
+
+    seen = []
+
+    def fake(fn, *a, **kw):
+        seen.append(kw)
+        return [{"oid": k} for k in range(rows)], None
+
+    monkeypatch.setattr(client, "_api_call", fake)
+    items, more = replay._query("lsst", (150.0, 2.0, 2.0), 100.0, 107.0, 2, 1)
+    assert (len(items), more) == (rows, has_next)
+    assert seen[0]["page_size"] == replay.ALERCE_MAX_PAGE_SIZE
+
+
 def test_listing_is_chunked_and_the_span_cut_is_applied():
     lo, hi = 100.0, 114.0
     q = fake_query({
