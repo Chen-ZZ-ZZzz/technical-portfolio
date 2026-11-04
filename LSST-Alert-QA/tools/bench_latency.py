@@ -8,7 +8,10 @@ The number that feeds SECONDS_PER_OBJECT is the PER-OBJECT row plus
 INTER_OBJECT_DELAY. The candidate fetch is reported separately and deliberately
 excluded: it is a one-off per run, not a per-object cost. It is also the slowest
 call in the system and the reason REQUEST_TIMEOUT stays at 60s, so --candidates
-is worth running whenever that ceiling is in question.
+is worth running whenever that ceiling is in question. Each candidate row times the
+listing the pipeline sends: ALeRCE's query_objects, ANTARES's antares_api.list_loci
+(the one page fetch_antares_candidates retries; since 2026-11-04, before it the
+client's paged get_random_locus_ids). The ANTARES per-object loci come from it too.
 
 Usage:
     uv run tools/bench_latency.py                      # per-object, all surveys
@@ -134,7 +137,9 @@ def bench_antares_objects(samples: int, ztf_samples: int = ZTF_ID_SAMPLES) -> li
     """
     from antares_client import search
 
-    ids = list(dict.fromkeys(search.get_random_locus_ids(samples)))[:samples]
+    from rubin_qa.antares_api import list_loci
+
+    ids = list(dict.fromkeys(list_loci(samples)))[:samples]
     ztf_ids: list[str] = []
 
     def by_ant_id(locus_id: str) -> None:
@@ -169,8 +174,9 @@ def bench_candidates(
     page_sizes: tuple[int, ...], repeats: int = CANDIDATE_REPEATS
 ) -> list[dict]:
     """Time the one-off candidate fetch — highly variable, and the closest call to
-    REQUEST_TIMEOUT. Reported per page size because the relationship is not linear."""
-    from antares_client import search
+    REQUEST_TIMEOUT. Reported per page size because the relationship is not linear. For
+    ANTARES the page size is the listing's n: list_loci asks one page of n up to its cap."""
+    from rubin_qa.antares_api import list_loci
 
     client = _alerce_client()
     rows = []
@@ -188,11 +194,11 @@ def bench_candidates(
             )
     for page_size in page_sizes:
         samples = [
-            _timed(search.get_random_locus_ids, page_size) for _ in range(repeats)
+            _timed(list_loci, page_size) for _ in range(repeats)
         ]
         rows.append(
             _summarize(
-                "antares:get_random_locus_ids", samples,
+                "antares:list_loci", samples,
                 survey="antares", kind="candidates", page_size=page_size,
             )
         )

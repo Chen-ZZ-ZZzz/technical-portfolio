@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from rubin_qa import classifier, replay, sky_catalog, tns, transient_monitor
+from rubin_qa.antares_api import ANTARES_MAX_PAGE_SIZE
 from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, DEFAULT_SECONDS_PER_OBJECT, SECONDS_PER_OBJECT
 from tests.test_sso_frozen import FROZEN_FILES
 
@@ -135,6 +136,7 @@ GUARDED = {
         ("antares-client version", r"antares-client ([\d.]+) \(the pinned version\)", locked("antares-client")),
         ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|N ≤ (\d+): the LSST listing's page limit",
          ALERCE_MAX_PAGE_SIZE),
+        ("ANTARES listing page cap", r"so the cap is the client's own ceiling, (\d+)", ANTARES_MAX_PAGE_SIZE),
         ("in-page links", r"\]\(#([^)]+)\)", anchors(DOCS["README.md"])),
     ],
     "systemd/README.md": [

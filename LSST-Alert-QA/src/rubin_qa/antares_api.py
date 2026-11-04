@@ -1,5 +1,6 @@
 """ANTARES alert broker client — fetch loci and per-locus data."""
 
+import itertools
 import sys
 
 import pandas as pd
@@ -19,6 +20,13 @@ ANSWERED_STATUSES = (400, 422)
 # ANTARES's ant_survey codes on an alert, by the survey that took it (the codes: CLAUDE.md,
 # "Known API quirks"; 2 is a ZTF upper limit, not LSST). A code missing here is unknown.
 ANT_SURVEY = {1: "ZTF", 2: "ZTF", 4: "LSST"}
+
+# Loci per page asked of ANTARES's listing (antares-client's search, its limit): the
+# client's own ceiling on a listing, 1000 (antares-client 2.0.2, search.get_random_loci and
+# get_random_locus_ids refuse n > 1000). A page this size answers well inside the ~10 s
+# after which the server ends a slow listing request with a 500 (README, "Known API
+# Quirks"). How it is used: list_loci.
+ANTARES_MAX_PAGE_SIZE = 1000
 
 
 # ANTARES helpers shared by everything in the repo that still reads ANTARES: this module's
@@ -136,15 +144,29 @@ def _api_call(fn, *args, **kwargs):
     )
 
 
+def list_loci(n: int) -> list[str]:
+    """
+    The IDs of the n most recently updated loci, as the listing returns them: antares-
+    client's search({}), which it sorts on newest_alert_observation_time, read in pages of
+    min(n, ANTARES_MAX_PAGE_SIZE). n up to the cap is one request: the slice stops before
+    any next link is followed, so there is no page boundary for a tie to repeat loci
+    across. Larger n walks pages, and repeats can come back (README, "Known API Quirks").
+    No retry here: fetch_antares_candidates retries it as one call; tools/bench_latency.py
+    times it bare.
+    """
+    loci = _search().search({}, limit=min(n, ANTARES_MAX_PAGE_SIZE))
+    return [locus.locus_id for locus in itertools.islice(loci, n)]
+
+
 def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
     """
-    Fetch the IDs of the most recently updated ANTARES loci (get_random_locus_ids, which
-    antares-client 2.x sorts on newest_alert_observation_time; the rule: CLAUDE.md, "QA
-    pipeline"). Returns a list of locus_id strings. Empty list on error.
+    Fetch the IDs of the page_size most recently updated ANTARES loci (list_loci; the
+    rule: CLAUDE.md, "QA pipeline"), the whole listing one retried call. Returns a list of
+    locus_id strings. Empty list on error.
 
-    Deduplicated here; why the list comes back short: README, Known API Quirks.
+    Deduplicated here: a listing over more than one page can repeat loci.
     """
-    ids, err = _api_call(_search().get_random_locus_ids, page_size)
+    ids, err = _api_call(list_loci, page_size)
     if err is not None:
         print(
             f"{ERROR_PREFIX}fetch_antares_candidates: {err}",

@@ -21,11 +21,13 @@ import pandas as pd
 import pytest
 from antares_client.exceptions import AntaresException
 
+from rubin_qa import antares_api
 from rubin_qa.antares_api import (
     _api_call,
     _search,
     fetch_antares_candidates,
     fetch_antares_locus,
+    list_loci,
 )
 from rubin_qa.classifier import classify_antares
 from rubin_qa.config import OUTPUT_COLUMNS, RETRY_ATTEMPTS, RETRY_DELAY
@@ -193,7 +195,8 @@ class TestRetryPolicyThroughTheClient:
     def test_a_malformed_request_is_an_answer_not_retried(self, fake_api, status):
         fake_api["answer"] = (status, {"detail": [{"msg": "Can't parse elasticsearch_query"}]},
                               "application/json")
-        (result, err), mock_sleep = self.call("get_random_locus_ids", 3)
+        with patch("rubin_qa.retry_budget.time.sleep") as mock_sleep:
+            result, err = _api_call(list_loci, 3)  # the pipeline's listing
         assert result is None
         assert err.startswith(f"bad_request: HTTP {status}: ") and "Can't parse" in err
         assert fake_api["requests"] == 1
@@ -318,31 +321,95 @@ class TestARealV2Response:
         assert "brightest_mismatch" not in issues
 
 
+def loci(*ids):
+    """What antares-client's search yields: Locus objects, read here for their locus_id."""
+    return iter([SimpleNamespace(locus_id=i) for i in ids])
+
+
 class TestFetchAntaresCandidates:
     def test_deduplicates_locus_ids_preserving_order(self):
-        ids = ["ANT1", "ANT2", "ANT1", "ANT3", "ANT2"]
-        get_ids = MagicMock(return_value=ids)
-        patcher, _ = patch_search(get_random_locus_ids=get_ids)
+        search = MagicMock(return_value=loci("ANT1", "ANT2", "ANT1", "ANT3", "ANT2"))
+        patcher, _ = patch_search(search=search)
         with patcher:
             result = fetch_antares_candidates(page_size=5)
-        get_ids.assert_called_once_with(5)  # the page size reaches the client as given
-        # The dedup loss is upstream (pages overlap: README, Known API Quirks),
-        # so a short list is expected behaviour, not a dropped row.
+        search.assert_called_once_with({}, limit=5)  # one page of n
+        # A listing over several pages can repeat loci (README, Known API Quirks): one row per ID
         assert result == ["ANT1", "ANT2", "ANT3"]
 
     def test_returns_empty_list_on_error(self, capsys):
-        fn = MagicMock(side_effect=httpx.ConnectError("down"))
-        fn.__name__ = "get_random_locus_ids"
-        patcher, _ = patch_search(get_random_locus_ids=fn)
+        patcher, _ = patch_search(search=MagicMock(side_effect=httpx.ConnectError("down")))
         with patcher, patch("rubin_qa.retry_budget.time.sleep"):
             result = fetch_antares_candidates(page_size=10)
         assert result == []
         assert "ERROR: fetch_antares_candidates" in capsys.readouterr().err
 
-    def test_none_result_is_not_an_error(self):
-        patcher, _ = patch_search(get_random_locus_ids=MagicMock(return_value=None))
+    def test_an_empty_listing_is_not_an_error(self):
+        patcher, _ = patch_search(search=MagicMock(return_value=loci()))
         with patcher:
             assert fetch_antares_candidates(page_size=10) == []
+
+
+LISTING = V2_DATA / "loci_limit6.json"
+
+
+@pytest.fixture
+def listing_api(monkeypatch):
+    """
+    The listing as the v2 API serves it, from one recorded page of 6 loci (tests/data/
+    antares_v2/loci_limit6.json, 2026-11-04, byte for byte): a request gets the loci at its
+    offset, as many as its limit, and a next link in the server's own form (http://, offset
+    and limit), which the server redirects (301) to https. The real 2.0.2 client runs on
+    top. Returns the recorded IDs in order and the requests seen.
+    """
+    import antares_client.search as search
+
+    recorded = json.loads(LISTING.read_bytes())
+    pool = recorded["data"]
+    seen = []
+
+    def handler(request):
+        url = request.url
+        if url.scheme == "http":
+            seen.append("redirect")
+            return httpx.Response(301, headers={"location": str(url.copy_with(scheme="https"))})
+        limit, offset = int(url.params["limit"]), int(url.params.get("offset", 0))
+        seen.append(("page", offset, limit))
+        more = offset + limit < len(pool)
+        nxt = (f"http://api.antares.noirlab.edu/v2/loci?sort=-properties.newest_alert_observation_time"
+               f"&elasticsearch_query=%7B%7D&offset={offset + limit}&limit={limit}") if more else None
+        return httpx.Response(200, json={**recorded, "data": pool[offset:offset + limit],
+                                         "links": {**recorded["links"], "next": nxt}})
+
+    client = httpx.Client(base_url=API_BASE, transport=httpx.MockTransport(handler), follow_redirects=True)
+    monkeypatch.setattr(search.api_client, "client", client)
+    return [d["locus"]["locus_id"] for d in pool], seen
+
+
+class TestTheListingIsOnePage:
+    """
+    One page of min(n, ANTARES_MAX_PAGE_SIZE) (2026-11-04): n up to the cap is one request,
+    so no page boundary for a tie to repeat loci across, and no http:// redirect.
+    """
+
+    def test_n_up_to_the_cap_is_one_request_of_limit_n(self, listing_api):
+        pool, seen = listing_api
+        assert fetch_antares_candidates(page_size=4) == pool[:4]
+        assert seen == [("page", 0, 4)]
+
+    def test_n_above_the_cap_walks_pages_of_the_cap(self, listing_api, monkeypatch):
+        pool, seen = listing_api
+        monkeypatch.setattr(antares_api, "ANTARES_MAX_PAGE_SIZE", 2)
+        assert fetch_antares_candidates(page_size=5) == pool[:5]
+        assert seen == [("page", 0, 2), "redirect", ("page", 2, 2), "redirect", ("page", 4, 2)]
+
+    def test_the_cap_is_the_clients_own_ceiling(self):
+        """antares-client 2.0.2 refuses a listing of more than 1000 loci, before any request; the cap is that ceiling."""
+        import antares_client.search as search
+
+        assert antares_api.ANTARES_MAX_PAGE_SIZE == 1000
+        with pytest.raises(ValueError):
+            search.get_random_locus_ids(1001)
+        assert len({d["locus"]["locus_id"] for d in json.loads(LISTING.read_bytes())["data"]}) == 6  # one page: no repeats
 
 
 class TestFetchAntaresLocus:

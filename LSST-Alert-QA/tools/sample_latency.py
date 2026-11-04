@@ -48,7 +48,7 @@ from rubin_qa.config import STATE_DIR, SURVEYS, from_root  # noqa: E402
 # state, not logs: past latencies cannot be measured again (the campaign behind SECONDS_PER_OBJECT)
 LOG_PATH = STATE_DIR / "latency_samples.jsonl"
 SAMPLE_OBJECTS = 5          # per survey; keeps a manual run to ~2.5 min
-CANDIDATE_PAGE_SIZE = 100   # the size the daily runs actually use
+CANDIDATE_PAGE_SIZE = 100   # objects per candidate-fetch sample: a magic number
 CANDIDATE_REPEATS = 1       # one shot per sample; the spread comes from many samples
 MIN_USEFUL_RUNS = 5         # a 4-5x effect needs few runs; hour-of-day needs many more
 BOOT_WINDOW_SECONDS = 600   # a sample this soon after boot is probably a timer catch-up
