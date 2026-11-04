@@ -71,7 +71,9 @@ def _print_frame(df: pd.DataFrame, empty_note: str) -> None:
 def _print_verdict(cl: dict) -> None:
     """The weighted-consensus verdict, shared by every broker."""
     if cl.get("top_class") is None:
-        print(f"  No classification. ({cl.get('flag') or 'no reason given'})")
+        # no flag means nothing to classify: no_classification is the validator's token, and
+        # the profiler runs the classifier alone (2026-11-04)
+        print(f"  No classification. ({cl.get('flag') or 'nothing to classify'})")
         _print_families(cl)
         return
     prob, consensus = cl.get("class_prob"), cl.get("consensus")

@@ -49,6 +49,49 @@ def deadline_for(n: int, survey: str = DEFAULT_SURVEY) -> float:
     return max(DEADLINE_FLOOR, DEADLINE_SLACK * estimate_runtime(n, survey))
 
 
+# flag_reasons' key for a flag part made without one: a bug, shown in the report and
+# counted in the run's split, never dropped (tests keep every flag path keyed)
+FLAG_UNKEYED = "unkeyed"
+JD_MINUS_MJD = 2400000.5  # days: MJD = JD - 2400000.5
+
+
+def _flag_and_reasons(issues: list, parts: list[tuple[str | None, str]]) -> tuple[str | None, list[str]]:
+    """
+    A row's flag text and its flag_reasons, built from the same parts so they cannot
+    disagree: the completeness issues are one text ("completeness: a, b") and one key
+    each (the tokens themselves); every other part is (key, text), its key fixed where
+    the flag is made. A part without a key gets FLAG_UNKEYED. Each key once per row.
+    """
+    texts, keys = [], []
+    if issues:
+        texts.append("completeness: " + ", ".join(issues))
+        keys += issues
+    for key, text in parts:
+        texts.append(text)
+        keys.append(key or FLAG_UNKEYED)
+    return "; ".join(texts) or None, list(dict.fromkeys(keys))
+
+
+def _classifier_part(cl: dict) -> list[tuple[str | None, str]]:
+    """The classifier's flag as a (key, text) part, if it made one."""
+    return [(cl.get("flag_reason"), cl["flag"])] if cl.get("flag") else []
+
+
+def _detection_mjds(dets: pd.DataFrame) -> pd.Series:
+    """
+    The epochs of an ALeRCE object's detections as MJD (its "mjd" column, else "jd"
+    converted), empty without either. timespan_days and the newest detection both read
+    them: one definition of the detections a row describes.
+    """
+    if dets.empty:
+        return pd.Series(dtype=float)
+    if "mjd" in dets.columns:
+        return dets["mjd"].astype(float).dropna()
+    if "jd" in dets.columns:
+        return dets["jd"].astype(float).dropna() - JD_MINUS_MJD
+    return pd.Series(dtype=float)
+
+
 def _psfflux_to_mag(flux_series: pd.Series) -> pd.Series:
     """Convert LSST psfFlux (nanojanskies) to AB magnitudes. Drops non-positive values."""
     positive = flux_series[flux_series > 0].dropna()
@@ -61,7 +104,10 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
     status: PASS (no flag) / REVIEW (genuine split) / FLAG (everything else)
     survey: the survey the run queried ("ztf" / "lsst"), written as "ZTF" / "LSST" so
     every row records it, as an ANTARES row records its newest alert's; run_pipeline
-    always passes it (a caller that does not leaves the cell empty, never wrong).
+    always passes it (a caller that does not leaves the cell empty, never wrong). The
+    newest detection fills that survey's newest_<survey>_mjd only, from the detections
+    timespan_days spans (_detection_mjds); an ALeRCE object has no detection of an unknown
+    survey, so unknown_survey_dets is 0. flag and flag_reasons: _flag_and_reasons.
     """
     dets = data["dets"]
     ms   = data["ms"]
@@ -88,25 +134,19 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
     mag_range = round(magmax - magmin, 4) if magmin == magmin and magmax == magmax else float("nan")
 
     # Timespan: last − first detection epoch
-    timespan_days = float("nan")
-    if not dets.empty:
-        epoch_col = next((c for c in ("mjd", "jd") if c in dets.columns), None)
-        if epoch_col:
-            span = dets[epoch_col].max() - dets[epoch_col].min()
-            timespan_days = round(float(span), 2)
+    epochs = _detection_mjds(dets)
+    timespan_days = round(float(epochs.max() - epochs.min()), 2) if not epochs.empty else float("nan")
+    newest = {"ZTF": None, "LSST": None}
+    if survey and not epochs.empty:
+        newest[survey.upper()] = float(epochs.max())
 
     confirmed = ndet > 1
 
-    # Merge completeness issues and classification flag into one flag string
-    all_flags = []
-    if issues:
-        all_flags.append("completeness: " + ", ".join(issues))
-    all_flags += [f"unknown_classifier: {u}" for u in cl.get("unknown", [])]
+    # Merge completeness issues and classification flags into one flag string
+    parts = [("unknown_classifier", f"unknown_classifier: {u}") for u in cl.get("unknown", [])]
     if cl.get("n_classifiers", 0) < 2:
-        all_flags.append("insufficient_classifiers")
-    if cl.get("flag"):
-        all_flags.append(cl["flag"])
-    flag = "; ".join(all_flags) or None
+        parts.append(("insufficient_classifiers", "insufficient_classifiers"))
+    flag, flag_reasons = _flag_and_reasons(issues, parts + _classifier_part(cl))
 
     if issues or cl.get("unknown"):  # an unknown classifier: the registry needs its line (classifier.py)
         status = "FLAG"
@@ -126,6 +166,9 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
         "ndet":               ndet,
         "mag_range":          mag_range,
         "timespan_days":      timespan_days,
+        "newest_ztf_mjd":     newest["ZTF"],
+        "newest_lsst_mjd":    newest["LSST"],
+        "unknown_survey_dets": 0,
         "top_class":          cl.get("top_class"),
         "class_prob":         round(cl["class_prob"], 4) if cl.get("class_prob") is not None else None,
         "consensus":          round(cl["consensus"], 4)  if cl.get("consensus")  is not None else None,
@@ -136,6 +179,7 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
         "has_issues":         bool(issues),
         "completeness_issues": issues,
         "flag":               flag,
+        "flag_reasons":       flag_reasons,
         "status":             status,
     }
 
@@ -226,7 +270,9 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
     Assemble one QA row for an ANTARES locus. Same output schema as build_qa_row.
 
     No n_classifiers<2 threshold: ANTARES provides discrete tags, not multi-classifier
-    probability votes — tag presence is the classification signal.
+    probability votes — tag presence is the classification signal. The newest detection
+    per survey and unknown_survey_dets come from fetch_antares_locus's summary
+    (newest_detections); flag and flag_reasons: _flag_and_reasons.
     """
     dets = data["dets"]
     ms   = data["ms"]
@@ -251,12 +297,13 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
 
     confirmed = ndet > 1
 
-    all_flags = []
-    if issues:
-        all_flags.append("completeness: " + ", ".join(issues))
-    if cl.get("flag"):
-        all_flags.append(cl["flag"])
-    flag = "; ".join(all_flags) or None
+    def summary(column: str):
+        if ms.empty or column not in ms.columns or pd.isna(ms[column].iloc[0]):
+            return None
+        return ms[column].iloc[0]
+
+    newest_ztf, newest_lsst = summary("newest_ztf_mjd"), summary("newest_lsst_mjd")
+    flag, flag_reasons = _flag_and_reasons(issues, _classifier_part(cl))
 
     if issues:
         status = "FLAG"
@@ -274,6 +321,9 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
         "ndet":                ndet,
         "mag_range":           mag_range,
         "timespan_days":       timespan_days,
+        "newest_ztf_mjd":      float(newest_ztf) if newest_ztf is not None else None,
+        "newest_lsst_mjd":     float(newest_lsst) if newest_lsst is not None else None,
+        "unknown_survey_dets": int(summary("unknown_survey_dets") or 0),
         "top_class":           cl.get("top_class"),
         "class_prob":          round(cl["class_prob"], 4) if cl.get("class_prob") is not None else None,
         "consensus":           round(cl["consensus"], 4)  if cl.get("consensus")  is not None else None,
@@ -284,6 +334,7 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
         "has_issues":          bool(issues),
         "completeness_issues": issues,
         "flag":                flag,
+        "flag_reasons":        flag_reasons,
         "status":              status,
     }
 

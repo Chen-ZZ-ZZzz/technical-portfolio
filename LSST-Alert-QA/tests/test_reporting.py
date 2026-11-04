@@ -12,10 +12,10 @@ from rubin_qa.reporting import _psfflux_to_mag, build_qa_row, run_pipeline
 
 
 def _cl(top_class="SN", class_prob=0.95, consensus=0.95, n_classifiers=2,
-        n_agree=2, n_disagree=0, flag=None, verdict="pass"):
+        n_agree=2, n_disagree=0, flag=None, verdict="pass", flag_reason=None):
     return dict(top_class=top_class, class_prob=class_prob, consensus=consensus,
                 n_classifiers=n_classifiers, n_agree=n_agree, n_disagree=n_disagree,
-                flag=flag, verdict=verdict)
+                flag=flag, flag_reason=flag_reason, verdict=verdict)
 
 
 class TestPsffluxToMag:
@@ -105,6 +105,25 @@ class TestBuildQaRow:
         row = build_qa_row("ZTF1", data, [], _cl())
         assert math.isnan(row["timespan_days"])
 
+    def test_the_newest_detection_fills_the_queried_surveys_column_only(self, data_complete, lsst_dets, probs_clean):
+        """From the detections timespan_days spans (2026-11-04); an ALeRCE object has no unknown-survey detection."""
+        row = build_qa_row("ZTF1", data_complete, [], _cl(), survey="ztf")
+        assert (row["newest_ztf_mjd"], row["newest_lsst_mjd"], row["unknown_survey_dets"]) == (59020.0, None, 0)
+        lsst = {"dets": lsst_dets, "ms": pd.DataFrame(), "probs": probs_clean, "fetch_errors": []}
+        row = build_qa_row("100001", lsst, [], _cl(), survey="lsst")
+        assert (row["newest_ztf_mjd"], row["newest_lsst_mjd"]) == (None, 60010.0)
+
+    def test_a_jd_epoch_column_is_converted_to_mjd(self, ztf_ms, probs_clean):
+        dets = pd.DataFrame({"ra": [1.0, 1.0], "dec": [1.0, 1.0], "magpsf": [18.0, 19.0], "jd": [2459000.5, 2459010.5]})
+        row = build_qa_row("ZTF1", {"dets": dets, "ms": ztf_ms, "probs": probs_clean, "fetch_errors": []},
+                           [], _cl(), survey="ztf")
+        assert (row["newest_ztf_mjd"], row["timespan_days"]) == (59010.0, 10.0)
+
+    def test_without_a_survey_no_newest_column_is_filled(self, data_complete):
+        """A caller that does not name the survey leaves the cells empty, never wrong (as survey)."""
+        row = build_qa_row("ZTF1", data_complete, [], _cl())
+        assert (row["newest_ztf_mjd"], row["newest_lsst_mjd"]) == (None, None)
+
     def test_confirmed_true_when_ndet_gt_1(self, data_complete):
         row = build_qa_row("ZTF1", data_complete, [], _cl())
         assert row["confirmed"] is True
@@ -122,7 +141,7 @@ class TestBuildQaRow:
 
     def test_status_review_major_on_genuine_split(self, data_complete):
         flag = "genuine split across 2 classes (weighted: 'SN' 55%, 'AGN' 45%) — needs review"
-        row = build_qa_row("ZTF1", data_complete, [], _cl(flag=flag, verdict="review_major"))
+        row = build_qa_row("ZTF1", data_complete, [], _cl(flag=flag, verdict="review_major", flag_reason="genuine_split"))
         assert row["status"] == "REVIEW_MAJOR"
 
     def test_status_flag_when_single_classifier(self, data_complete):
@@ -137,7 +156,7 @@ class TestBuildQaRow:
 
     def test_flag_combines_issues_and_classifier_flag(self, data_complete):
         row = build_qa_row("ZTF1", data_complete, ["drb_absent"],
-                           _cl(flag="minor disagreement: 2/3 agree on 'SN'"))
+                           _cl(flag="minor disagreement: 2/3 agree on 'SN'", flag_reason="minor_disagreement"))
         assert "completeness" in row["flag"]
         assert "minor disagreement" in row["flag"]
 

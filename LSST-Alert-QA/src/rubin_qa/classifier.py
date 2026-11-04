@@ -139,23 +139,24 @@ def classify_antares(tags: list) -> dict:
 
     Single tag  → consensus=1.0, pass.
     Multi-tag   → consensus=1/n; ambiguity grows with count.
-    No tags     → no_classification.
+    No tags     → no verdict and no flag: validate_antares reports no_classification,
+                  its one owner (2026-11-04), so a row names it once.
 
-    Return shape matches classify_object so build_antares_qa_row can use it.
+    Return shape matches classify_object so build_antares_qa_row can use it. Every flag
+    comes with its flag_reason, a fixed key (the row's flag_reasons, build_antares_qa_row).
     """
     science = [t for t in tags if t in SCIENCE_TAGS]
 
     if not science:
         pipeline_only = [t for t in tags if t in PIPELINE_TAGS]
         unknown = [t for t in tags if t not in SCIENCE_TAGS and t not in PIPELINE_TAGS]
-        flag = (
-            f"no_science_tags (pipeline: {pipeline_only}; unknown: {unknown})"
-            if (pipeline_only or unknown) else "no_classification"
-        )
+        tagged = bool(pipeline_only or unknown)
         return {
             "top_class": None, "class_prob": None, "consensus": None,
             "n_classifiers": 0, "n_agree": 0, "n_disagree": 0,
-            "flag": flag, "verdict": "review_major",
+            "flag": f"no_science_tags (pipeline: {pipeline_only}; unknown: {unknown})" if tagged else None,
+            "flag_reason": "no_science_tags" if tagged else None,
+            "verdict": "review_major",
         }
 
     science = sorted(science)
@@ -164,13 +165,13 @@ def classify_antares(tags: list) -> dict:
     consensus = round(1.0 / n, 4)
 
     if n == 1:
-        flag, verdict = None, "pass"
+        flag, reason, verdict = None, None, "pass"
     elif consensus >= MAJORITY_THRESHOLD:
         flag    = f"minor: {n} science tags — {', '.join(science)}"
-        verdict = "review_minor"
+        reason, verdict = "minor_science_tags", "review_minor"
     else:
         flag    = f"multiple science tags ({n}): {', '.join(science)}"
-        verdict = "review_major"
+        reason, verdict = "multiple_science_tags", "review_major"
 
     return {
         "top_class":     top_class,
@@ -180,6 +181,7 @@ def classify_antares(tags: list) -> dict:
         "n_agree":       1,
         "n_disagree":    n - 1,
         "flag":          flag,
+        "flag_reason":   reason,
         "verdict":       verdict,
     }
 
@@ -295,7 +297,8 @@ def _method_weight(classifier_name: str, ndet: int) -> float:
 
 
 _NO_VOTE = {"top_class": None, "class_prob": None, "consensus": None,
-            "n_classifiers": 0, "n_agree": 0, "n_disagree": 0, "verdict": "review_major"}
+            "n_classifiers": 0, "n_agree": 0, "n_disagree": 0, "verdict": "review_major",
+            "flag": None, "flag_reason": None}
 
 
 def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
@@ -321,13 +324,16 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
       otherwise                            → genuine split, needs review
 
     Also returns "families" (the families with a live vote on this object), "compared"
-    (those in the judged group) and "unknown" ("name@version" pairs).
+    (those in the judged group) and "unknown" ("name@version" pairs). Every flag comes
+    with its flag_reason, a fixed key (the row's flag_reasons, build_qa_row). Empty
+    probabilities get no verdict and no flag: validate_completeness reports
+    no_classification, its one owner (2026-11-04), so a row names it once.
 
     Receives an already-fetched probs DataFrame and ndet (not an oid)
     so no extra API calls are made here.
     """
     if probs.empty:
-        return {**_NO_VOTE, "flag": "no_classification", "families": [], "compared": [], "unknown": []}
+        return {**_NO_VOTE, "families": [], "compared": [], "unknown": []}
 
     probs = probs.assign(_key=[(str(n), _version_str(v))
                                for n, v in zip(probs["classifier_name"], probs["classifier_version"])])
@@ -339,9 +345,9 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
 
     ranked = probs[probs["ranking"] == 1]
     if ranked.empty:
-        return {**_NO_VOTE, "flag": "no_ranking1_rows", "compared": [], **seen}
+        return {**_NO_VOTE, "flag": "no_ranking1_rows", "flag_reason": "no_ranking1_rows", "compared": [], **seen}
     if not votes:
-        return {**_NO_VOTE, "flag": "no_live_classifier", "compared": [], **seen}
+        return {**_NO_VOTE, "flag": "no_live_classifier", "flag_reason": "no_live_classifier", "compared": [], **seen}
 
     groups: dict[frozenset, list[dict]] = {}
     for family, key in votes:
@@ -355,7 +361,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
         groups.setdefault(classes, []).append({"family": family, "class_name": row["class_name"],
                                                "probability": float(row["probability"]), "_w": float(weight)})
     if not groups:
-        return {**_NO_VOTE, "flag": "no_ranking1_rows", "compared": [], **seen}
+        return {**_NO_VOTE, "flag": "no_ranking1_rows", "flag_reason": "no_ranking1_rows", "compared": [], **seen}
     group = max(groups.values(), key=lambda g: (len(g), sum(v["_w"] for v in g)))
     seen["compared"] = [v["family"] for v in group]
     top = pd.DataFrame(group)
@@ -364,7 +370,8 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
     total_weight  = class_weights.sum()
 
     if total_weight == 0:
-        return {**_NO_VOTE, "n_classifiers": len(top), "flag": "zero_total_weight", **seen}
+        return {**_NO_VOTE, "n_classifiers": len(top), "flag": "zero_total_weight", "flag_reason": "zero_total_weight",
+                **seen}
 
     plurality    = class_weights.idxmax()
     w_consensus  = class_weights[plurality] / total_weight
@@ -378,6 +385,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
 
     if w_consensus >= HIGH_CONFIDENCE_THRESHOLD:
         flag    = None
+        reason  = None
         verdict = "pass"
 
     elif w_consensus >= MAJORITY_THRESHOLD and outliers_only:
@@ -385,6 +393,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
             f"minor disagreement: {n_agree}/{n_total} agree on '{plurality}'; "
             f"dissenters all below prob {OUTLIER_PROB_THRESHOLD}"
         )
+        reason  = "minor_disagreement"
         verdict = "review_minor"
 
     else:
@@ -394,6 +403,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
             f"genuine split across {n_classes} classes "
             f"(weighted: {breakdown}) — needs review"
         )
+        reason  = "genuine_split"
         verdict = "review_major"
 
     return {
@@ -404,6 +414,7 @@ def classify_object(probs: pd.DataFrame, ndet: int) -> dict:
         "n_agree":       int(n_agree),
         "n_disagree":    int(n_total - n_agree),
         "flag":          flag,
+        "flag_reason":   reason,
         "verdict":       verdict,
         **seen,
     }

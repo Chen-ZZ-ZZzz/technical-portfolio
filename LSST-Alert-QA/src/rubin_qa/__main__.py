@@ -4,7 +4,8 @@
 """
 
 import argparse
-import datetime
+import ast
+import collections
 import sys
 
 import pandas as pd
@@ -17,6 +18,9 @@ from .config import (
     REPORTS_DIR,
     SURVEYS,
     WARN_PREFIX,
+    mjd_to_datetime,
+    now_mjd,
+    utc_and_age,
 )
 from .reporting import deadline_for, estimate_runtime, run_antares_pipeline, run_pipeline
 
@@ -58,6 +62,46 @@ def sample_line(df: pd.DataFrame) -> str | None:
     return (f"sample: {s['checked']} loci checked of {s['listed']} unique listed "
             f"({s['asked']} asked; the most recently updated), newest alerts at {times}{span}, "
             f"by survey {split}")
+
+
+def newest_line(df: pd.DataFrame, survey: str, run_mjd: float) -> str:
+    """
+    The newest detection per survey among the objects this run checked, e.g. "newest ZTF
+    of the 229 checked: 2026-11-03 13:22 UTC (17.5 h)", aged from the run's start. One
+    wording for every survey and both brokers: the checked objects are a sample, so no
+    figure here is claimed to be a broker's newest. An ALeRCE run names its own survey,
+    an ANTARES run both; ANTARES detections of no known survey are counted, never dropped.
+    Read from the report's columns only (newest_<survey>_mjd, unknown_survey_dets), so
+    the CSV reproduces it.
+    """
+    n = len(df)
+    parts = []
+    for s in (("ZTF", "LSST") if survey == "antares" else (survey.upper(),)):
+        mjds = pd.to_numeric(df[f"newest_{s.lower()}_mjd"], errors="coerce").dropna()
+        parts.append(f"newest {s} of the {n} checked: "
+                     + (utc_and_age(float(mjds.max()), run_mjd) if not mjds.empty else "none"))
+    unknown = pd.to_numeric(df["unknown_survey_dets"], errors="coerce").fillna(0)
+    if unknown.sum():
+        parts.append(f"detections of no known survey: {int(unknown.sum())} in {int((unknown > 0).sum())} "
+                     f"of the {n} checked")
+    return "; ".join(parts)
+
+
+def flag_split(df: pd.DataFrame) -> str:
+    """
+    "flagged=196/196 (insufficient_classifiers 196, ndet_lt_2 115)": the flagged rows, and
+    how many rows carry each key of flag_reasons (a row with several counts under each),
+    by count, then key. A report read back from its CSV holds each list as its text,
+    "['ndet_lt_2']", which is parsed, so the CSV reproduces the line.
+    """
+    def keys_of(cell) -> list:
+        if isinstance(cell, str):
+            return ast.literal_eval(cell)
+        return cell if isinstance(cell, list) else []
+
+    counts = collections.Counter(k for cell in df["flag_reasons"] for k in keys_of(cell))
+    split = ", ".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return f"flagged={df['flag'].notna().sum()}/{len(df)}" + (f" ({split})" if split else "")
 
 
 def _planned_count(rest: list) -> int:
@@ -162,6 +206,11 @@ def main() -> None:
     label, slug = run_label(survey)
 
     _confirm_long_run(survey, rest, opts.yes)
+    # The run's one reading of the clock, after any prompt and before the listing: the
+    # file name shows it in local time (as the monitor names its report), run_utc in UTC
+    # is the time of record, and every age in the summary is measured from it.
+    run_mjd = now_mjd()
+    started = mjd_to_datetime(run_mjd)
 
     try:
         df = _dispatch(survey, rest, quiet)
@@ -182,21 +231,22 @@ def main() -> None:
         sys.exit(1)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = REPORTS_DIR / f"qa_{slug}_{date}_n{len(df)}.csv"
+    csv_path = REPORTS_DIR / f"qa_{slug}_{started.astimezone():%Y%m%d_%H%M%S}_n{len(df)}.csv"
+    df.insert(0, "run_utc", started.isoformat(timespec="seconds"))
     df.to_csv(csv_path, index=False)
 
     sample = sample_line(df)
+    newest = newest_line(df, survey, run_mjd)
     if quiet:
-        flagged = df["flag"].notna().sum()
-        print(f"{label}  n={len(df)}  flagged={flagged}/{len(df)}  → {csv_path}"
+        print(f"{label}  n={len(df)}  {flag_split(df)}  | {newest}  → {csv_path}"
               + (f"  | {sample}" if sample else ""))
     else:
         print(f"\n=== {label} Data Quality Report ===")
         if sample:
             print(sample)
         print(df[SUMMARY_COLUMNS].to_string())
-        print(f"\n{df['flag'].notna().sum()}/{len(df)} objects flagged  |  full report: {csv_path}")
+        print(f"\n{newest}")
+        print(f"{flag_split(df)}  |  full report: {csv_path}")
 
     stopped = df.attrs.get("stopped_at_deadline")
     if stopped:

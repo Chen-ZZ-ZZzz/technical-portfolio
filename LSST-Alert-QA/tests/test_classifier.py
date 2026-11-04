@@ -46,9 +46,10 @@ class TestMethodWeight:
 
 
 class TestClassifyObject:
-    def test_empty_probs_returns_no_classification(self):
+    def test_empty_probs_return_no_verdict_and_leave_no_classification_to_the_validator(self):
+        """no_classification has one owner, validate_completeness (2026-11-04): the classifier adds nothing."""
         result = classify_object(pd.DataFrame(), ndet=5)
-        assert result["flag"] == "no_classification"
+        assert (result["flag"], result["flag_reason"]) == (None, None)
         assert result["top_class"] is None
 
     def test_no_ranking1_rows(self):

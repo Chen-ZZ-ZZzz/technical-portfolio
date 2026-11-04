@@ -535,6 +535,30 @@ def test_a_listing_with_objects_needs_no_check_and_raises_the_known_newest():
     check = mon.check_listing("lsst", listed(NOW - 2, NOW - 1), None, (53.1, -27.8, 2.82), SINCE, SINCE - 100,
                                    probe=lambda c, f: pytest.fail("checked a non-empty listing"))
     assert (check.status, check.newest_mjd) == ("objects", NOW - 1) and "2 objects active since" in check.detail
+    assert check.answered_mjd == NOW - 1
+
+
+def test_the_answer_is_what_this_run_listed_the_known_newest_may_be_later():
+    """2026-11-04: newest_mjd is the newest known, max(state, listing); answered_mjd only what this listing returned."""
+    check = mon.check_listing("lsst", listed(NOW - 3, NOW - 2), None, (53.1, -27.8, 2.82), SINCE, NOW - 1,
+                              probe=lambda c, f: pytest.fail("checked a non-empty listing"))
+    assert (check.newest_mjd, check.answered_mjd) == (NOW - 1, NOW - 2)
+
+
+ANSWERED = mon.ListingCheck("objects", "37 objects active since 2026-10-21", 61338.4, 61338.3995)
+
+
+@pytest.mark.parametrize("listing,phrase", [
+    (ANSWERED, "; newest ZTF: 2026-10-25 09:35 UTC (9.9 d)"),
+    (mon.ListingCheck("quiet", "none active since 2026-10-21; upstream quiet (checked on ztf:ZTF21x)", 61338.4, 61338.3995),
+     "; newest ZTF: 2026-10-25 09:35 UTC (9.9 d)"),
+    (mon.ListingCheck("failed", "alerce ztf listing page 3: 504 (objects gathered before it are kept)", 61338.3995),
+     "; last known ZTF: 2026-10-25 09:35 UTC (9.9 d), from an earlier run"),
+    (mon.ListingCheck("failed", "empty listing, unverified: never observed ...", None), ""),
+])
+def test_the_listing_line_states_this_runs_answer_or_the_last_known_value_from_an_earlier_run(listing, phrase):
+    """Aged from the run's start (2026-11-04 07:00:49 UTC, the 11-04 ecdfs run); a failure never calls a value newest."""
+    assert mon.newest_phrase("ztf", listing, 61348.292234) == phrase
 
 
 def test_an_empty_listing_is_quiet_when_the_known_newest_comes_back_older_than_the_window():
@@ -542,17 +566,19 @@ def test_an_empty_listing_is_quiet_when_the_known_newest_comes_back_older_than_t
     check = mon.check_listing("lsst", [], None, (53.1, -27.8, 2.82), SINCE, 61108.03,
                                    probe({"oid": 314007346664701955, "lastmjd": 61108.03}, calls))
     assert calls == [61108.03 - mon.LISTING_CHECK_MARGIN_DAYS]  # light: only the last night is sorted
-    assert check.status == "quiet" and "newest LSST detection in the cone 2026-03-09" in check.detail
+    assert check.status == "quiet" and "upstream quiet (checked on lsst:314007346664701955)" in check.detail
+    assert (check.answered_mjd, check.newest_mjd) == (61108.03, 61108.03)
+    assert "2026-03-09" not in check.detail  # the line adds the date, once (newest_phrase)
 
 
 def test_an_empty_listing_with_an_object_inside_the_window_is_a_silent_failure():
     check = mon.check_listing("lsst", [], None, (53.1, -27.8, 2.82), SINCE, 61108.03, probe({"oid": 9, "lastmjd": NOW - 1}))
     assert check.status == "failed" and "the listing failed silently" in check.detail
-    assert check.newest_mjd == NOW - 1
+    assert check.newest_mjd == check.answered_mjd == NOW - 1  # the check's object is this run's answer
 
 
 @pytest.mark.parametrize("known,answer,says", [
-    (61108.03, (None, None), "the known newest object (lastmjd 61108.03, 2026-03-09) did not come back"),
+    (61108.03, (None, None), "the known newest object did not come back"),
     (61108.03, (None, "alerce lsst newest-in-cone check: 504"), "the check could not run: alerce lsst newest-in-cone check: 504"),
     (None, (None, None), "never observed, or the listing service failed - cannot tell which"),
 ])
@@ -561,13 +587,14 @@ def test_an_empty_listing_that_cannot_be_verified_is_a_failure_never_quiet(known
     check = mon.check_listing("lsst", [], None, (53.1, -27.8, 2.82), SINCE, known,
                                    lambda c, f: calls.append(f) or answer)
     assert check.status == "failed" and says in check.detail
+    assert (check.newest_mjd, check.answered_mjd) == (known, None)  # nothing answered: the known value stays
     assert calls == [None if known is None else known - mon.LISTING_CHECK_MARGIN_DAYS]  # no known newest: whole cone
 
 
 def test_the_ztf_listing_is_guarded_the_same_way():
     check = mon.check_listing("ztf", [], None, (53.1, -27.8, 2.82), SINCE, SINCE - 40,
                               probe({"oid": "ZTF21aabbvto", "lastmjd": SINCE - 40}))
-    assert check.status == "quiet" and "newest ZTF detection in the cone" in check.detail and "ztf:ZTF21aabbvto" in check.detail
+    assert check.status == "quiet" and "upstream quiet (checked on ztf:ZTF21aabbvto)" in check.detail
     check = mon.check_listing("ztf", [], None, (53.1, -27.8, 2.82), SINCE, SINCE - 40,
                               probe({"oid": "ZTF26x", "lastmjd": NOW - 1}))
     assert check.status == "failed" and "ALeRCE holds ztf:ZTF26x" in check.detail
@@ -585,12 +612,18 @@ def test_quiet_weeks_and_a_real_outage_do_not_look_alike(env, capsys):
     assert mon.scan("ecdfs", (53.1, -27.8, 2.82)) == 0
     out = capsys.readouterr()
     assert "LSST listing (ALeRCE): none active since" in out.out and "upstream quiet" in out.out
+    (line,) = [ln for ln in out.out.splitlines() if ln.startswith("LSST listing (ALeRCE):")]
+    assert line.endswith("; newest LSST: 2026-03-09 00:43 UTC (202.0 d)") and line.count("2026-03-09") == 1
     assert "ERROR" not in out.err and state("ecdfs")["newest_mjd"]["lsst"] == 61108.03
+    assert report("transient_ecdfs_*.json")["listings"]["lsst"]["answered_mjd"] == 61108.03
+    for path in mon.REPORTS_DIR.glob("*.json"):
+        path.unlink()
 
     env["newest"]["lsst"] = ({"oid": 314999, "lastmjd": NOW - 1}, None)  # Rubin is back; the listing still answers empty
     assert mon.scan("ecdfs", (53.1, -27.8, 2.82)) == 1
     out = capsys.readouterr()
-    assert "LSST listing (ALeRCE): FAILED - empty listing, yet ALeRCE holds lsst:314999" in out.out
+    assert ("LSST listing (ALeRCE): FAILED - empty listing, yet ALeRCE holds lsst:314999 inside the window: the "
+            "listing failed silently; newest LSST: 2026-09-26 00:00 UTC (24.0 h)") in out.out
     assert "ERROR: LSST listing failed" in out.err
     # first run: nothing stored, so the whole cone (the one heavy query); then the stored newest bounds it
     assert [f for survey, f in env["probes"] if survey == "lsst"] == [None, 61108.03 - mon.LISTING_CHECK_MARGIN_DAYS]
@@ -1197,6 +1230,7 @@ def test_a_live_report_says_what_the_printed_report_said(env, capsys, monkeypatc
     assert r["settings"] == {"lookback_days": 14.0, "bracket_days": 10.0, "min_detections": 3}
     for survey, listing in r["listings"].items():
         assert f"{survey.upper()} listing (ALeRCE): {listing['detail']}" in out
+        assert set(listing) == {"status", "detail", "newest_mjd", "answered_mjd"}
     assert r["objects"] == {"total": 2, "by_survey": {"ztf": 2}, "kept": 1} and r["rejected"] == {"old_no_rise": 1}
     (alert,) = r["alerts"]
     assert (alert["key"], alert["category"], alert["conditions"], alert["onset"], alert["onset_status"]) == (

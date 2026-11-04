@@ -161,6 +161,22 @@ def fetch_antares_candidates(page_size: int = DEFAULT_PAGE_SIZE) -> list:
     return deduped
 
 
+def newest_detections(dets: pd.DataFrame) -> tuple[dict[str, float], int]:
+    """
+    The newest detection's MJD per survey ({"ZTF": mjd, "LSST": mjd}; a survey with no
+    detection is absent), and how many detections carry an ant_survey code ANT_SURVEY
+    does not know, or none: counted, never dropped. dets as fetch_antares_locus keeps
+    them, the detections magmin and magmax come from (upper limits already gone), so an
+    upper limit never counts as a detection here either.
+    """
+    if dets.empty or "mjd" not in dets.columns:
+        return {}, 0
+    codes = dets["ant_survey"] if "ant_survey" in dets.columns else pd.Series(None, index=dets.index)
+    surveys = codes.map(lambda c: ANT_SURVEY.get(int(c)) if pd.notna(c) else None)
+    newest = {s: float(dets.loc[surveys == s, "mjd"].max()) for s in sorted(set(surveys.dropna()))}
+    return newest, int(surveys.isna().sum())
+
+
 def fetch_antares_locus(locus_id: str) -> dict:
     """
     Fetch data for one ANTARES locus.
@@ -174,7 +190,9 @@ def fetch_antares_locus(locus_id: str) -> dict:
             validate_antares checks against magmin; newest_alert_observation_time =
             the MJD of the locus's latest alert, and newest_survey = the survey that
             took it (ANT_SURVEY, None if unknown), both reported per run by
-            run_antares_pipeline (how many exposures the sample spans, from which survey).
+            run_antares_pipeline (how many exposures the sample spans, from which survey);
+            newest_ztf_mjd, newest_lsst_mjd and unknown_survey_dets from
+            newest_detections, over the same detections as magmin and magmax.
             Compatible with build_qa_row's ms expectations (.sum() / .min() / .max()).
       tags: list of tag name strings (ANTARES discrete classification labels).
       fetch_errors: list of error tokens.
@@ -225,6 +243,7 @@ def fetch_antares_locus(locus_id: str) -> dict:
         # Prefer num_mag_values as the authoritative ndet for validators.
         n_mag = props.get("num_mag_values") or (len(dets) if not dets.empty else 0)
         mags = dets["ant_mag"] if "ant_mag" in dets.columns else pd.Series(dtype=float)
+        newest, unknown_dets = newest_detections(dets)
         ms = pd.DataFrame([{
             "ndet":   n_mag,
             "magmin": mags.min() if not mags.empty else None,
@@ -232,6 +251,9 @@ def fetch_antares_locus(locus_id: str) -> dict:
             "brightest_alert_magnitude": props.get("brightest_alert_magnitude"),
             "newest_alert_observation_time": props.get("newest_alert_observation_time"),
             "newest_survey": newest_survey,
+            "newest_ztf_mjd": newest.get("ZTF"),
+            "newest_lsst_mjd": newest.get("LSST"),
+            "unknown_survey_dets": unknown_dets,
         }])
     except Exception as e:
         fetch_errors.append(f"properties:{e}")

@@ -298,6 +298,13 @@ class TestARealV2Response:
         row = build_antares_qa_row(V2_LOCUS, data, validate_antares(data), classify_antares(data["tags"]))
         assert row["survey"] == "ZTF"
 
+    def test_the_newest_detection_is_the_newer_of_the_two_ztf_detections(self, v2_api):
+        """The upper limit is older here; the newest is the 2026-11-03 detection, no LSST, nothing unknown."""
+        data = fetch_antares_locus(V2_LOCUS)
+        row = build_antares_qa_row(V2_LOCUS, data, validate_antares(data), classify_antares(data["tags"]))
+        assert row["newest_ztf_mjd"] == pytest.approx(61347.4599884, abs=1e-6)
+        assert (row["newest_lsst_mjd"], row["unknown_survey_dets"]) == (None, 0)
+
     def test_mag_range_comes_from_the_detections(self, v2_api):
         """
         The API serves no faintest_alert_magnitude (none of 40 live loci on 2026-11-03),
@@ -410,6 +417,32 @@ class TestFetchAntaresLocus:
         with patcher:
             data = fetch_antares_locus("ANT1")
         assert data["ms"]["newest_survey"].iloc[0] == survey
+
+    def test_the_newest_detection_per_survey_comes_from_the_detections_mag_range_uses(self):
+        """
+        2026-11-04: one definition of a detection, the alerts with ant_mag. A newer ZTF upper
+        limit (code 2, no magnitude) never counts as the newest ZTF detection.
+        """
+        alerts = [make_alert(60000.0, 18.9, ant_survey=1), make_alert(60005.0, 18.5, ant_survey=4),
+                  make_alert(60008.0, 18.4, ant_survey=1), make_alert(60010.0, None, ant_survey=2)]
+        patcher, _ = patch_search(get_by_id=MagicMock(return_value=make_locus(alerts=alerts)))
+        with patcher:
+            data = fetch_antares_locus("ANT1")
+        ms = data["ms"].iloc[0]
+        assert (ms["newest_ztf_mjd"], ms["newest_lsst_mjd"], ms["unknown_survey_dets"]) == (60008.0, 60005.0, 0)
+        row = build_antares_qa_row("ANT1", data, validate_antares(data), classify_antares(data["tags"]))
+        assert (row["newest_ztf_mjd"], row["newest_lsst_mjd"], row["unknown_survey_dets"]) == (60008.0, 60005.0, 0)
+
+    @pytest.mark.parametrize("code", [9, None])
+    def test_a_detection_of_no_known_survey_is_counted_never_dropped(self, code):
+        """A code ANT_SURVEY does not know, or none: the detection stays, in unknown_survey_dets."""
+        alerts = [make_alert(60000.0, 18.9, ant_survey=1), make_alert(60012.0, 18.1, ant_survey=code)]
+        patcher, _ = patch_search(get_by_id=MagicMock(return_value=make_locus(alerts=alerts)))
+        with patcher:
+            data = fetch_antares_locus("ANT1")
+        row = build_antares_qa_row("ANT1", data, validate_antares(data), classify_antares(data["tags"]))
+        assert (row["newest_ztf_mjd"], row["newest_lsst_mjd"], row["unknown_survey_dets"]) == (60000.0, None, 1)
+        assert row["mag_range"] == pytest.approx(0.8)  # the same detection is in mag_range too
 
     def test_both_magnitude_ends_come_from_the_same_detections(self):
         locus = make_locus(alerts=[make_alert(60000.0, 18.9), make_alert(60001.0, None),
@@ -688,8 +721,9 @@ class TestClassifyAntares:
         assert cl["n_classifiers"] == 0
 
     def test_no_tags_at_all(self):
+        """no_classification has one owner, validate_antares (2026-11-04): the classifier adds nothing."""
         cl = classify_antares([])
-        assert cl["flag"] == "no_classification"
+        assert (cl["flag"], cl["flag_reason"]) == (None, None)
         assert cl["top_class"] is None and cl["consensus"] is None
 
 

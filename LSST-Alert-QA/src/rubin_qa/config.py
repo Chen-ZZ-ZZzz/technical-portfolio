@@ -48,6 +48,29 @@ def now_mjd() -> float:
     now = datetime.datetime.now(datetime.timezone.utc)
     return MJD_J2000 + (now - epoch).total_seconds() / 86400  # 86400s = 1 day
 
+
+def mjd_to_datetime(mjd: float) -> datetime.datetime:
+    """The UTC moment of an MJD, timezone-aware."""
+    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
+    return epoch + datetime.timedelta(days=mjd - MJD_J2000)
+
+
+# hours: an age below this prints in hours, from it on in days. Compared unrounded, so
+# 47.96 h prints "48.0 h" and 48.00 h "2.0 d".
+AGE_IN_DAYS_FROM_HOURS = 48.0
+
+
+def utc_and_age(mjd: float, ref_mjd: float) -> str:
+    """
+    "2026-11-03 13:22 UTC (17.5 h)": the moment of mjd, to the minute, and its age at
+    ref_mjd (the run's start). A moment after ref_mjd gets a negative age, never clamped:
+    it says the data arrived during the run. The one formatter for a newest detection's
+    time, in the QA summary (__main__.newest_line) and the monitor's listing lines.
+    """
+    hours = (ref_mjd - mjd) * 24
+    age = f"{hours:.1f} h" if hours < AGE_IN_DAYS_FROM_HOURS else f"{hours / 24:.1f} d"
+    return f"{mjd_to_datetime(mjd):%Y-%m-%d %H:%M} UTC ({age})"
+
 # Sky footprints: cones (ra, dec, radius), the only shape ALeRCE searches.
 DEFAULT_RADIUS_DEG = 2.82  # degrees: pi r^2 = 25 deg2; inside = angular separation <= radius
 FOOTPRINTS = {
@@ -134,7 +157,8 @@ INTER_OBJECT_DELAY = 0.5  # seconds between objects; increase if hitting rate li
 
 OUTPUT_COLUMNS = [
     "broker", "survey", "oid", "ndet", "mag_range", "timespan_days",
+    "newest_ztf_mjd", "newest_lsst_mjd", "unknown_survey_dets",
     "top_class", "class_prob", "consensus", "n_classifiers",
     "n_agree", "n_disagree",
-    "confirmed", "has_issues", "completeness_issues", "flag", "status",
+    "confirmed", "has_issues", "completeness_issues", "flag", "flag_reasons", "status",
 ]

@@ -24,7 +24,8 @@ def validate_completeness(data: dict, survey: str = DEFAULT_SURVEY) -> list:
       mag_null            — no usable magnitude (magpsf for ZTF, psfFlux for LSST)
       rb_absent           — ZTF: rb score missing; LSST: reliability score missing
       drb_absent          — ZTF only: deep real/bogus score missing
-      no_classification   — probabilities are empty
+      no_classification   — probabilities are empty (this token's one owner: the
+                            classifier returns no flag for it)
       fetch_error_*       — upstream API failure per field
     """
     issues = []
@@ -102,7 +103,8 @@ def validate_antares(data: dict) -> list:
       mag_null            — no magnitude in the detections
       brightest_mismatch  — the detections' brightest magnitude is not the server's
                             brightest_alert_magnitude: it counted a different set of alerts
-      no_classification   — no tags
+      no_classification   — no tags (this token's one owner: the classifier returns
+                            no flag for it)
     """
     issues = []
     dets = data["dets"]

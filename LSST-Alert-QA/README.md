@@ -274,18 +274,21 @@ band  ndet  magmin  magmax  magmean  magsigma  firstmjd   lastmjd
 
 ## Pipeline QA Report
 
-Reports are saved to `reports/qa_{run}_{timestamp}_n{count}.csv` after each run, where `{run}` is `alerce_ztf`, `alerce_lsst` or `antares`; the CLI's header, report heading and summary line name the run the same way (`ALeRCE ZTF`, `ALeRCE LSST`, `ANTARES`). The CLI also prints a summary table (`oid`, `ndet`, `top_class`, `consensus`, `n_classifiers`, `status`) and a flagged-object count.
+Reports are saved to `reports/qa_{run}_{timestamp}_n{count}.csv` after each run, where `{run}` is `alerce_ztf`, `alerce_lsst` or `antares` and `{timestamp}` is a local time; the CLI's header, report heading and summary line name the run the same way (`ALeRCE ZTF`, `ALeRCE LSST`, `ANTARES`). The CLI also prints a summary table (`oid`, `ndet`, `top_class`, `consensus`, `n_classifiers`, `status`), the newest detection per survey among the objects checked, aged from the run's start (`newest ZTF of the 229 checked: 2026-11-03 13:22 UTC (17.5 h)`; a sample, so no figure is a broker's newest), and the flagged count split by `flag_reasons` (`flagged=196/196 (insufficient_classifiers 196, ndet_lt_2 115, mag_null 4)`). **Two report formats, told apart by the `run_utc` column:** a QA CSV with it is named at the run's start (the same moment as `run_utc`) and carries the columns the split and the newest line are read from, so it reproduces both; a CSV without it is named at the run's finish and lacks them.
 
 One row per object. Columns:
 
 | Column | Description |
 |---|---|
+| `run_utc` | The run's start in UTC, the same on every row: the time of record |
 | `broker` | `alerce` or `antares` |
 | `survey` | `ZTF` or `LSST`: for ALeRCE the survey the run queried, for ANTARES the survey of the locus's newest alert (empty when its alerts did not say). Counted, it is the run's survey split, the input of the comparability rule (CLAUDE.md, "QA pipeline") |
 | `oid` | Object identifier |
 | `ndet` | Total detection count |
 | `mag_range` | Brightness amplitude: magmax − magmin (ANTARES: the faintest minus the brightest `ant_mag` of the detections) |
 | `timespan_days` | Last − first detection epoch |
+| `newest_ztf_mjd` / `newest_lsst_mjd` | The row's newest detection of that survey, from the same detections as `timespan_days` (ANTARES: those `mag_range` uses, so never an upper limit); an ALeRCE row fills only its own survey's |
+| `unknown_survey_dets` | ANTARES: detections whose `ant_survey` code names no known survey, counted rather than dropped; ALeRCE: 0 |
 | `top_class` | ALeRCE: plurality class from weighted consensus; ANTARES: all science tags, sorted and joined |
 | `class_prob` | Best classifier probability for `top_class` |
 | `consensus` | Weighted consensus score [0, 1] |
@@ -295,6 +298,7 @@ One row per object. Columns:
 | `has_issues` | `True` if any completeness issues |
 | `completeness_issues` | List of issue tokens (see below) |
 | `flag` | Combined flag string, or `None` |
+| `flag_reasons` | One fixed key per reason in `flag`, each once; empty exactly when `flag` is `None` |
 | `status` | `PASS` / `REVIEW_MINOR` / `REVIEW_MAJOR` / `FLAG` |
 
 **Status tiers (evaluated in order):**
@@ -314,8 +318,10 @@ Note: `PASS` and both `REVIEW` tiers need two comparable families, and since 202
 
 **Classification flag tokens** (appear in `flag` only):
 
-- ALeRCE: `unknown_classifier: <name>@<version>`, `insufficient_classifiers`, `minor disagreement: ...`, `genuine split: ...`, `no_classification`, `no_ranking1_rows`, `no_live_classifier` (only retired or context versions), `zero_total_weight`
+- ALeRCE: `unknown_classifier: <name>@<version>`, `insufficient_classifiers`, `minor disagreement: ...`, `genuine split: ...`, `no_ranking1_rows`, `no_live_classifier` (only retired or context versions), `zero_total_weight`
 - ANTARES: `no_science_tags (pipeline: [...]; unknown: [...])`, `minor: N science tags — ...`, `multiple science tags (N): ...`
+
+**Keys in `flag_reasons`:** a completeness token is its own key, and so are `insufficient_classifiers`, `no_ranking1_rows`, `no_live_classifier` and `zero_total_weight`. The others: `unknown_classifier` (once per row, however many versions), `minor_disagreement`, `genuine_split`, `no_science_tags`, `minor_science_tags`, `multiple_science_tags`. `no_classification` is a completeness token only; a report without `flag_reasons` can name it twice, because its classifier wrote it too (`completeness: ndet_lt_2, no_classification; no_classification`).
 
 ---
 
@@ -360,7 +366,7 @@ All ANTARES tags are filter outputs, not confirmed classifications — treat eve
 
 ## Independent Evidence in ALeRCE's Classifiers
 
-> **2026-11-03** — A consensus is only as strong as the independent opinions behind it. ALeRCE returns up to 25 ranking-1 classifier rows per ZTF object, but counted as one vote per live model family it offers no pair of families that can be compared, on LSST or on ZTF. The rule this led to: CLAUDE.md "QA pipeline"; the registry: `classifier.py` (`VOTERS`, `CONTEXT`).
+> **2026-11-03** — A consensus is only as strong as the independent opinions behind it. ALeRCE returned up to 25 ranking-1 classifier rows on a ZTF object of the QA sample (the lowest ZTF IDs, all from 2017), but counted as one vote per live model family it offers no pair of families that can be compared, on LSST or on ZTF. The rule this led to: CLAUDE.md "QA pipeline"; the registry: `classifier.py` (`VOTERS`, `CONTEXT`).
 
 **Method.**
 - A *family* is one line of evidence: the same input and the same lineage of method, whatever the name or version. Hierarchy levels and earlier versions belong to their family.
@@ -382,7 +388,7 @@ The live pair differs by one class: ATAT 1.0.0 has SNIbc where BHRF 2.1.0 has SE
 
 **What counting every row as a vote made of it**, before 2026-11-03:
 - *LSST, the 2026-11-02 run:* 117 FLAG, 79 REVIEW_MAJOR, 0 PASS. `nuclear_classifier` was on all 196 objects and counted as a dissent; its class list never overlaps the stamp's, so the highest consensus any object reached was 0.70. Without that row, 20 of the 45 objects carrying both stamp versions would have PASSed on one model's two versions agreeing.
-- *ZTF, the 2026-11-03 run:* objects carried up to 25 ranking-1 rows, mostly one model counted at every hierarchy level and every version. Every object with more than 2 votes was REVIEW_MAJOR (160 of 225). The hierarchy's top level made false splits: 151 of the 225 flags name a top-level class, for example "'RSCVn' 43%, 'Periodic-Other' 17%, 'Periodic' 15%". The 4 PASS all rested on two stamp votes, 2 of them two versions of `stamp_classifier`.
+- *ZTF, the 2026-11-03 run:* objects carried up to 25 ranking-1 rows, mostly one model counted at every hierarchy level and every version. The run's 225 are the lowest ZTF IDs ALeRCE holds, all from 2017 (ZTF17aaaaaak to ZTF17aaaaasu: the listing's default order, [Known API Quirks](#known-api-quirks)), so the 25 rows may come from old objects that carry every model version ALeRCE has run, not from a typical object. Every object with more than 2 votes was REVIEW_MAJOR (160 of 225). The hierarchy's top level made false splits: 151 of the 225 flags name a top-level class, for example "'RSCVn' 43%, 'Periodic-Other' 17%, 'Periodic' 15%". The 4 PASS all rested on two stamp votes, 2 of them two versions of `stamp_classifier`.
 
 **Why the LSST PASS rate dropped:** 11 of 256 on 2026-09-29, 0 of 196 on 2026-11-02, 0 by construction since 2026-11-03. The 2026-09-29 PASSes rested on the two stamp versions agreeing, the only two LSST classifiers then. On 2026-11-02 the position label, counted as a vote, blocked every PASS. Since 2026-11-03 LSST has one live family, and one family cannot confirm itself.
 
@@ -745,9 +751,11 @@ All tests use mock data — no live API calls.
 | `test_sso_frozen.py` | the frozen SSO monitor: SHA-256 of its files and of what it imports; recording a new hash is the deliberate unlock |
 | `test_validators.py` | completeness tokens, ZTF and LSST |
 | `test_classifier.py` | the classifier registry (one vote per live family; retired versions, hierarchy levels and `nuclear_classifier` never vote; unknown pairs FLAG) and the weighted consensus |
-| `test_reporting.py` | QA row assembly, status tiers |
+| `test_reporting.py` | QA row assembly, status tiers, the newest detection per survey |
+| `test_flag_reasons.py` | every flag path of both pipelines through its real validator, classifier and row builder: a row is flagged exactly when `flag_reasons` is not empty, each path carries its fixed keys, `no_classification` is named once |
 | `test_ceilings.py` | request timeout, retry budget, run deadline |
-| `test_main.py` | CLI argument routing, survey validation, CSV naming, exit codes (3 for a run its deadline stopped) |
+| `test_main.py` | CLI argument routing, survey validation, CSV naming (the run's start, against a clock that moves during the run), exit codes (3 for a run its deadline stopped), the summary's newest and flagged lines |
+| `test_time_format.py` | the time-and-age formatter: UTC to the minute, hours below 48 h and days from it, decided on the unrounded age |
 | `test_unit_sizing.py` | each pipeline unit's `TimeoutStartSec` against the longest run its settings allow: `ExecStartPre`, the listing's worst case, `deadline_for` at the unit's n, and one object in flight; reads the `.example` files, not the installed units |
 | `test_profiler.py` | profiler: per-broker branches, derived band tables, its own CLI |
 | `test_tools.py` | `tools/sample_latency.py` — pooling, boot filtering, failure reporting |
@@ -809,6 +817,7 @@ The jobs run as systemd user units, with examples in `systemd/`. Which units exi
 **ALeRCE:**
 - `lc_classifier` returns empty for many objects; `stamp_classifier` works reliably
 - API returns duplicate oids — deduplicated in `fetch_candidates`
+- The object listing's default order, which is what the QA pipelines sample (`fetch_candidates` asks no `order_by`), is by oid, not by recency. ZTF: ascending, the lowest IDs ALeRCE holds, a fixed set from 2017: every ZTF QA report of 2026-11-02 and 11-03 lists ZTF17aaaaaak upward in the listing's order, and a live check on 2026-11-04 answered HTTP 500 three times (08:04, 08:06, 08:29 UTC). LSST, measured 2026-11-04 at page size 196: descending oid, with none of its objects on the `order_by=lastmjd, order_mode=DESC` page of the same size, and its own `lastmjd` unsorted (it rises at 45 of 195 steps). The `lastmjd` DESC page repeats oids: 196 rows, 152 oids.
 - LSST multisurvey client raises `NotImplementedError` for `survey="ztf"` — ZTF uses the legacy client path
 - The LSST object listing refuses `page_size` above 200 with HTTP 422 (`less_than_equal`); the live monitor's LSST listing, then asking 1000, failed on it on 2026-11-02. ZTF's listing has no such limit (201 and 256 answered the same day).
 - The LSST object listing has one row per object *per classifier*, and since the stream resumed, new objects carry only `stamp_classifier_rubin_beta_20260421`. On 2026-11-03, 0 of the 2638 ECDFS objects first detected after the July stop had a `stamp_classifier_rubin_beta` row, so a listing filtered on that name returns none of them, with no error. An object's rows agree on its fields: the same day, all 1401 ECDFS objects with two rows had the same `firstmjd`, `lastmjd`, `n_det`, `meanra` and `meandec` in both. The replay's rule for it: CLAUDE.md, Replay

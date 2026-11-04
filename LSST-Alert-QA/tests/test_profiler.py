@@ -216,6 +216,11 @@ class TestProfileAntares:
         assert "No classification." in out
         assert "Detections:     2 epochs" in out   # the rest of the profile still runs
 
+    def test_a_locus_without_tags_says_there_is_nothing_to_classify(self, lc, capsys):
+        """2026-11-04: the classifier no longer names no_classification (the validator's token); before: '(no_classification)'."""
+        self._run(self._locus([], lc))
+        assert "No classification. (nothing to classify)" in capsys.readouterr().out
+
     def test_ztf_id_routes_to_the_ztf_lookup(self, lc):
         search = self._run(self._locus(["dimmers"], lc), locus_id="ZTF20aafqubg")
         search.get_by_ztf_object_id.assert_called_once()

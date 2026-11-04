@@ -97,6 +97,10 @@ def fetch_candidates(page_size: int = DEFAULT_PAGE_SIZE, survey: str = DEFAULT_S
     Fetch a page of object IDs from ALeRCE with no class restriction.
     Returns a deduplicated list of oid strings. Empty list on error.
     LSST oids are integers from the API — normalized to str here.
+
+    No order_by, so the page is ALeRCE's default order, by oid and not by recency: ZTF
+    ascending (the lowest IDs, a fixed set from 2017), LSST descending. The QA's ALeRCE
+    sample is therefore not today's stream. Evidence: README, "Known API Quirks".
     """
     result, err = _api_call(
         _client.query_objects,

@@ -75,7 +75,9 @@ from .config import (  # noqa: F401  (FOOTPRINTS & co. re-exported: replay and t
     REPORTS_DIR,
     STATE_DIR,
     WARN_PREFIX,
+    mjd_to_datetime,
     now_mjd,
+    utc_and_age,
 )
 from .photometry import (  # noqa: F401  (NETWORK_ERRORS re-exported for tools/)
     NETWORK_ERRORS,
@@ -198,11 +200,6 @@ class Evaluation:
 
 
 # ------------------------------------------------------------------ helpers
-
-
-def mjd_to_datetime(mjd: float) -> datetime.datetime:
-    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
-    return epoch + datetime.timedelta(days=mjd - MJD_J2000)
 
 
 def date_to_mjd(day: str) -> float:
@@ -518,10 +515,19 @@ def _merge(into: SurveyObject, new: SurveyObject) -> None:
 
 @dataclass
 class ListingCheck:
-    """What the LSST listing said, and whether its silence can be trusted."""
+    """
+    What a survey's listing said, and whether its silence can be trusted. Two newest
+    values: newest_mjd is the newest known (objects: the larger of the state's and the
+    listing's; failed: the state's, or the check's object when that proves a silent
+    failure), stored for the next run's check; answered_mjd is this run's own answer (the
+    newest lastmjd listed, or the check's object), None when the listing gave none. The
+    listing line prints the answer (newest_phrase), or on failure the known value as one
+    from an earlier run.
+    """
     status: str  # "objects" | "quiet" | "failed" | "not_asked"
     detail: str
     newest_mjd: float | None = None  # latest lastmjd of the survey known in the cone, for the next run's check
+    answered_mjd: float | None = None  # latest lastmjd this run's listing (or its check) returned
 
 
 def check_listing(survey: str, listed: list[SurveyObject], err: str | None, cone: Cone, since_mjd: float,
@@ -539,8 +545,9 @@ def check_listing(survey: str, listed: list[SurveyObject], err: str | None, cone
     if err:
         return ListingCheck("failed", f"{err} (objects gathered before it are kept)", known_newest)
     if listed:
-        newest = max([known_newest or 0.0] + [float(o.summary.get("lastmjd") or 0.0) for o in listed])
-        return ListingCheck("objects", f"{len(listed)} objects active since {since}", newest)
+        answered = max(float(o.summary.get("lastmjd") or 0.0) for o in listed) or None
+        newest = max(known_newest or 0.0, answered or 0.0)
+        return ListingCheck("objects", f"{len(listed)} objects active since {since}", newest, answered)
     floor = None if known_newest is None else min(since_mjd, known_newest - LISTING_CHECK_MARGIN_DAYS)
     item, perr = probe(cone, floor)
     if perr:
@@ -548,15 +555,29 @@ def check_listing(survey: str, listed: list[SurveyObject], err: str | None, cone
     if item is None:
         what = (f"ALeRCE returned no {label} object in this cone at all: never observed, or the listing service "
                 "failed - cannot tell which" if floor is None else
-                f"the known newest object (lastmjd {known_newest:.2f}, {_date(known_newest)}) did not come back: "
-                "the listing service is not answering")
+                "the known newest object did not come back: the listing service is not answering")
         return ListingCheck("failed", f"empty listing, unverified: {what}", known_newest)
     newest = float(item["lastmjd"])
     if newest >= since_mjd:
-        return ListingCheck("failed", f"empty listing, yet ALeRCE holds {survey}:{item['oid']} detected "
-                                      f"{_date(newest)}, inside the window: the listing failed silently", newest)
-    return ListingCheck("quiet", f"none active since {since}; upstream quiet: newest {label} detection in the cone "
-                                 f"{_date(newest)} ({survey}:{item['oid']}, checked)", max(newest, known_newest or 0.0))
+        return ListingCheck("failed", f"empty listing, yet ALeRCE holds {survey}:{item['oid']} inside the window: "
+                                      "the listing failed silently", newest, newest)
+    return ListingCheck("quiet", f"none active since {since}; upstream quiet (checked on {survey}:{item['oid']})",
+                        max(newest, known_newest or 0.0), newest)
+
+
+def newest_phrase(survey: str, listing: ListingCheck, now: float) -> str:
+    """
+    What the listing line adds after the detail: this run's answer, "newest ZTF:
+    2026-10-25 09:35 UTC (9.9 d)"; on a failed listing without one, the known value,
+    "last known ZTF: ... , from an earlier run", never called newest; "" with neither.
+    The detail itself carries no date, so the line states it once.
+    """
+    label = survey.upper()
+    if listing.answered_mjd is not None:
+        return f"; newest {label}: {utc_and_age(listing.answered_mjd, now)}"
+    if listing.status == "failed" and listing.newest_mjd:
+        return f"; last known {label}: {utc_and_age(listing.newest_mjd, now)}, from an earlier run"
+    return ""
 
 
 def gather(cone: Cone, now: float, since_mjd: float, until_mjd: float | None, stats: dict,
@@ -630,7 +651,10 @@ def _save_state(path, state: dict) -> None:
 
 
 def report_file(name: str, mode: str, started: datetime.datetime) -> Path:
-    """reports/transient_<footprint>_<YYYYMMDD_HHMMSS>[_init].json: the run's start, in local time like the QA CSVs."""
+    """
+    reports/transient_<footprint>_<YYYYMMDD_HHMMSS>[_init].json: the run's start, in local
+    time. What the file holds: scan's docstring (a report whose listings lack answered_mjd predates the field).
+    """
     return REPORTS_DIR / f"transient_{name}_{started:%Y%m%d_%H%M%S}{'_init' if mode == 'init' else ''}.json"
 
 
@@ -1073,10 +1097,12 @@ def scan(
     warnings, exit_code). --dry-run writes none. It goes to reports/, not logs/: it
     records what ALeRCE and TNS answered and the state as it was then, which nothing can
     regenerate. The file name and run_utc are one moment, the run's start (now): the name
-    in local time, like the QA CSVs; run_utc in UTC, the time of record. Keys: mode
+    in local time; run_utc in UTC, the time of record. Keys: mode
     ("live" or "init"), footprint, cone, run_utc, run_mjd, since_mjd, settings
     {lookback_days, bracket_days, min_detections}, state_before
-    {reported, parked}, listings {survey: {status, detail, newest_mjd}}, photometry
+    {reported, parked}, listings {survey: {status, detail, newest_mjd, answered_mjd}}
+    (ListingCheck's fields; a report without answered_mjd predates the field, and its
+    quiet detail carries the date itself), photometry
     {fetched, not_fetched, failed}, fetch_errors ["<key>: <error>"], objects {total,
     by_survey, kept}, rejected {reason: n}, parked {count, new [{key, first_det_mjd,
     code}], resolved, expired}; then, live, alerts (alert_record for each alert, with tns,
@@ -1140,7 +1166,8 @@ def scan(
     by_survey = Counter(o.survey for o in objs)
     listings = {survey: stats[f"{survey}_listing"] for survey in LIVE_SURVEYS}
     for survey, listing in listings.items():
-        print(f"{survey.upper()} listing (ALeRCE): {'FAILED - ' if listing.status == 'failed' else ''}{listing.detail}")
+        print(f"{survey.upper()} listing (ALeRCE): {'FAILED - ' if listing.status == 'failed' else ''}{listing.detail}"
+              f"{newest_phrase(survey, listing, now)}")
         if listing.status == "failed":
             print(f"{ERROR_PREFIX}{survey.upper()} listing failed: {listing.detail}. Its objects are not listed this "
                   "run (parked ones stay parked); exit 1 so the outage is not mistaken for a quiet sky.", file=sys.stderr)
@@ -1214,7 +1241,8 @@ def scan(
                 for c, n in day.alerts]
                + [alert_record(c, n, anchor, today) for c, n, anchor in day.notes])
     report.update({
-        "listings": {s: {"status": lc.status, "detail": lc.detail, "newest_mjd": _json_float(lc.newest_mjd)}
+        "listings": {s: {"status": lc.status, "detail": lc.detail, "newest_mjd": _json_float(lc.newest_mjd),
+                         "answered_mjd": _json_float(lc.answered_mjd)}
                      for s, lc in listings.items()},
         "photometry": {"fetched": stats.get("fetched", 0), "not_fetched": stats.get("not_fetched", 0),
                        "failed": stats.get("fetch_errors", 0)},
