@@ -8,6 +8,8 @@ retired. The fetchers are patched where run() reads them (the tool's own module)
 import pathlib
 import sys
 
+import pandas as pd
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
 
 import alerce_live_classifiers as alc  # noqa: E402
@@ -79,6 +81,19 @@ def test_unknown_pairs_are_read_from_a_reports_flags():
     flags = ["completeness: ndet_lt_2; unknown_classifier: model_b@1.0; insufficient_classifiers",
              "unknown_classifier: LC_classifier_ATAT_forced_phot(beta)@1.1.0", None, "genuine split across 2 classes"]
     assert alc.unknown_pairs(flags) == {("model_b", "1.0"), ("LC_classifier_ATAT_forced_phot(beta)", "1.1.0")}
+
+
+def test_a_saved_report_with_unflagged_rows_reads_back(tmp_path):
+    """
+    The tool reads a report with pd.read_csv, where a row without a flag is NaN, not None
+    (2026-11-04: every report with an unflagged row raised TypeError).
+    """
+    path = tmp_path / "qa_alerce_ztf_20261104_074952_n2.csv"
+    pd.DataFrame({"oid": ["ZTF1", "ZTF2"],
+                  "flag": ["unknown_classifier: model_b@1.0; insufficient_classifiers", None]}).to_csv(path, index=False)
+    flags = pd.read_csv(path)["flag"]
+    assert flags.isna().sum() == 1  # the empty cell is NaN on read-back
+    assert alc.unknown_pairs(flags) == {("model_b", "1.0")}
 
 
 def test_the_token_build_qa_row_writes_reads_back(data_complete):
