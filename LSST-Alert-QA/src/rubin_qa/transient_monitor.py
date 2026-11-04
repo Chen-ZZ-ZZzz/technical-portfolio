@@ -845,11 +845,12 @@ def _point_source_watch(alerts, now, save) -> list[str]:
             e["tns_type"] = (rec.get("object_type") or {}).get("name")
             if e["tns_type"] and e["tns_type"].startswith(SUPERNOVA_TYPES):  # classified a supernova
                 try:
-                    snr = sky_catalog.counterpart_snr(e["ra"], e["dec"])
+                    found, snr = sky_catalog.counterpart_snr(e["ra"], e["dec"])
                 except sky_catalog.CatalogError:
                     unavailable += 1
                     continue
-                e.update(status="sn" if snr is not None else "no_counterpart", snr=snr, rule=rule)
+                # snr None on a found point source: no band measured, so never counted (user, 2026-11-04)
+                e.update(status="sn" if found else "no_counterpart", snr=snr, rule=rule)
             elif e["tns_type"]:  # classified as something else: settled, and said, never a silent drop
                 e["status"] = "other_class"
                 classified_now.append((key, e))
@@ -862,7 +863,9 @@ def _point_source_watch(alerts, now, save) -> list[str]:
         tmp.write_text(json.dumps({"objects": objects}, indent=1))
         tmp.rename(path)
 
-    hits = {e["tns"]: e for e in objects.values() if e["status"] == "sn" and e["snr"] < PS_REVISIT_SNR}
+    hits = {e["tns"]: e for e in objects.values()
+            if e["status"] == "sn" and e["snr"] is not None and e["snr"] < PS_REVISIT_SNR}
+    unmeasured = sorted(e["tns"] for e in objects.values() if e["status"] == "sn" and e["snr"] is None)
     counted = sorted(n for n, e in hits.items() if e["rule"] == rule)
     older = len(hits) - len(counted)
     watching = sum(e["status"] == "watching" for e in objects.values())
@@ -872,6 +875,8 @@ def _point_source_watch(alerts, now, save) -> list[str]:
              f"supernovae on a point source below S/N {PS_REVISIT_SNR:g}: {len(counted)} of {PS_PATTERN}"
              + (f" ({found})" if found else "")
              + (f"; {older} more under an earlier version of the rule, not counted" if older else "")
+             + (f"; {len(unmeasured)} on a point source with no S/N measurement, not counted ({', '.join(unmeasured)})"
+                if unmeasured else "")
              + (f"; classified as other than supernovae: {', '.join(f'{n} {k}' for k, n in sorted(other.items()))}"
                 if other else "")
              + (f"; {unavailable} lookups unavailable, asked again next run" if unavailable else "")]

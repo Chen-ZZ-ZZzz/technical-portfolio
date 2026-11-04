@@ -15,6 +15,7 @@ from rubin_qa import transient_monitor as mon
 from rubin_qa.config import PROJECT_ROOT
 from rubin_qa.photometry import PhotPoint, SurveyObject, mag_to_njy
 from rubin_qa.sky_catalog import Crossmatch
+from tests.test_sky_catalog import SNR_COLUMNS, psf_at, snr_answer
 
 NOW = 61310.0  # 2026-09-27
 SINCE = NOW - 14.0
@@ -883,8 +884,8 @@ def ps_alerts(*ras, mjd=NOW, source="live D"):
 @pytest.fixture
 def watch(tmp_path, monkeypatch):
     monkeypatch.setattr(mon, "STATE_DIR", tmp_path)
-    snrs = {}
-    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: snrs[ra])
+    snrs = {}  # the found point source's S/N by RA
+    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: (True, snrs[ra]))
     return snrs
 
 
@@ -899,6 +900,26 @@ def test_only_spectroscopic_supernovae_below_the_snr_count(watch, monkeypatch):
                      "on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3); classified as other than supernovae: 1 AGN",
                      "  lsst:3, a point_source alert, is classified in TNS: AT 2026bbb, AGN - "
                      "the nuclear case the point_source label exists for"]
+
+
+def test_a_supernova_on_a_point_source_with_no_measurement_is_shown_and_never_counted(tmp_path, monkeypatch):
+    """
+    2026-11-04: every band of the point source's S/N row empty is no measurement. A 0 would count it below
+    S/N 7 and make this a pattern of three; it is shown on the line instead. Through the real counterpart_snr.
+    """
+    monkeypatch.setattr(mon, "STATE_DIR", tmp_path)
+    real = mon.sky_catalog.counterpart_snr
+    answers = {1: snr_answer(*SNR_COLUMNS), 2: snr_answer(flux=3.0), 3: snr_answer(flux=3.0)}  # 2 and 3: S/N 6.0
+    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr",
+                        lambda ra, dec: real(ra, dec, fetch=psf_at(ra, dec), get=answers[int(ra)]))
+    monkeypatch.setattr(mon.tns, "tns_lookup", tns_answers({1: classified("2026a"), 2: classified("2026b"),
+                                                            3: classified("2026c")}))
+    assert mon.point_source_watch(ps_alerts(1, 2, 3), NOW) == [
+        "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point "
+        "source below S/N 7: 2 of 3 (SN 2026b S/N 6.0, SN 2026c S/N 6.0); 1 on a point source with no S/N measurement, "
+        "not counted (SN 2026a)"]
+    watched = json.loads((tmp_path / mon.PS_WATCH_FILE).read_text())["objects"]
+    assert (watched["lsst:1"]["status"], watched["lsst:1"]["snr"]) == ("sn", None)
 
 
 def test_three_make_a_pattern_and_the_notice_repeats_every_run(watch, monkeypatch):
@@ -1011,7 +1032,7 @@ def test_the_daily_report_carries_the_watch_and_a_dry_run_saves_nothing(env, cap
     env["objects"] = [obj(NEW_ZTF)]
     monkeypatch.setattr(mon.sky_catalog, "classify", xm("point_source", 'PSF r=26.1 at 0.2"'))
     monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: {**classified("2026kfw"), "radeg": ra, "decdeg": dec})
-    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: 6.3)
+    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: (True, 6.3))
     watch_before = (mon.STATE_DIR / mon.PS_WATCH_FILE).read_text()
     mon.scan("D", (150, 12, 1), dry_run=True)
     assert "below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)" in capsys.readouterr().out

@@ -593,22 +593,47 @@ SNR_BANDS = ("g", "r", "i", "z")
 SNR_MATCH_ARCSEC = 0.1  # the counterpart's own catalogue row
 
 
-def combined_snr(row) -> float:
-    """S/N over g, r, i, z combined: sqrt(sum of flux^2 * ivar), negative fluxes counted as 0. Not magnitude:
-    DR10 measures r for sources detected in other bands, and depth varies across the sky."""
-    return math.sqrt(sum(max(float(row[f"flux_{b}"] or 0), 0.0) ** 2 * float(row[f"flux_ivar_{b}"] or 0)
-                         for b in SNR_BANDS))
-
-
-def counterpart_snr(ra: float, dec: float, fetch=None, get=None) -> float | None:
+def measured(value) -> float | None:
     """
-    Combined S/N of the point source the point-source rule takes at (ra, dec); None when
-    there is none. The tiles carry no optical flux_ivar, so its one row is fetched (the
-    point-source watch asks only for TNS-classified supernovae: rare). Raises CatalogError.
+    A catalogue value as a finite float, or None where it is missing: "" (a CSV cell split
+    by hand), None, or NaN (an empty cell read by pd.read_csv), so a missing value means the
+    same however its row was read, and never becomes 0. A value that is there but is not a
+    number raises, like any broken answer.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    v = float(value)
+    return v if math.isfinite(v) else None
+
+
+def combined_snr(row) -> float | None:
+    """
+    S/N over g, r, i, z combined: sqrt(sum of flux^2 * ivar), negative fluxes counted as 0.
+    A band contributes only when both its flux and its ivar are measured (user, 2026-11-04):
+    a missing flux is not a zero flux, and with its ivar present it would count a measured
+    0. No band left: None, no measurement, never 0, which would count as a point source
+    below any S/N floor. row: a pandas row or a dict of strings, read alike (measured).
+    Not magnitude: DR10 measures r for sources detected in other bands, and depth varies
+    across the sky.
+    """
+    terms = [(f, iv) for f, iv in ((measured(row[f"flux_{b}"]), measured(row[f"flux_ivar_{b}"])) for b in SNR_BANDS)
+             if f is not None and iv is not None]
+    if not terms:
+        return None
+    return math.sqrt(sum(max(f, 0.0) ** 2 * iv for f, iv in terms))
+
+
+def counterpart_snr(ra: float, dec: float, fetch=None, get=None) -> tuple[bool, float | None]:
+    """
+    (found, snr) for the point source the point-source rule takes at (ra, dec): found False
+    when there is none (snr None); else snr is its combined S/N, None when no band was
+    measured (combined_snr). The two Nones differ, so both are returned. The tiles carry
+    no optical flux_ivar, so its one row is fetched (the point-source watch asks only for
+    TNS-classified supernovae: rare). Raises CatalogError.
     """
     psf = point_counterpart(neighbours(ra, dec, SEARCH_RADIUS_ARCSEC, fetch))
     if psf is None:
-        return None
+        return False, None
     cols = [f"flux_{b}" for b in SNR_BANDS] + [f"flux_ivar_{b}" for b in SNR_BANDS]
     query = (f"SELECT {', '.join(cols)} FROM {TABLE} WHERE 't' = q3c_radial_query(ra, dec, "
              f"{psf['ra']:.6f}, {psf['dec']:.6f}, {SNR_MATCH_ARCSEC / 3600:.8f})")
@@ -623,7 +648,7 @@ def counterpart_snr(ra: float, dec: float, fetch=None, get=None) -> float | None
     rows = pd.read_csv(io.StringIO(r.text))
     if len(rows) != 1:
         raise CatalogError(f"{label}: {len(rows)} catalogue rows within {SNR_MATCH_ARCSEC}\"")
-    return combined_snr(rows.iloc[0])
+    return True, combined_snr(rows.iloc[0])
 
 
 def reached_atlas(atlas_rows: pd.DataFrame, dlr_max: float = HOST_DLR_MAX,

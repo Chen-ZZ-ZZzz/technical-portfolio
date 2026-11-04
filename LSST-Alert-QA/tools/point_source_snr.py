@@ -130,11 +130,17 @@ def fetch(key: str) -> dict:
 
 
 def snr(row: dict) -> dict:
-    f = {b: float(row[f"flux_{b}"] or 0) for b in BANDS}
-    iv = {b: float(row[f"flux_ivar_{b}"] or 0) for b in BANDS}
-    per = {b: f[b] * math.sqrt(iv[b]) for b in BANDS}
-    return {"best_band": max(per.values()), "combined": sc.combined_snr(row),
-            "dchisq_psf": math.sqrt(max(float(row["dchisq_1"] or 0), 0)), "per_band": per,
+    """
+    The three S/N definitions for one DR10 row. Every value goes through sc.measured, as
+    in the monitor: a band counts only with both flux and ivar measured, and a missing
+    value is None, never 0 (combined None: no measurement; see main).
+    """
+    f = {b: sc.measured(row[f"flux_{b}"]) for b in BANDS}
+    iv = {b: sc.measured(row[f"flux_ivar_{b}"]) for b in BANDS}
+    per = {b: f[b] * math.sqrt(iv[b]) for b in BANDS if f[b] is not None and iv[b] is not None}
+    d1 = sc.measured(row["dchisq_1"])
+    return {"best_band": max(per.values()) if per else None, "combined": sc.combined_snr(row),
+            "dchisq_psf": math.sqrt(max(d1, 0)) if d1 is not None else None, "per_band": per,
             "r_mag": sc.nmgy_to_mag(f["r"])}
 
 
@@ -197,21 +203,29 @@ def main() -> int:
 
     for s in sources:
         s.update(snr(have[s["key"]]), type=have[s["key"]]["type"])
+    unmeasured = [s for s in sources if s["combined"] is None]
+    if unmeasured:  # no band with flux and ivar: no S/N, so in no table or floor below
+        print(f"\nNo S/N measurement (no band with both flux and ivar), left out of every table: {len(unmeasured)}")
+        for s in unmeasured:
+            print(f"  {s['type']:4s} {s['group']}: {s['name']}")
+    sources = [s for s in sources if s["combined"] is not None]
     print(f"\nPSF S/N at each firing (best band / combined g+r+i+z / sqrt(dchisq_psf)); r mag; what it gets without the rule")
     for group in ("known: PSF is the host", "known: correct host relabelled", "random position", "replay alert"):
         rows = sorted((s for s in sources if s["group"] == group), key=lambda s: s["combined"])
         print(f"\n{group} ({len(rows)}):")
         for s in rows:
             mag = f"{s['r_mag']:.1f}" if s["r_mag"] else "  - "
-            print(f"  {s['best_band']:7.1f} {s['combined']:7.1f} {s['dchisq_psf']:7.1f}   r {mag:>5}   "
+            dchisq = f"{s['dchisq_psf']:7.1f}" if s["dchisq_psf"] is not None else "      -"
+            print(f"  {s['best_band']:7.1f} {s['combined']:7.1f} {dchisq}   r {mag:>5}   "
                   f"{s['type']:4s} without: {s['without']:16s} {s['name']}")
     print("\nPSF type margin (dchisq_PSF - best of REX/DEV/EXP/SER) by combined S/N:")
     for lo, hi in ((0, 7), (7, 10), (10, 20), (20, math.inf)):
         g = []
         for s in sources:
             if lo <= s["combined"] < hi:
-                d = [float(have[s["key"]][f"dchisq_{k}"] or 0) for k in range(1, 6)]
-                g.append(d[0] - max(d[1:]))
+                d = [sc.measured(have[s["key"]][f"dchisq_{k}"]) for k in range(1, 6)]
+                if None not in d:  # a margin needs every model's dchisq
+                    g.append(d[0] - max(d[1:]))
         if g:
             g.sort()
             print(f"  S/N {lo:>3}-{'up' if hi == math.inf else hi:>3}: {len(g):3d} PSFs, median margin {g[len(g) // 2]:6.1f}, "

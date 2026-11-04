@@ -118,10 +118,13 @@ def judge(newest: dict[str, list[dict]], elsewhere: Iterable[Pair] = (), every_s
 
 
 def unknown_pairs(flags: Iterable[str | None]) -> set[Pair]:
-    """The pairs named by a QA report's `unknown_classifier: name@version` flag tokens."""
+    """
+    The pairs named by a QA report's `unknown_classifier: name@version` flag tokens. A row
+    without a flag reads back from the CSV as NaN, a float: anything not a string is no flag.
+    """
     pairs = set()
     for flag in flags:
-        for token in UNKNOWN_TOKEN.findall(flag or ""):
+        for token in UNKNOWN_TOKEN.findall(flag if isinstance(flag, str) else ""):
             name, _, version = token.strip().rpartition("@")
             pairs.add((name, version))
     return pairs

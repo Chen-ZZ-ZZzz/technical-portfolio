@@ -427,7 +427,7 @@ def test_the_replay_feeds_its_point_source_alerts_to_the_watch(world, monkeypatc
     monkeypatch.setattr(mon.tns, "tns_lookup",
                         lambda ra, dec: {"objname": "2026kfw", "name_prefix": "SN", "object_type": {"id": 3, "name": "SN Ia"},
                                          "radeg": ra, "decdeg": dec})
-    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: 6.3)
+    monkeypatch.setattr(mon.sky_catalog, "counterpart_snr", lambda ra, dec: (True, 6.3))
     replay.run("D", CONE, "2026-04-06", "2026-04-10", classify=psf)
     out = capsys.readouterr().out
     assert "spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)" in out

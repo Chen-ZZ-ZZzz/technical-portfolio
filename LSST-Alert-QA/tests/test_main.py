@@ -240,6 +240,14 @@ class TestNewestLine:
         back = pd.read_csv(_csvs(tmp_path)[0])
         assert main_module.newest_line(back, "ztf", RUN_MJD) == main_module.newest_line(_report(3), "ztf", RUN_MJD)
 
+    def test_a_survey_empty_in_every_row_reads_back_as_none(self, tmp_path):
+        """An ANTARES run with no LSST detection: the column is empty, NaN on read-back, and the line says none."""
+        _run_cli(["antares", "3"], tmp_path, result=_report(3))
+        back = pd.read_csv(_csvs(tmp_path)[0])
+        assert back["newest_lsst_mjd"].isna().all()
+        assert main_module.newest_line(back, "antares", RUN_MJD) == (
+            "newest ZTF of the 3 checked: 2026-11-03 13:22 UTC (17.5 h); newest LSST of the 3 checked: none")
+
 
 class TestFlagSplit:
     def test_the_split_counts_rows_per_key_by_count_then_key(self):
@@ -254,6 +262,15 @@ class TestFlagSplit:
         _run_cli(["ztf", "3"], tmp_path, result=_report(3, flagged=2))
         back = pd.read_csv(_csvs(tmp_path)[0])
         assert main_module.flag_split(back) == main_module.flag_split(_report(3, flagged=2)) == "flagged=2/3 (mag_null 2)"
+
+    def test_an_empty_flag_reasons_cell_reads_back_as_no_key(self, tmp_path):
+        """The writer leaves no cell empty (an unflagged row writes []); one that is reads back as NaN: no key."""
+        df = _report(3, flagged=2)
+        df["flag_reasons"] = [["mag_null"], ["mag_null"], None]
+        _run_cli(["ztf", "3"], tmp_path, result=df)
+        back = pd.read_csv(_csvs(tmp_path)[0])
+        assert back["flag_reasons"].isna().sum() == 1
+        assert main_module.flag_split(back) == "flagged=2/3 (mag_null 2)"
 
     def test_nothing_flagged_has_no_split(self):
         assert main_module.flag_split(_report(3, flagged=0)) == "flagged=0/3"

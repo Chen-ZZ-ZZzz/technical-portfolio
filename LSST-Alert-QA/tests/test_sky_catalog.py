@@ -34,6 +34,26 @@ def catalog(*rows):
 FILLER = row(dra_arcsec=25, type_="PSF", shape_r=0.0)  # something in the tile, far away
 
 
+SNR_COLUMNS = [f"flux_{b}" for b in sc.SNR_BANDS] + [f"flux_ivar_{b}" for b in sc.SNR_BANDS]
+
+
+def snr_answer(*empty: str, flux: float = 10.0):
+    """
+    A Data Lab CSV answer for the counterpart's S/N row (a fake get): flux `flux` and ivar 1
+    in every band, so S/N `flux` per band, with the cells named in `empty` left empty, the
+    way a CSV carries a NULL. counterpart_snr reads it with its own pd.read_csv: NaN.
+    """
+    cells = ["" if c in empty else ("1.0" if "ivar" in c else f"{flux}") for c in SNR_COLUMNS]
+    text = ",".join(SNR_COLUMNS) + "\n" + ",".join(cells) + "\n"
+    return lambda url, params=None, timeout=None: SimpleNamespace(status_code=200, text=text)
+
+
+def psf_at(ra: float, dec: float):
+    """A tile fetch with one DR10 point source at (ra, dec): what the point-source rule takes there."""
+    df = pd.DataFrame([{"ra": ra, "dec": dec, "type": "PSF", "shape_r": 0.0}], columns=[*sc.COLUMNS, *sc.ATLAS_COLUMNS])
+    return lambda i, j: df if (i, j) == sc.tile_of(ra, dec) else pd.DataFrame(columns=df.columns)
+
+
 def atlas(*rows):
     """A footprint atlas for classify(atlas=...): the atlas galaxies given."""
     return pd.DataFrame(list(rows), columns=[*sc.COLUMNS, *sc.ATLAS_COLUMNS])
@@ -760,3 +780,36 @@ def test_footprint_bricks_across_ra_zero(tmp_path, monkeypatch):
 def test_nmgy_to_mag():
     assert sc.nmgy_to_mag(1.0) == 22.5
     assert sc.nmgy_to_mag(0.0) is None
+
+
+class TestCounterpartSnr:
+    """
+    The point source's combined S/N from a CSV answer, through counterpart_snr's own pd.read_csv,
+    where an empty cell is NaN. The rule (user, 2026-11-04): a band counts only when both its flux
+    and its ivar are measured; no band left is no measurement (None), never 0.
+    """
+
+    def test_a_band_with_flux_and_ivar_empty_leaves_the_three_others(self):
+        assert sc.counterpart_snr(RA, DEC, fetch=psf_at(RA, DEC), get=snr_answer("flux_i", "flux_ivar_i")) == (
+            True, pytest.approx(math.sqrt(3) * 10))
+
+    def test_a_band_with_its_flux_empty_is_skipped_though_its_ivar_is_there(self):
+        assert sc.counterpart_snr(RA, DEC, fetch=psf_at(RA, DEC), get=snr_answer("flux_i")) == (
+            True, pytest.approx(math.sqrt(3) * 10))
+        # skipped, not a measured 0: with every flux missing and every ivar there, there is no measurement
+        every_flux = [f"flux_{b}" for b in sc.SNR_BANDS]
+        assert sc.counterpart_snr(RA, DEC, fetch=psf_at(RA, DEC), get=snr_answer(*every_flux)) == (True, None)
+
+    def test_every_band_empty_is_no_measurement_never_0(self):
+        assert sc.counterpart_snr(RA, DEC, fetch=psf_at(RA, DEC), get=snr_answer(*SNR_COLUMNS)) == (True, None)
+
+    def test_no_point_source_there_is_not_found_and_nothing_is_asked(self):
+        assert sc.counterpart_snr(RA, DEC, fetch=catalog(row(), FILLER),
+                                  get=lambda *a, **k: pytest.fail("S/N asked without a point source")) == (False, None)
+
+    def test_a_row_of_strings_reads_like_a_pandas_row(self):
+        """tools/point_source_snr.py splits its CSV by hand: an empty cell is "" there, and means what NaN means here."""
+        cells = {c: ("" if c.endswith("_i") else ("1.0" if "ivar" in c else "10.0")) for c in SNR_COLUMNS}
+        assert sc.combined_snr(cells) == pytest.approx(math.sqrt(3) * 10)
+        assert sc.combined_snr(dict.fromkeys(SNR_COLUMNS, "")) is None
+        assert sc.measured(None) is None and sc.measured(float("nan")) is None and sc.measured("0") == 0.0
