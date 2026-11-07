@@ -30,6 +30,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import host_match_check as h  # noqa: E402
 
 from rubin_qa.config import CACHE_DIR, ERROR_PREFIX, LOGS_DIR, PROJECT_ROOT, from_root  # noqa: E402
+from rubin_qa.tns import own_id_listed  # noqa: E402
 
 CANDIDATE_CACHE = CACHE_DIR / "replay" / "candidates"
 MATCH_ARCSEC = 2.0
@@ -55,12 +56,10 @@ def judge(alert: dict, pos: tuple[float, float], rec: dict | None) -> dict:
         return {**out, "tns": "not_in_tns"}
     sep = h.sep_arcsec(pos[0], pos[1], rec["radeg"], rec["decdeg"])
     oid = alert["key"].split(":", 1)[1]
-    names = [n.strip() for n in (rec.get("internal_names") or "").split(",")]
     out |= {"tns_name": f"{rec.get('name_prefix', '')} {rec['objname']}".strip(), "sep": round(sep, 2),
             "tns_type": (rec.get("object_type") or {}).get("name"),
             "discovered": (rec.get("discoverydate") or "")[:10],
-            # ZTF lists the bare ID; Rubin's reports carry it as LSST-AP-DO-<diaObjectId>
-            "own_id_listed": any(n == oid or n.endswith(f"-{oid}") for n in names),
+            "own_id_listed": own_id_listed(rec, oid),
             "reported_by": (rec.get("reporting_group") or {}).get("group_name"),
             "discovery_source": (rec.get("discovery_data_source") or {}).get("group_name"),
             "internal_names": rec.get("internal_names")}

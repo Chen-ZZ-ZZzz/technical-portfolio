@@ -1257,7 +1257,8 @@ def test_a_live_report_says_what_the_printed_report_said(env, capsys, monkeypatc
     assert (alert["key"], alert["category"], alert["conditions"], alert["onset"], alert["onset_status"]) == (
         "ztf:ZTF26aaa", "host", ["bracketed"], "bracketed", mon.NEW)
     assert (alert["first_det_mjd"], alert["last_quiet_mjd"], alert["n_det"]) == (FIRST, FIRST - 1, 3)
-    assert alert["tns"] == {"status": "record", "line": "SN 2026abc, SN Ia, discovered 2026-09-24"}
+    assert alert["tns"] == {"status": "record", "line": "SN 2026abc, SN Ia, discovered 2026-09-24",
+                            "discovered": "2026-09-24 03:00:00", "sep_arcsec": 0.0, "own_id_listed": False, "notice": None}
     assert f"  TNS: {alert['tns']['line']}" in out and f"Report: {mon.REPORTS_DIR}" in out
     assert r["point_source_watch"] and r["point_source_watch"][0] in out and r["warnings"] == []
 
@@ -1342,16 +1343,17 @@ def test_at_20_utc_9_hours_ahead_the_file_name_is_tomorrow_but_run_utc_and_day_a
     assert r["run_utc"] == "2026-09-27T20:00:00+00:00" and r["alerts"][0]["day"] == "2026-09-27"
 
 
-@pytest.mark.parametrize("answer,status,line", [
-    (lambda ra, dec: tns_record("2026abc", ra, dec), "record", "SN 2026abc, SN Ia, discovered 2026-09-24"),
-    (lambda ra, dec: {}, "none_yet", mon.TNS_NONE_YET),
-    (lambda ra, dec: None, "unavailable", mon.TNS_UNAVAILABLE),
+@pytest.mark.parametrize("answer,status,line,record", [
+    (lambda ra, dec: tns_record("2026abc", ra, dec), "record", "SN 2026abc, SN Ia, discovered 2026-09-24",
+     {"discovered": "2026-09-24 03:00:00", "sep_arcsec": 0.0, "own_id_listed": False}),
+    (lambda ra, dec: {}, "none_yet", mon.TNS_NONE_YET, {}),
+    (lambda ra, dec: None, "unavailable", mon.TNS_UNAVAILABLE, {}),
 ])
-def test_every_alert_in_the_report_carries_its_tns_status_and_line(env, monkeypatch, answer, status, line):
+def test_every_alert_in_the_report_carries_its_tns_status_and_line(env, monkeypatch, answer, status, line, record):
     env["objects"] = [obj(NEW_ZTF)]
     monkeypatch.setattr(mon.tns, "tns_lookup", answer)
     mon.scan("D", (150, 12, 1))
-    assert report()["alerts"][0]["tns"] == {"status": status, "line": line}
+    assert report()["alerts"][0]["tns"] == {"status": status, "line": line, "notice": None, **record}
 
 
 @pytest.mark.parametrize("init", [False, True], ids=["live", "init"])
@@ -1569,3 +1571,263 @@ def test_agn_colours_of_a_host_farther_out_is_a_note_not_a_category():
     xm_host = lambda ra, dec, **kw: Crossmatch("host", ['EXP r=19.0 sep=6.0" d_DLR=1.2'], flags=["agn_host"])
     ev = mon.evaluate(obj(NEW_ZTF), NOW, SINCE, classify=xm_host)
     assert ev.candidate.category == "host" and "host has WISE AGN colours" in ev.candidate.context
+
+
+# --- the TNS discovery notice (user, 2026-11-07) ----------------------------------------------
+#
+# Real alerts and the TNS records at their positions, trimmed to what the code reads. AFMA and
+# AHLY: the two alerts of the ecdfs run of 2026-11-05, with their records as fetched 2026-11-07
+# (the run's report keeps only the day of the discovery). EVY and KHR: alerts of replay D, rerun
+# 2026-11-07, records of the same day. Values are inline: tests depend on no run's output.
+
+AFMA_RUN_MJD = 61349.62559313397
+AFMA = {"key": "lsst:171141216521945181", "ra": 52.088979913356205, "dec": -27.3811726809613,
+        "first_det_mjd": 61343.135857905916}
+AFMA_TNS = {"objname": "2026afma", "name_prefix": "SN", "object_type": {"id": 3, "name": "SN Ia"},
+            "radeg": 52.088882554506, "decdeg": -27.380949386136, "discoverydate": "2026-09-28 08:14:49.632",
+            "internal_names": ",LSST-P-DO-171141216521945181", "discovery_data_source": {"group_name": "YSE", "groupid": 83}}
+AHLY = {"key": "lsst:171141216668745796", "ra": 54.48050170370357, "dec": -27.533952646966743,
+        "first_det_mjd": 61343.1360799451}
+AHLY_TNS = {"objname": "2026ahly", "name_prefix": "AT", "object_type": {"id": None, "name": None},
+            "radeg": 54.480477254708006, "decdeg": -27.53393989423294, "discoverydate": "2026-10-30 03:15:57.307",
+            "internal_names": "LSST-AP-DO-171141216668745796", "discovery_data_source": {"group_name": "Rubin", "groupid": 165}}
+# a real bracketed alert: both 11-05 alerts are no_quiet_point, so this is what the bracketed cases are built from
+EVY = {"key": "ztf:ZTF26aajowek", "ra": 151.22224217168346, "dec": -0.058046698868854496,
+       "first_det_mjd": 61105.36178239994, "last_quiet_mjd": 61100.22143519996}
+EVY_TNS = {"objname": "2026evy", "name_prefix": "SN", "object_type": {"name": "SN IIb"},
+           "radeg": 151.222240161, "decdeg": -0.0580446045592, "discoverydate": "2026-03-05 10:39:49.248",
+           "internal_names": "GOTO26bpn,ZTF26aajowek,ATLAS26crp,BGEM J100453.35-000329.2,PS26axk",
+           "discovery_data_source": {"group_name": "GOTO"}}
+KHR = {"key": "lsst:170270399191318556", "ra": 150.46040662051306, "dec": 3.4887700325500295,
+       "first_det_mjd": 61145.13363716459}
+KHR_TNS = {"objname": "2026khr", "name_prefix": "AT", "object_type": {"id": None, "name": None},
+           "radeg": 150.460408, "decdeg": 3.488769, "discoverydate": "2026-04-22 02:00:23.040",
+           "internal_names": "LSST-AP-DO-170270399191318556", "discovery_data_source": {"group_name": "Rubin", "groupid": 165}}
+# not real: round numbers, so a gap can be exactly one day in floats. 61343.5 is 2026-10-30 12:00 UTC.
+ROUND = {"key": "lsst:1706", "ra": 150.0, "dec": 12.0, "first_det_mjd": 61343.5}
+
+
+def on_the_spot(discovered, **rec):
+    """A record exactly at ROUND's position, discovered then."""
+    return {"objname": "2026x", "radeg": ROUND["ra"], "decdeg": ROUND["dec"], "discoverydate": discovered, **rec}
+
+
+def verdict(alert, status=None, code=None):
+    quiet = alert.get("last_quiet_mjd")
+    return mon.NewVerdict(alert["key"].split(":")[0], status or (mon.NEW if quiet is not None else mon.UNBRACKETED),
+                          code or ("bracketed" if quiet is not None else "no_quiet_point"),
+                          first_det_mjd=alert["first_det_mjd"], last_quiet_mjd=quiet, n_det=4)
+
+
+def notice_on(alert, rec, onset=None, conditions=("rising",)):
+    """The pure function, on the separation the 2" match reads."""
+    return mon._discovery_notice(rec, alert["key"], onset or verdict(alert), list(conditions),
+                                 mon._tns_sep_arcsec(rec, alert["ra"], alert["dec"]))
+
+
+def scan_real_alert(env, monkeypatch, alert, answer):
+    """A live scan on the alert's real ID, position and first detection; the photometry after it is built by hand."""
+    first, oid = alert["first_det_mjd"], alert["key"].split(":")[1]
+    env["objects"] = [obj([det(first + d, mag, band="i", survey="lsst", oid=oid)
+                           for d, mag in ((0, 23.5), (1, 23.3), (3, 22.9), (6.1, 22.45))],
+                          survey="lsst", oid=oid, ra=alert["ra"], dec=alert["dec"])]
+    monkeypatch.setattr(mon, "now_mjd", lambda: AFMA_RUN_MJD)
+    monkeypatch.setattr(mon.tns, "tns_lookup", answer)
+    code = mon.scan("ecdfs", mon.FOOTPRINTS["ecdfs"][0])
+    r = report("transient_ecdfs_*.json")
+    (record,) = r["alerts"]
+    assert (record["key"], record["conditions"], record["onset"]) == (alert["key"], ["rising"], "no_quiet_point")
+    return code, r, record["tns"]
+
+
+def test_afma_a_discovery_a_month_before_our_first_detection_gets_the_notice(env, capsys, monkeypatch):
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: AFMA_TNS)
+    text = ('TNS discovery 31.8 d before our first detection (YSE data; 0.86" away, TNS lists our ID). '
+            "Onset not bracketed: it is LSST's first detection, not the transient's start.")
+    assert said == {"status": "record", "line": "SN 2026afma, SN Ia, discovered 2026-09-28",
+                    "discovered": "2026-09-28 08:14:49.632", "sep_arcsec": 0.86, "own_id_listed": True,
+                    "notice": {"kind": "onset_not_bracketed", "gap_days": 31.79, "text": text}}
+    out = capsys.readouterr().out
+    assert f"  TNS: {said['line']}\n  NOTICE: {text}\n" in out  # in the alert block, right under its TNS line
+    assert code == 0 and r["exit_code"] == 0  # informational: nothing about the run changes
+    assert set(state("ecdfs")["reported"]) == {AFMA["key"]} and state("ecdfs")["tns_watch"] == {}
+
+
+def test_ahly_a_discovery_on_our_own_first_detection_gets_none(env, capsys, monkeypatch):
+    """The alert came 6.5 d after the first detection, so a gap measured from the run would fire here."""
+    code, r, said = scan_real_alert(env, monkeypatch, AHLY, lambda ra, dec: AHLY_TNS)
+    assert said == {"status": "record", "line": "AT 2026ahly, discovered 2026-10-30",
+                    "discovered": "2026-10-30 03:15:57.307", "sep_arcsec": 0.09, "own_id_listed": True, "notice": None}
+    assert "NOTICE" not in capsys.readouterr().out and code == 0
+
+
+def test_evy_0_92_d_is_silent_though_the_date_cut_to_its_day_reads_1_36():
+    assert notice_on(EVY, EVY_TNS) is None
+
+
+def test_khr_a_discovery_days_after_our_first_detection_is_the_normal_case_and_silent():
+    """TNS 6.95 d after us: a gap taken as a distance would fire."""
+    assert KHR["first_det_mjd"] < mon._utc_to_mjd(KHR_TNS["discoverydate"]) - 6.9
+    assert notice_on(KHR, KHR_TNS) is None
+
+
+def test_a_discovery_before_a_real_quiet_point_is_a_conflict():
+    """evy with one field changed: discoverydate, 5 d earlier, which lands 0.8 d before its quiet point."""
+    n = notice_on(EVY, {**EVY_TNS, "discoverydate": "2026-02-28 10:39:49.248"})
+    assert (n["kind"], n["gap_days"]) == ("quiet_point_conflict", 5.92)
+    assert n["text"] == ('TNS discovery 5.9 d before our first detection, 0.8 d before our quiet point (GOTO data; '
+                         '0.01" away, TNS lists our ID). Conflict: the quiet point was not deep enough, or the TNS '
+                         "match is another source.")
+
+
+def test_a_discovery_inside_the_gap_is_no_conflict():
+    """evy again, discoverydate 2 d earlier: between its quiet point and its first detection."""
+    n = notice_on(EVY, {**EVY_TNS, "discoverydate": "2026-03-03 10:39:49.248"})
+    assert (n["kind"], n["gap_days"]) == ("after_quiet_point", 2.92)
+    assert n["text"] == ('TNS discovery 2.9 d before our first detection, after our quiet point (GOTO data; 0.01" away, '
+                         "TNS lists our ID). No conflict: TNS caught the rise inside our gap.")
+
+
+def test_a_discovery_exactly_at_the_quiet_point_is_a_conflict_a_millisecond_later_is_not():
+    bracketed = {**ROUND, "first_det_mjd": 61345.5, "last_quiet_mjd": 61340.5}  # the quiet point: 10-27 12:00 UTC
+    assert mon._utc_to_mjd("2026-10-27 12:00:00.000") == 61340.5
+    assert notice_on(bracketed, on_the_spot("2026-10-27 12:00:00.000"))["kind"] == "quiet_point_conflict"
+    assert notice_on(bracketed, on_the_spot("2026-10-27 12:00:00.001"))["kind"] == "after_quiet_point"
+
+
+def test_a_discovery_exactly_one_day_before_our_first_detection_is_silent():
+    """Literal dates, never the constant: moving the bound turns this test or the next one red."""
+    assert mon._utc_to_mjd("2026-10-29 12:00:00.000") == ROUND["first_det_mjd"] - 1
+    assert notice_on(ROUND, on_the_spot("2026-10-29 12:00:00.000")) is None
+
+
+def test_a_millisecond_more_than_one_day_fires():
+    n = notice_on(ROUND, on_the_spot("2026-10-29 11:59:59.999"))
+    assert n["kind"] == "onset_not_bracketed" and n["gap_days"] == 1.0
+
+
+def test_the_survey_in_the_text_comes_from_the_alerts_id():
+    unbracketed = {**EVY, "last_quiet_mjd": None}
+    n = notice_on(unbracketed, {**EVY_TNS, "discoverydate": "2026-03-03 10:39:49.248"})
+    assert "it is ZTF's first detection" in n["text"] and "LSST" not in n["text"]
+
+
+def test_a_re_brightening_gets_no_notice_it_claims_no_onset():
+    old = verdict({**EVY, "last_quiet_mjd": None}, status=mon.NOT_NEW, code="old")
+    assert notice_on(EVY, {**EVY_TNS, "discoverydate": "2019-03-05 10:39:49.248"}, old, ["re_brightening"]) is None
+
+
+def test_a_recent_alert_with_too_few_detections_never_tried_to_bracket_and_says_not_bracketed():
+    few = verdict({**EVY, "last_quiet_mjd": None}, status=mon.NOT_NEW, code="too_few_detections")
+    n = notice_on(EVY, {**EVY_TNS, "discoverydate": "2026-03-03 10:39:49.248"}, few)
+    assert n["kind"] == "onset_not_bracketed"
+
+
+def test_a_date_reported_to_the_day_counts_from_its_end_so_the_gap_can_only_understate():
+    """The shape of 2026fgl's real date (2026-03-10 00:00:00.000)."""
+    assert notice_on(ROUND, on_the_spot("2026-10-29 00:00:00.000")) is None  # 1.5 d as written, 0.5 d from the day's end
+    n = notice_on(ROUND, on_the_spot("2026-10-28 00:00:00.000"))
+    assert n["gap_days"] == 1.5 and n["text"].startswith(
+        'TNS discovery at least 1.5 d before our first detection (reported to the day; 0.00" away, ')
+
+
+def test_without_our_id_in_tns_every_claim_that_needs_the_same_source_is_conditional():
+    """A position-only match cannot support 'not the transient's start'."""
+    unlisted = {**AFMA_TNS, "internal_names": "YSE26xyz"}
+    assert notice_on(AFMA, unlisted)["text"] == (
+        'TNS discovery 31.8 d before our first detection (YSE data; 0.86" away, TNS does not list our ID). '
+        "Onset not bracketed: if it is the same source, this is LSST's first detection, not the transient's start.")
+    inside = {**EVY_TNS, "discoverydate": "2026-03-03 10:39:49.248", "internal_names": "GOTO26bpn"}
+    assert notice_on(EVY, inside)["text"].endswith("No conflict: if it is the same source, TNS caught the rise inside our gap.")
+
+
+def test_a_record_with_no_data_source_says_only_what_it_has():
+    rec = {k: v for k, v in AFMA_TNS.items() if k != "discovery_data_source"}
+    assert '(0.86" away, TNS lists our ID)' in notice_on(AFMA, rec)["text"]
+
+
+def _raises(ra, dec):
+    raise RuntimeError("TNS gone")
+
+
+@pytest.mark.parametrize("answer,status", [
+    (lambda ra, dec: {}, "none_yet"),  # no date to fire on: this one alone could not catch a notice that fires
+    (lambda ra, dec: {**AFMA_TNS, "decdeg": AFMA_TNS["decdeg"] + 3 / 3600}, "none_yet"),  # 3" off, with an old date
+    (lambda ra, dec: None, "unavailable"),
+    (_raises, "unavailable"),
+], ids=["empty", "record_too_far", "none", "raises"])
+def test_none_yet_and_unavailable_carry_no_notice_and_no_complaint(env, capsys, monkeypatch, answer, status):
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, answer)
+    assert said == {"status": status, "line": mon.TNS_LINE[status], "notice": None}
+    assert "NOTICE" not in capsys.readouterr().out and r["warnings"] == [] and code == 0
+    assert AFMA["key"] in state("ecdfs")["tns_watch"]
+
+
+@pytest.mark.parametrize("broken", [
+    {"radeg": None}, {"decdeg": None}, {"radeg": float("nan")}, {"radeg": "52.09"}, {"objname": None},
+], ids=["radeg_none", "decdeg_none", "radeg_nan", "radeg_text", "no_name"])
+def test_a_record_that_cannot_be_read_is_unavailable_never_none_yet(env, capsys, monkeypatch, broken):
+    """The alert is kept, the state saved, the run unharmed. NaN reads as 0" through sep_deg: it would have matched."""
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: {**AFMA_TNS, **broken})
+    assert said == {"status": "unavailable", "line": mon.TNS_UNAVAILABLE, "notice": None}
+    assert code == 0 and r["exit_code"] == 0 and len(r["warnings"]) == 1
+    assert f"WARN: {r['warnings'][0]}" in capsys.readouterr().err
+    assert AFMA["key"] in state("ecdfs")["reported"] and AFMA["key"] in state("ecdfs")["tns_watch"]
+
+
+@pytest.mark.parametrize("missing", ["radeg", "decdeg", "objname"])
+def test_a_record_missing_a_field_outright_is_unavailable_too(env, monkeypatch, missing):
+    answer = {k: v for k, v in AFMA_TNS.items() if k != missing}
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: answer)
+    assert said["status"] == "unavailable" and code == 0 and AFMA["key"] in state("ecdfs")["tns_watch"]
+
+
+@pytest.mark.parametrize("date", ["soon", None, 20260928], ids=["text", "missing", "number"])
+def test_an_unreadable_discovery_date_is_warned_about_never_read_as_not_earlier(env, capsys, monkeypatch, date):
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: {**AFMA_TNS, "discoverydate": date})
+    assert (said["status"], said["notice"], said["discovered"]) == ("record", None, date)
+    out, err = capsys.readouterr()
+    assert code == 0 and "NOTICE" not in out and len(r["warnings"]) == 1 and f"WARN: {r['warnings'][0]}" in err
+    assert AFMA["key"] in state("ecdfs")["reported"]
+
+
+def test_whatever_goes_wrong_in_the_notice_the_alert_and_the_run_go_on(env, capsys, monkeypatch):
+    def broken(*args):
+        raise ArithmeticError("a bug in the notice")
+
+    monkeypatch.setattr(mon, "_discovery_notice", broken)
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: AFMA_TNS)
+    assert code == 0 and said["status"] == "record" and said["notice"] is None
+    assert "a bug in the notice" in r["warnings"][0] and AFMA["key"] in state("ecdfs")["reported"]
+
+
+def asked_again_on_a_later_run(env, monkeypatch, answer):
+    """An earlier alert in the state's tns_watch, asked again."""
+    env["objects"] = []
+    mon._save_state(mon.state_file("ecdfs"), {"last_mjd": None, "reported": {}, "parked": {}, "tns_watch": {
+        AFMA["key"]: {"ra": AFMA["ra"], "dec": AFMA["dec"], "alerted_mjd": AFMA_RUN_MJD - 1}}})
+    monkeypatch.setattr(mon, "now_mjd", lambda: AFMA_RUN_MJD)
+    monkeypatch.setattr(mon.tns, "tns_once", answer)
+    code = mon.scan("ecdfs", mon.FOOTPRINTS["ecdfs"][0])
+    return code, report("transient_ecdfs_*.json")
+
+
+def test_a_record_that_cannot_be_read_stays_watched_when_it_turns_up_on_a_later_run(env, capsys, monkeypatch):
+    answer = {k: v for k, v in AFMA_TNS.items() if k != "radeg"}
+    code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: answer)
+    assert code == 0 and r["tns_earlier"] == [] and AFMA["key"] in state("ecdfs")["tns_watch"]
+    assert len(r["warnings"]) == 1 and f"WARN: {r['warnings'][0]}" in capsys.readouterr().err
+
+
+def test_an_unreadable_date_on_a_later_run_costs_the_line_its_lag_not_the_run(env, monkeypatch):
+    answer = {**AFMA_TNS, "discoverydate": "soon"}
+    code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: answer)
+    assert code == 0 and "now in TNS: SN 2026afma" in r["tns_earlier"][0] and "our alert)" not in r["tns_earlier"][0]
+    assert state("ecdfs")["tns_watch"] == {}
+
+
+def test_a_record_arriving_on_a_later_run_gets_no_notice_for_now(env, capsys, monkeypatch):
+    """Left out by decision (2026-11-07): the line still gives the discovery date and the lag behind the alert."""
+    code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: AFMA_TNS)
+    assert code == 0 and "discovered 2026-09-28" in r["tns_earlier"][0]
+    assert "NOTICE" not in capsys.readouterr().out

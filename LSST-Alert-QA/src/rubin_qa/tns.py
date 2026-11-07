@@ -51,6 +51,18 @@ def tns_once(ra: float, dec: float) -> dict:
     return {k: unquote(v) if k in TNS_NAME_FIELDS and isinstance(v, str) else v for k, v in rec.items()}
 
 
+def own_id_listed(rec: dict, survey_object_id: str) -> bool:
+    """
+    Does the record list this survey object among its internal names? ZTF lists the bare
+    ID; Rubin's reports carry it after a prefix (LSST-AP-DO-<diaObjectId>, LSST-P-DO-<...>).
+    """
+    names = rec.get("internal_names")
+    if not isinstance(names, str):
+        return False
+    listed = [n.strip() for n in names.split(",")]
+    return any(n == survey_object_id or n.endswith(f"-{survey_object_id}") for n in listed)
+
+
 def tns_canary_ok() -> bool:
     time.sleep(TNS_PAUSE)
     try:

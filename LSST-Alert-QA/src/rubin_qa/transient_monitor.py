@@ -202,11 +202,16 @@ class Evaluation:
 # ------------------------------------------------------------------ helpers
 
 
+def _utc_to_mjd(when: str) -> float:
+    """The MJD of a UTC date, or date and time, as written: "2026-09-28" or "2026-09-28 08:14:49.632"."""
+    d = datetime.datetime.fromisoformat(when).replace(tzinfo=datetime.timezone.utc)
+    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
+    return MJD_J2000 + (d - epoch).total_seconds() / 86400
+
+
 def date_to_mjd(day: str) -> float:
     """MJD at the *end* of a UTC date: an --as-of date includes that whole day."""
-    d = datetime.datetime.fromisoformat(day).replace(tzinfo=datetime.timezone.utc)
-    epoch = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
-    return MJD_J2000 + (d - epoch).total_seconds() / 86400 + 1.0
+    return _utc_to_mjd(day) + 1.0
 
 
 def _date(mjd: float | None) -> str:
@@ -703,7 +708,7 @@ def update_parked(prev: dict, parked_now: dict, seen: set[str], since_mjd: float
     return parked, resolved, expired
 
 
-def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = None) -> None:
+def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = None, notice: str | None = None) -> None:
     o, v = c.obj, c.onset
     print(f"{o.key}  {c.category} · {', '.join(c.conditions)}  new: {', '.join(new_conditions)}")
     print(f"  ra={o.ra:.5f}  dec={o.dec:.5f}  b={c.gal_b:.1f}")
@@ -728,6 +733,8 @@ def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = 
         print(f"  classifications: {', '.join(o.classifications)}")
     if tns is not None:
         print(f"  TNS: {tns}")
+    if notice is not None:
+        print(f"  NOTICE: {notice}")
 
 
 def _json_float(x) -> float | None:
@@ -750,8 +757,8 @@ def alert_record(c: Candidate, new_conditions: list[str], anchor: str | None, da
     last_quiet_mjd (the bracketing quiet point) and n_det; rise {band, mag, sigma, days},
     whose mag is null when the object rose from nothing (the only non-finite case there);
     rapid_rise_mag; crossmatch_flags (the AGN flags the category depends on); context;
-    brokers; classifications. Any non-finite float is null. The live report adds an
-    optional tns {status, line} to alerts (scan); notes and replay records have none.
+    brokers; classifications. Any non-finite float is null. The live report adds tns to
+    alerts (scan; its keys: _add_tns's docstring); notes and replay records have none.
     """
     o, v, r = c.obj, c.onset, c.rise
     return {
@@ -784,6 +791,11 @@ TNS_RECHECK_DAYS = 30.0
 TNS_MATCH_ARCSEC = 2.0
 TNS_NONE_YET = f"none yet; asked again each run for {TNS_RECHECK_DAYS:g} d (a report often comes days after an alert)"
 TNS_UNAVAILABLE = f"unavailable (lookup failed); asked again each run for {TNS_RECHECK_DAYS:g} d"
+TNS_LINE = {"none_yet": TNS_NONE_YET, "unavailable": TNS_UNAVAILABLE}
+# days: how far a TNS discovery must lead our first detection before it earns a notice.
+# Closer than this it is the same detection or the same night, which says nothing about
+# our onset. How it is used: _discovery_notice.
+TNS_DISCOVERY_LEAD_DAYS = 1.0
 
 # The point-source watch (user, 2026-10-02). A S/N floor for the point-source rule was
 # measured and not adopted: its window rested on one supernova, SN 2026kfw (README, "Host
@@ -891,44 +903,134 @@ def _point_source_watch(alerts, now, save) -> list[str]:
     return lines
 
 
-def _tns_match(rec: dict, ra: float, dec: float) -> bool:
-    return bool(rec) and sep_deg(ra, dec, rec["radeg"], rec["decdeg"]) * 3600 <= TNS_MATCH_ARCSEC
+def _tns_sep_arcsec(rec: dict, ra: float, dec: float) -> float | None:
+    """
+    Arcsec from (ra, dec) to a TNS record: what the TNS_MATCH_ARCSEC match and the notice
+    both read. None when the record has no usable position. The inputs are checked, not
+    the result: sep_deg clamps its cosine, so a NaN position would read as 0".
+    """
+    r, d = rec.get("radeg"), rec.get("decdeg")
+    if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (r, d)):
+        return None
+    return sep_deg(ra, dec, r, d) * 3600
+
+
+def _tns_read(rec: dict, key: str, ra: float, dec: float, warnings: list[str]) -> tuple[str, float | None]:
+    """
+    What an answer says about (ra, dec): ("record", separation) within TNS_MATCH_ARCSEC,
+    else ("none_yet", None). A record that cannot be read (no usable position or name) is
+    ("unavailable", None) with a warning, never none_yet: TNS has something there.
+    """
+    if not rec:
+        return "none_yet", None
+    sep = _tns_sep_arcsec(rec, ra, dec)
+    if sep is None or not rec.get("objname"):
+        warnings.append(f"{key}: TNS answered with a record without a usable position or name "
+                        f"(radeg {rec.get('radeg')!r}, decdeg {rec.get('decdeg')!r}, objname {rec.get('objname')!r}); "
+                        "unavailable, asked again next run")
+        print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
+        return "unavailable", None
+    return ("record", sep) if sep <= TNS_MATCH_ARCSEC else ("none_yet", None)
 
 
 def _tns_line(rec: dict) -> str:
     kind = (rec.get("object_type") or {}).get("name")
-    found = (rec.get("discoverydate") or "")[:10]
+    found = rec.get("discoverydate")
+    found = found[:10] if isinstance(found, str) else ""
     return (f"{rec.get('name_prefix', '')} {rec['objname']}".strip() + (f", {kind}" if kind else "")
             + (f", discovered {found}" if found else ""))
 
 
-def _add_tns(c: Candidate, now: float) -> tuple[str, dict | None]:
+def _discovery_notice(rec: dict, key: str, onset: NewVerdict, conditions: list[str], sep_arcsec: float) -> dict | None:
     """
-    The alert's TNS line, looked up after its verdict: TNS is display context, never an
-    input. Returns (line, watch entry, status): the record ("record"), or TNS_NONE_YET
-    ("none_yet") / TNS_UNAVAILABLE ("unavailable") with an entry scan keeps in the state
-    and asks again each run for TNS_RECHECK_DAYS.
+    The notice on a matched TNS record whose discovery came more than
+    TNS_DISCOVERY_LEAD_DAYS before our first detection, else None: {kind, gap_days, text}.
+    Informational: it never suppresses an alert and never changes the exit code.
+
+    A re_brightening gets none: the object is old and the alert claims no onset. Otherwise
+    the kind says what the earlier discovery means for our onset: no quiet point
+    (onset_not_bracketed; a recent object with too few detections never tried for one), the
+    discovery at or before the quiet point (quiet_point_conflict), or after it
+    (after_quiet_point). A date whose time is exactly 00:00:00.000 is taken as reported to
+    the day and counted from that day's end, so its gap can only understate. Every text
+    gives the separation and whether TNS lists our ID; without our ID the match rests on
+    position alone, so a claim that needs the same source is conditional.
+
+    Raises on a missing or unreadable discovery date: _add_tns's guard makes that a warning.
     """
-    entry = {"ra": c.obj.ra, "dec": c.obj.dec, "alerted_mjd": now}
+    if "re_brightening" in conditions:
+        return None
+    found = _utc_to_mjd(rec.get("discoverydate"))
+    to_the_day = found.is_integer()  # midnight UTC exactly
+    if to_the_day:
+        found += 1.0
+    gap = onset.first_det_mjd - found
+    if gap <= TNS_DISCOVERY_LEAD_DAYS:
+        return None
+    survey, oid = key.split(":", 1)
+    listed = tns.own_id_listed(rec, oid)
+    source = (rec.get("discovery_data_source") or {}).get("group_name")
+    about = ", ".join(([f"{source} data"] if source else []) + (["reported to the day"] if to_the_day else []))
+    detail = ((f"{about}; " if about else "")
+              + f'{sep_arcsec:.2f}" away, TNS {"lists" if listed else "does not list"} our ID')
+    lead = f"TNS discovery {'at least ' if to_the_day else ''}{gap:.1f} d before our first detection"
+    quiet = onset.last_quiet_mjd
+    if quiet is None:
+        kind = "onset_not_bracketed"
+        claim = "it is" if listed else "if it is the same source, this is"
+        text = f"{lead} ({detail}). Onset not bracketed: {claim} {survey.upper()}'s first detection, not the transient's start."
+    elif found <= quiet:
+        kind = "quiet_point_conflict"
+        text = (f"{lead}, {quiet - found:.1f} d before our quiet point ({detail}). "
+                "Conflict: the quiet point was not deep enough, or the TNS match is another source.")
+    else:
+        kind = "after_quiet_point"
+        claim = "" if listed else "if it is the same source, "
+        text = f"{lead}, after our quiet point ({detail}). No conflict: {claim}TNS caught the rise inside our gap."
+    return {"kind": kind, "gap_days": round(gap, 2), "text": text}
+
+
+def _add_tns(c: Candidate, now: float, warnings: list[str]) -> tuple[dict, dict | None]:
+    """
+    What TNS says about an alert, looked up after its verdict: TNS is display context,
+    never an input. Returns (said, watch entry). said is the alert's tns in the report:
+    {status, line, notice}, status "none_yet" or "unavailable" with an entry scan keeps in
+    the state and asks again each run for TNS_RECHECK_DAYS; or "record", no entry, adding
+    discovered (the record's discovery date as TNS sent it; the line keeps only the day),
+    sep_arcsec and own_id_listed. notice is _discovery_notice's, null when there is none;
+    a report whose tns has no notice key predates the field.
+    """
+    o = c.obj
+    entry = {"ra": o.ra, "dec": o.dec, "alerted_mjd": now}
     try:
-        rec = tns.tns_lookup(c.obj.ra, c.obj.dec)  # "none" only when the canary vouched for it
+        rec = tns.tns_lookup(o.ra, o.dec)  # "none" only when the canary vouched for it
     except Exception as e:  # display context: whatever goes wrong, the run goes on
-        print(f"{WARN_PREFIX}{c.obj.key}: TNS lookup failed ({type(e).__name__}: {e})", file=sys.stderr)
+        print(f"{WARN_PREFIX}{o.key}: TNS lookup failed ({type(e).__name__}: {e})", file=sys.stderr)
         rec = None
     if rec is None:
-        print(f"{WARN_PREFIX}{c.obj.key}: TNS unavailable; asked again next run", file=sys.stderr)
-        return TNS_UNAVAILABLE, entry, "unavailable"
-    if _tns_match(rec, c.obj.ra, c.obj.dec):
-        c.obj.tns = [_tns_line(rec)]
-        return c.obj.tns[0], None, "record"
-    return TNS_NONE_YET, entry, "none_yet"
+        print(f"{WARN_PREFIX}{o.key}: TNS unavailable; asked again next run", file=sys.stderr)
+        return {"status": "unavailable", "line": TNS_UNAVAILABLE, "notice": None}, entry
+    status, sep = _tns_read(rec, o.key, o.ra, o.dec, warnings)
+    if status != "record":
+        return {"status": status, "line": TNS_LINE[status], "notice": None}, entry
+    o.tns = [_tns_line(rec)]
+    said = {"status": status, "line": o.tns[0], "discovered": rec.get("discoverydate"), "sep_arcsec": round(sep, 2),
+            "own_id_listed": tns.own_id_listed(rec, o.survey_object_id), "notice": None}
+    try:
+        said["notice"] = _discovery_notice(rec, o.key, c.onset, c.conditions, sep)
+    except Exception as e:  # informational: whatever goes wrong, the alert and the run go on
+        warnings.append(f"{o.key}: TNS discovery not judged, no notice: discoverydate {rec.get('discoverydate')!r} "
+                        f"({type(e).__name__}: {e})")
+        print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
+    return said, None
 
 
-def _retry_tns(watch: dict, now: float) -> tuple[dict, list[str]]:
+def _retry_tns(watch: dict, now: float, warnings: list[str]) -> tuple[dict, list[str]]:
     """
     Ask TNS again for earlier alerts that had no record yet (or no answer). One paced call
     each, no canary: an empty answer only means "not yet" whatever its cause; only a record
-    is news. Returns (still watched, report lines).
+    is news. Returns (still watched, report lines). A record that appears here gets no
+    discovery notice: the line gives its date and the lag behind the alert (user, 2026-11-07).
     """
     still, lines = {}, []
     for key, e in sorted(watch.items()):
@@ -943,11 +1045,13 @@ def _retry_tns(watch: dict, now: float) -> tuple[dict, list[str]]:
             rec = tns.tns_once(e["ra"], e["dec"])
         except Exception:  # display context: kept, asked again next run
             rec = {}
-        if _tns_match(rec, e["ra"], e["dec"]):
+        if _tns_read(rec, key, e["ra"], e["dec"], warnings)[0] == "record":
             lag = ""
-            if rec.get("discoverydate"):
+            try:
                 days = date_to_mjd(rec["discoverydate"][:10]) - 1 - e["alerted_mjd"]
                 lag = f" ({abs(days):.0f} d {'after' if days > 0 else 'before'} our alert)"
+            except (KeyError, TypeError, ValueError):  # no readable date: the line goes without its lag
+                pass
             lines.append(f"  {when}: now in TNS: {_tns_line(rec)}{lag}")
         else:
             still[key] = e
@@ -1112,9 +1216,10 @@ def scan(
     by_survey, kept}, rejected {reason: n}, parked {count, new [{key, first_det_mjd,
     code}], resolved, expired}; then, live, alerts (alert_record for each alert, with tns,
     then for each note), or, init, no alerts but recorded {by_category, parked} (the INIT
-    line) and absorbed (the same records, none of them reported); then tns_earlier and
-    point_source_watch (the printed lines), warnings (what was warned about and has no
-    key above) and exit_code.
+    line) and absorbed (the same records, none of them reported); then tns_earlier (the
+    lines of _retry_tns: TNS for earlier alerts, not an earlier discovery, which is an
+    alert's tns.notice) and point_source_watch (the printed lines), warnings (what was
+    warned about and has no key above) and exit_code.
     """
     path = state_file(name)
     if init and path.exists():
@@ -1189,7 +1294,7 @@ def scan(
         print(f"  {k}  first detection {_date(info['first_det_mjd'])}  {info['code']}")
     print()
 
-    tns_watch, tns_lines = _retry_tns(state.get("tns_watch", {}), now)
+    tns_watch, tns_lines = _retry_tns(state.get("tns_watch", {}), now, warnings)
     tns_said: dict[str, dict] = {}  # per alert, for the report
     if init:
         recorded = Counter(c.category for c, _ in day.alerts) + Counter(c.category for c, _, _ in day.notes)
@@ -1204,11 +1309,11 @@ def scan(
                 continue
             print(f"--- {category} ({len(group)}) ---")
             for c, new_conditions in group:
-                tns_text, watch_entry, tns_status = _add_tns(c, now)
+                said, watch_entry = _add_tns(c, now, warnings)
                 if watch_entry:
                     tns_watch[c.obj.key] = watch_entry
-                tns_said[c.obj.key] = {"status": tns_status, "line": tns_text}
-                _print_candidate(c, new_conditions, tns_text)
+                tns_said[c.obj.key] = said
+                _print_candidate(c, new_conditions, said["line"], said["notice"] and said["notice"]["text"])
             print()
     else:
         print("No new transient alerts.")

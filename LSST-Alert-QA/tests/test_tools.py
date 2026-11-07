@@ -235,3 +235,16 @@ class TestSurveyListHasOneDefinition:
         out = capsys.readouterr().out
         for survey in SURVEYS:
             assert survey in out
+
+
+def test_replay_tns_check_reads_the_own_id_through_the_shared_function():
+    """SN 2026evy's real record (moved to rubin_qa.tns 2026-11-07, where the monitor's notice reads it too)."""
+    import replay_tns_check as r
+
+    alert = {"key": "ztf:ZTF26aajowek", "category": "host", "conditions": ["bracketed"], "crossmatch": "host", "day": "2026-03-12"}
+    rec = {"objname": "2026evy", "name_prefix": "SN", "radeg": 151.222240161, "decdeg": -0.0580446045592,
+           "discoverydate": "2026-03-05 10:39:49.248",
+           "internal_names": "GOTO26bpn,ZTF26aajowek,ATLAS26crp,BGEM J100453.35-000329.2,PS26axk"}
+    out = r.judge(alert, (151.22224217168346, -0.058046698868854496), rec)
+    assert out["tns"] == "matched" and out["own_id_listed"] is True
+    assert r.judge({**alert, "key": "ztf:ZTF26other"}, (151.22224217168346, -0.058046698868854496), rec)["own_id_listed"] is False

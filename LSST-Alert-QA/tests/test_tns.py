@@ -164,3 +164,20 @@ def test_throttling_is_never_taken_for_not_in_tns_whatever_the_window_phase(monk
         outcomes["not_in_tns"] += unknown == {}
         outcomes["unavailable"] += unknown is None
     assert outcomes["found"] and outcomes["not_in_tns"]  # the sweep exercises both answers, not only "unavailable"
+
+
+@pytest.mark.parametrize("names,oid,listed", [
+    (",LSST-P-DO-171141216521945181", "171141216521945181", True),  # SN 2026afma's real value, leading comma included
+    ("LSST-AP-DO-171141216668745796", "171141216668745796", True),  # AT 2026ahly's
+    ("GOTO26bpn,ZTF26aajowek,ATLAS26crp,BGEM J100453.35-000329.2,PS26axk", "ZTF26aajowek", True),  # SN 2026evy's: bare
+    ("LSST-AP-DO-91234", "1234", False),  # the tail of another ID
+    ("YSE26xyz", "1234", False),
+    ("", "1234", False),
+    (None, "1234", False),
+])
+def test_own_id_listed_reads_both_ways_surveys_write_their_ids(names, oid, listed):
+    assert t.own_id_listed({"internal_names": names}, oid) is listed
+
+
+def test_own_id_listed_on_a_record_without_the_field():
+    assert t.own_id_listed({}, "1234") is False
