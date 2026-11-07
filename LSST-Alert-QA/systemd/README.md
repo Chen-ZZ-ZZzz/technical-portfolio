@@ -23,7 +23,8 @@ Each unit is in one of three states:
 | frozen | not armed and never edited: its files are SHA-pinned (`tests/test_sso_frozen.py`); its setup section below is the deployment record |
 
 Both stopped units answered their question. Why each was stopped: the project README,
-"Bright Solar System Objects (SSO) Monitor" and "Broker Latency Sampling Campaign".
+[Bright Solar System Objects (SSO) Monitor](../README.md#bright-solar-system-objects-sso-monitor)
+and [Broker Latency Sampling Campaign](../README.md#broker-latency-sampling-campaign).
 
 Hyphens are safe here. The character is only special in path-derived units (`.mount`,
 `.automount`, `.swap`, where it encodes `/`) and in template instance names — none of
@@ -195,7 +196,7 @@ systemctl --user --failed
   the next start. A catch-up plus the daily run on the same day is harmless: each run
   reports only what changed against the state.
 - **No arguments, on purpose.** The footprint
-  is the CLI default, so it is named in one place. Never `--init` (see above), and never
+  is the CLI default, so it is named in one place. Never `--init` ([Before installing](#before-installing)), and never
   `--dry-run`: nothing would be saved, so every alert would repeat daily.
 - **Exit 1 means look**: a listing failed (an outage, not a quiet sky), the state is
   missing, or the network failed after retries. The `ERROR:` line in the journal says
@@ -222,7 +223,8 @@ systemctl --user --failed
 
 > **Frozen.** The unit ran daily from 2026-04-13 to 2026-08-17 (115 scans); it is not
 > armed and its files are never edited. The section below is the deployment record. Why it was stopped, and what
-> its alerts were: "Bright Solar System Objects (SSO) Monitor" in the project README.
+> its alerts were: [Bright Solar System Objects (SSO) Monitor](../README.md#bright-solar-system-objects-sso-monitor)
+> in the project README.
 > It can't run again without a port to antares-client 2.x: it was written and run on 1.x
 > and the v1 API, which ANTARES retires on 2026-11-04.
 
@@ -263,7 +265,7 @@ journalctl --user -u lsst-sso-monitor.service -n 50
 
 > **Dormant.** The timer ran from 2026-08-11 to 2026-09-01 and is not armed; its
 > example is kept current, and the section below re-arms it. What the campaign found, and when to run it
-> again: "Broker Latency Sampling Campaign" in the project README.
+> again: [Broker Latency Sampling Campaign](../README.md#broker-latency-sampling-campaign) in the project README.
 
 Hourly systemd user timer that ran `tools/sample_latency.py` and appended one record
 to `state/latency_samples.jsonl`. Fed the `SECONDS_PER_OBJECT` constants in
@@ -298,7 +300,7 @@ uv run tools/sample_latency.py --report --by-hour
 
 - `OnCalendar=hourly` + `RandomizedDelaySec=3600` puts one sample somewhere inside
   each hour, so all 24 hour-buckets fill in a single day (why the randomisation: the
-  README's method).
+  project README, [Broker Latency Sampling Campaign](../README.md#broker-latency-sampling-campaign)).
 - `Persistent=true`: catches up a run missed while the machine was off. The counter-
   argument is that a catch-up fires at boot rather than at a random hour — but that
   only matters on a machine with a regular boot schedule, and with `Persistent=false`
@@ -385,11 +387,11 @@ journalctl --user -u lsst-pipeline-antares.service -n 50
 ## Notes
 
 - What the loci are (the n most recently updated, n from `ExecStart`, since the switch to antares-client 2.x on 2026-11-03), and why the report
-  has fewer rows than that: the ANTARES entries under "Known API Quirks" in the project
+  has fewer rows than that: the ANTARES entries under [Known API Quirks](../README.md#known-api-quirks) in the project
   README.
 - `-q` trims stdout to the summary table. The CSV in `reports/` is unaffected.
 - Output goes to the journal under `SyslogIdentifier=lsst-pipeline-antares` — see
-  "Logging" above.
+  [Logging](#logging) above.
 - `ExecStartPre=/usr/bin/nm-online -q -t 36` waits up to 36s for the network. On a
   machine without NetworkManager, swap it for `/bin/sleep 60` as the SSO monitor
   does, or drop it if the timer never fires near boot.

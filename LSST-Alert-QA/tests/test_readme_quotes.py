@@ -15,13 +15,18 @@ The same table guards systemd/README.md's summary of the unit files (cadence, co
 start timeouts, write paths) against the files, its "frozen" against the files test_sso_frozen pins
 (active and dormant cannot be read from a file: arming is the install), and the README's
 antares-client version against the lock. It checks what the docs say about the units,
-never that a unit works: that is the user's install. And it guards the README's in-page
-links, the one kind of pointer a test can check in full: GitHub builds an anchor from
-its heading's text, so renaming a heading breaks every link to it without a sound.
+never that a unit works: that is the user's install.
 
-Adding the next guarded quote is one row.
+Beside the table, test_every_doc_link_lands guards the links in and between the READMEs
+and CLAUDE.md, the one kind of pointer a test can check in full: GitHub builds an anchor
+from its heading's text, so renaming a heading breaks every link to it without a sound.
+Links are not rows, because a row's pattern sees only the path spelling it expects:
+README.md#x written inside systemd/README.md opens that same file, and would match none.
+
+Adding the next guarded quote is one row; a new link needs none.
 """
 
+import posixpath
 import re
 import tomllib
 from pathlib import Path
@@ -35,7 +40,10 @@ from tests.test_sso_frozen import FROZEN_FILES
 
 ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD = ROOT / "systemd"
-DOCS = {name: (ROOT / name).read_text() for name in ("README.md", "systemd/README.md")}
+DOCS = {name: (ROOT / name).read_text() for name in ("README.md", "systemd/README.md", "CLAUDE.md")}
+# A relative link to a doc, to a heading in one, or to a heading in this one: (path, anchor).
+# A URL is no pointer between the docs, nor is a link to a file that is not a doc.
+DOC_LINK = re.compile(r"\]\((?!\w+://)([^)#\s]*\.md)?(?:#([^)\s]+))?\)")
 
 
 def _latency_row(survey: str) -> str:
@@ -99,7 +107,24 @@ def anchors(text: str) -> frozenset[str]:
     return frozenset(made)
 
 
-TIMERS = sorted(p.stem for p in SYSTEMD.glob("*.timer"))
+def doc_links(text: str) -> list[tuple[str, str]]:
+    """Every link in a doc that points to a doc or a heading; either part may be empty."""
+    return [link for link in DOC_LINK.findall(text) if any(link)]
+
+
+def broken_links(docs: dict[str, str]) -> list[str]:
+    """The links that land nowhere. A path resolves from the doc it is written in, as GitHub
+    resolves it. A doc outside `docs` counts as missing, so a new doc cannot go unchecked."""
+    broken = []
+    for name, text in docs.items():
+        for path, anchor in doc_links(text):
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), path)) if path else name
+            if target not in docs or (anchor and anchor not in anchors(docs[target])):
+                broken.append(f"{name}: ({path}#{anchor})")
+    return broken
+
+
+TIMERS =sorted(p.stem for p in SYSTEMD.glob("*.timer"))
 MONITOR_TIMER = "lsst-transient-monitor.timer"
 
 GUARDED = {
@@ -137,7 +162,6 @@ GUARDED = {
         ("ALeRCE LSST page limit", r"refuses `page_size` above (\d+)|N ≤ (\d+): the LSST listing's page limit",
          ALERCE_MAX_PAGE_SIZE),
         ("ANTARES listing page cap", r"so the cap is the client's own ceiling, (\d+)", ANTARES_MAX_PAGE_SIZE),
-        ("in-page links", r"\]\(#([^)]+)\)", anchors(DOCS["README.md"])),
     ],
     "systemd/README.md": [
         *[(f"unit table, {t}", rf"(?m)^\| `{t}` \| (\w+)[^|]*\| `([^`]+)` \| (?:\*\*(frozen)\*\*)?",
@@ -167,9 +191,7 @@ def quotes(pattern: str, text: str) -> list[tuple[str, ...]]:
 
 
 def matches(quote: str, value) -> bool:
-    """A number to within rounding, a set as any of its members (an anchor), anything else exactly."""
-    if isinstance(value, frozenset):
-        return quote in value
+    """A number to within rounding, anything else exactly."""
     if isinstance(value, (int, float)):
         return float(quote) == pytest.approx(value)
     return quote == value
@@ -186,5 +208,33 @@ def test_the_docs_quote_what_they_describe(doc, pattern, value):
     found = quotes(pattern, DOCS[doc])
     assert found, f"{doc} no longer quotes it ({pattern!r}): drop the row, or the quote was reworded"
     wrong = [q for q in found if not says(q, value)]
-    shown = sorted(value) if isinstance(value, frozenset) else value
-    assert not wrong, f"{doc} says {wrong}, the source says {shown}"
+    assert not wrong, f"{doc} says {wrong}, the source says {value}"
+
+
+def test_every_doc_link_lands():
+    unlinked = [name for name, text in DOCS.items() if not doc_links(text)]
+    assert not unlinked, f"no links seen in {unlinked}: nothing would be guarded"
+    assert not broken_links(DOCS)
+
+
+@pytest.mark.parametrize("docs", [
+    pytest.param({"a.md": "# One\n[x](#two)\n"}, id="no such heading"),
+    pytest.param({"a.md": "# Notes\n# Notes\n[x](#notes-2)\n"}, id="past the repeated headings"),
+    pytest.param({"a.md": "# A\n[x](b.md#a)\n", "b.md": "# B\n"}, id="no such heading in the other doc"),
+    pytest.param({"a.md": "[x](b.md)\n"}, id="no such doc"),
+    pytest.param({"a.md": "[x](b.md#c)\n"}, id="no such doc, with an anchor"),
+    pytest.param({"README.md": "# Quirks\n", "systemd/README.md": "# Logging\n[x](README.md#quirks)\n"},
+                 id="path written as if from the root"),
+    pytest.param({"a.md": "```\n# Fenced\n```\n[x](#fenced)\n"}, id="a # line in a fence is no heading"),
+])
+def test_a_link_that_lands_nowhere_is_reported(docs):
+    assert broken_links(docs)
+
+
+def test_a_link_that_lands_is_not_reported():
+    docs = {
+        "README.md": "# Known API Quirks\n[x](systemd/README.md#notes-1)\n[y](systemd/README.md)\n"
+                     "[url](https://example.com/a.md#b)\n[file](reports/a.csv)\n",
+        "systemd/README.md": "# Notes\n# Notes\n[x](../README.md#known-api-quirks)\n[y](#notes)\n",
+    }
+    assert not broken_links(docs)
