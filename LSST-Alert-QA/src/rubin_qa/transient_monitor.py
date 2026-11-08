@@ -811,7 +811,6 @@ PS_REVISIT_SNR = 7.0  # the top of the measured window (2026-10-02, tools/point_
 PS_PATTERN = 3
 PS_CHECK_EVERY_DAYS = 7.0  # a TNS lookup paces at 6.5 s; a classification takes days to weeks
 PS_WATCH_DAYS = 180.0  # unclassified this long after the alert: no longer asked
-PS_MATCH_ARCSEC = 2.0
 # TNS records are judged on their classification type, never the prefix: unclassified is
 # AT with type {"id": None, "name": None}; a supernova has an SN type ("SN Ia", "SLSN-I")
 # and the SN prefix; other classes may keep AT or get their own prefix (AT 2018hyz, a TDE,
@@ -826,19 +825,21 @@ def point_source_rule() -> str:
     return hashlib.sha256(f"{text}{sky_catalog.COUNTERPART_RADIUS_ARCSEC}".encode()).hexdigest()[:12]
 
 
-def point_source_watch(alerts: list[tuple[str, float, float, float, str]], now: float, save: bool = True) -> list[str]:
+def point_source_watch(alerts: list[tuple[str, float, float, float, str]], now: float, save: bool = True,
+                       warnings: list[str] | None = None) -> list[str]:
     """
     Register this run's point_source alerts ((key, ra, dec, alerted_mjd, source)), look up
     the watched ones that are due, and return the report lines. Never raises: a failure is
-    a line, asked again next run.
+    a line, asked again next run. A bad record costs its own entry, which stays due; what
+    was warned about goes to warnings too, when the caller keeps them for a report.
     """
     try:
-        return _point_source_watch(alerts, now, save)
+        return _point_source_watch(alerts, now, save, [] if warnings is None else warnings)
     except Exception as e:  # display context: it must never take the run down
         return [f"Point-source watch: could not run ({type(e).__name__}: {e}); asked again next run"]
 
 
-def _point_source_watch(alerts, now, save) -> list[str]:
+def _point_source_watch(alerts, now, save, warnings) -> list[str]:
     path = STATE_DIR / PS_WATCH_FILE
     objects = json.loads(path.read_text())["objects"] if path.exists() else {}
     for key, ra, dec, mjd, source in alerts:
@@ -848,24 +849,33 @@ def _point_source_watch(alerts, now, save) -> list[str]:
     for key, e in sorted(objects.items()):
         if e["status"] != "watching" or (e["checked_mjd"] is not None and now - e["checked_mjd"] < PS_CHECK_EVERY_DAYS):
             continue
-        rec = tns.tns_lookup(e["ra"], e["dec"])
-        if rec is None:
+        try:
+            rec = tns.tns_lookup(e["ra"], e["dec"])
+            status = "unavailable" if rec is None else _tns_read(rec, key, e["ra"], e["dec"], warnings)[0]
+            if status == "unavailable":
+                unavailable += 1
+                continue
+            if status == "record":
+                label = f"{rec.get('name_prefix', '')} {rec['objname']}".strip()
+                kind = (rec.get("object_type") or {}).get("name")
+                a_supernova = bool(kind) and kind.startswith(SUPERNOVA_TYPES)
+                e["tns"], e["tns_type"] = label, kind
+                if a_supernova:  # classified a supernova
+                    try:
+                        found, snr = sky_catalog.counterpart_snr(e["ra"], e["dec"])
+                    except sky_catalog.CatalogError:
+                        unavailable += 1
+                        continue
+                    # snr None on a found point source: no band measured, so never counted (user, 2026-11-04)
+                    e.update(status="sn" if found else "no_counterpart", snr=snr, rule=rule)
+                elif kind:  # classified as something else: settled, and said, never a silent drop
+                    e["status"] = "other_class"
+                    classified_now.append((key, e))
+        except Exception as ex:  # one bad record costs one entry: the others are judged and saved
+            warnings.append(f"{key}: point-source watch lookup failed ({type(ex).__name__}: {ex}); asked again next run")
+            print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
             unavailable += 1
             continue
-        if rec and sep_deg(e["ra"], e["dec"], rec["radeg"], rec["decdeg"]) * 3600 <= PS_MATCH_ARCSEC:
-            e["tns"] = f"{rec.get('name_prefix', '')} {rec['objname']}".strip()
-            e["tns_type"] = (rec.get("object_type") or {}).get("name")
-            if e["tns_type"] and e["tns_type"].startswith(SUPERNOVA_TYPES):  # classified a supernova
-                try:
-                    found, snr = sky_catalog.counterpart_snr(e["ra"], e["dec"])
-                except sky_catalog.CatalogError:
-                    unavailable += 1
-                    continue
-                # snr None on a found point source: no band measured, so never counted (user, 2026-11-04)
-                e.update(status="sn" if found else "no_counterpart", snr=snr, rule=rule)
-            elif e["tns_type"]:  # classified as something else: settled, and said, never a silent drop
-                e["status"] = "other_class"
-                classified_now.append((key, e))
         e["checked_mjd"] = now
         if e["status"] == "watching" and now - e["alerted_mjd"] > PS_WATCH_DAYS:
             e["status"] = "expired"
@@ -906,8 +916,9 @@ def _point_source_watch(alerts, now, save) -> list[str]:
 def _tns_sep_arcsec(rec: dict, ra: float, dec: float) -> float | None:
     """
     Arcsec from (ra, dec) to a TNS record: what the TNS_MATCH_ARCSEC match and the notice
-    both read. None when the record has no usable position. The inputs are checked, not
-    the result: sep_deg clamps its cosine, so a NaN position would read as 0".
+    both read. None when the record has no usable position. Checked here even though
+    sep_deg passes NaN on: a NaN separation would fail the match and read as none_yet,
+    and TNS has something there.
     """
     r, d = rec.get("radeg"), rec.get("decdeg")
     if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (r, d)):
@@ -1003,7 +1014,7 @@ def _add_tns(c: Candidate, now: float, warnings: list[str]) -> tuple[dict, dict 
     o = c.obj
     entry = {"ra": o.ra, "dec": o.dec, "alerted_mjd": now}
     try:
-        rec = tns.tns_lookup(o.ra, o.dec)  # "none" only when the canary vouched for it
+        rec = tns.tns_lookup(o.ra, o.dec)  # {} only when the service said "none"
     except Exception as e:  # display context: whatever goes wrong, the run goes on
         print(f"{WARN_PREFIX}{o.key}: TNS lookup failed ({type(e).__name__}: {e})", file=sys.stderr)
         rec = None
@@ -1028,9 +1039,10 @@ def _add_tns(c: Candidate, now: float, warnings: list[str]) -> tuple[dict, dict 
 def _retry_tns(watch: dict, now: float, warnings: list[str]) -> tuple[dict, list[str]]:
     """
     Ask TNS again for earlier alerts that had no record yet (or no answer). One paced call
-    each, no canary: an empty answer only means "not yet" whatever its cause; only a record
-    is news. Returns (still watched, report lines). A record that appears here gets no
-    discovery notice: the line gives its date and the lag behind the alert (user, 2026-11-07).
+    each: only a record is news, and a "none" or a call that failed, whatever the cause, is
+    asked again next run. Returns (still watched, report lines). A record that appears here
+    gets no discovery notice: the line gives its date and the lag behind the alert (user,
+    2026-11-07; the paths that end here: CLAUDE.md, "A TNS discovery ahead").
     """
     still, lines = {}, []
     for key, e in sorted(watch.items()):
@@ -1334,7 +1346,7 @@ def scan(
                         "deleted? Its evidence count restarts from zero.")
         print(f"{WARN_PREFIX}{warnings[-1]}", file=sys.stderr)
         print(f"\nPoint-source watch file missing at {watch_file}: evidence count restarts from zero.")
-    watch_lines = point_source_watch(ps, now, save=not dry_run)
+    watch_lines = point_source_watch(ps, now, save=not dry_run, warnings=warnings)
     print("\n" + "\n".join(watch_lines))
 
     cutoff = now - STATE_RETENTION_DAYS

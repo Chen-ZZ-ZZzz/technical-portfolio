@@ -19,7 +19,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
 
 import host_match_check as h  # noqa: E402
 
+from rubin_qa import photometry  # noqa: E402
 from rubin_qa import tns as t  # noqa: E402  (the lookup lives there; patch it there)
+from tests import fake_tns as fake  # noqa: E402
 
 SN = {"footprint": "D", "name": "2026xyz", "type": "SN Ia", "z": 0.05, "ra": 150.0, "dec": 2.0, "locus": "ANT1"}
 
@@ -28,21 +30,14 @@ SN = {"footprint": "D", "name": "2026xyz", "type": "SN Ia", "z": 0.05, "ra": 150
 def sample_env(tmp_path, monkeypatch):
     monkeypatch.setattr(h, "OUT_DIR", tmp_path)
     monkeypatch.setattr(h, "SAMPLE_DIR", tmp_path)
-    monkeypatch.setattr(h.time, "sleep", lambda s: None)
+    fake.fake_clock(monkeypatch)
     monkeypatch.setattr(h, "antares_tns_sne", lambda fp: [dict(SN)])
     return tmp_path
 
 
-CANARY_REC = {"objname": h.TNS_CANARY["name"], "hostname": "NGC1398"}
-
-
-def tns(answer, canary=CANARY_REC, calls=None):
-    """A tns_once: the canary position gets `canary`, every other position `answer`."""
-    def once(ra, dec):
-        if calls is not None:
-            calls.append((ra, dec))
-        return canary if (ra, dec) == (h.TNS_CANARY["ra"], h.TNS_CANARY["dec"]) else answer
-    return once
+def tns(answer):
+    """A tns_once with this answer: what the body said is tests/test_tns.py's concern."""
+    return lambda ra, dec: answer
 
 
 def pending(tmp_path):
@@ -81,22 +76,22 @@ def test_resolve_host_none_only_when_sesame_answered_and_knows_nothing(monkeypat
     assert h.resolve_host("anonymous galaxy") is None
 
 
-def test_sample_an_empty_tns_record_is_not_saved_as_no_host(sample_env, monkeypatch, capsys):
-    """The pre-fix bug: 200 with an empty record was saved as 'no hostname' (14 of 44, 2026-10-01)."""
-    monkeypatch.setattr(t, "tns_once", tns({}, canary={}))  # throttled: empty to everything
+def test_sample_a_rejected_call_is_not_saved_as_no_host(sample_env, monkeypatch, capsys):
+    """The pre-fix bug: a rejected call read as an empty record was saved as 'no hostname' (14 of 44, 2026-10-01)."""
+    fake.serve(monkeypatch, fake.REJECTED)
     assert h.run_sample(["D"]) == 1  # something is pending
     assert saved(sample_env) == []  # not recorded as "no host"
-    assert "2026xyz: TNS unavailable (request failed, or still throttled after 180 s); not saved" in capsys.readouterr().err
+    assert "2026xyz: TNS unavailable (no answer within 180 s, or a body of no known shape); not saved" in capsys.readouterr().err
 
 
-def test_sample_reports_a_vouched_empty_answer_as_not_found(sample_env, monkeypatch, capsys):
-    monkeypatch.setattr(t, "tns_once", tns({}))
+def test_sample_reports_a_none_as_not_found(sample_env, monkeypatch, capsys):
+    fake.serve(monkeypatch, fake.NONE)
     assert h.run_sample(["D"]) == 1 and saved(sample_env) == []
-    assert "not found at ALeRCE's TNS service (vouched for by the canary in the same window)" in capsys.readouterr().err
+    assert "not found at ALeRCE's TNS service (it answered: none)" in capsys.readouterr().err
 
 
 def test_a_pending_sn_is_asked_again_even_when_antares_no_longer_lists_it(sample_env, monkeypatch):
-    monkeypatch.setattr(t, "tns_once", tns({}, canary={}))
+    fake.serve(monkeypatch, fake.REJECTED)
     h.run_sample(["D"])
     (p,) = pending(sample_env)
     assert p["pending_reason"].startswith("TNS unavailable") and p["pending_runs"] == 1
@@ -254,3 +249,22 @@ def test_the_sample_keeps_only_loci_inside_the_footprint(monkeypatch):
             _tns_locus("outside", ra0, dec0 + radius + one_arcsec)]
     monkeypatch.setattr(antares_client.search, "search", lambda query: iter(loci))
     assert [sn["name"] for sn in h.antares_tns_sne("ecdfs")] == ["inside"]
+
+
+def test_the_sample_drops_a_locus_at_a_nan_position(monkeypatch):
+    """The trim is `not <=`, never `>`: NaN compares false both ways, so `>` would keep it."""
+    import antares_client.search
+
+    ra0, dec0, _ = h.FOOTPRINTS["ecdfs"][0]
+    loci = [_tns_locus("nan_ra", float("nan"), dec0), _tns_locus("nan_dec", ra0, float("nan")), _tns_locus("inside", ra0, dec0)]
+    monkeypatch.setattr(antares_client.search, "search", lambda query: iter(loci))
+    assert [sn["name"] for sn in h.antares_tns_sne("ecdfs")] == ["inside"]
+
+
+def test_the_tools_measure_separations_with_the_shared_function():
+    """Two copies of the clamp lived in the tools (until 2026-11-07), both reading NaN as 0."""
+    import lsst_box_census as c
+
+    assert c.sep_deg is photometry.sep_deg
+    assert h.sep_arcsec(10.0, 0.0, 11.0, 0.0) == pytest.approx(3600.0)
+    assert h.sep_arcsec(float("nan"), 0.0, 11.0, 0.0) != h.sep_arcsec(float("nan"), 0.0, 11.0, 0.0)  # NaN, the only value unequal to itself

@@ -1,11 +1,9 @@
 """
-rubin_qa/tns.py - TNS lookups through ALeRCE's throttled TNS service.
+rubin_qa/tns.py - TNS lookups through ALeRCE's TNS service.
 
-The service answers 200 with an empty record once its quota of 10 a minute is spent, so
-"throttled" looks exactly like "not in TNS". tns_lookup accepts an empty answer only when
-two (empty answer, full canary) pairs fall within one window length. These tests feed it a
-fake clock and a simulated throttled service; no network. Moved here from
-test_host_match_check.py on 2026-10-02 with the code (the monitor's point-source watch
+The service answers HTTP 200 whatever happened, and the body says which. These tests serve
+its recorded bodies verbatim (tests/fake_tns.py), on a fake clock; no network. Moved here
+from test_host_match_check.py on 2026-10-02 with the code (the monitor's point-source watch
 uses the lookup too).
 """
 
@@ -15,8 +13,7 @@ import pytest
 import requests
 
 from rubin_qa import tns as t
-
-CANARY_REC = {"objname": t.TNS_CANARY["name"], "hostname": "NGC1398"}
+from tests import fake_tns as fake
 
 
 def test_tns_names_are_decoded_where_they_come_in(monkeypatch):
@@ -33,137 +30,126 @@ def test_tns_names_are_decoded_where_they_come_in(monkeypatch):
 
 @pytest.fixture
 def clock(monkeypatch):
-    """A fake time for tns_lookup: each _now() call takes the next value; sleeps are recorded."""
-    times, slept = [], []
-    monkeypatch.setattr(t, "_now", lambda: times.pop(0))
-    monkeypatch.setattr(t.time, "sleep", slept.append)
-    return times, slept
+    return fake.fake_clock(monkeypatch)
 
 
-def answering(*answers, calls=None):
-    seq = iter(answers)
-
-    def once(ra, dec):
-        if calls is not None:
-            calls.append((ra, dec))
-        return next(seq)
-    return once
+# --- one call: what a body says ---------------------------------------------------------------
 
 
-def test_two_vouched_empty_answers_within_one_window_are_not_in_tns(clock, monkeypatch):
-    clock[0].extend([0.0, 14.0, 21.0])  # first asked, second asked, checked
-    calls = []
-    monkeypatch.setattr(t, "tns_once", answering({}, CANARY_REC, {}, CANARY_REC, calls=calls))
-    assert t.tns_lookup(150.0, 2.0) == {}
-    assert len(calls) == 4
+def test_a_record_body_gives_the_record(monkeypatch):
+    fake.serve(monkeypatch, fake.RECORD)
+    rec = t.tns_once(52.09, -27.38)
+    assert rec["objname"] == "2026afma" and rec["discoverydate"] == "2026-09-28 08:14:49.632"
 
 
-def test_a_full_answer_needs_no_canary(clock, monkeypatch):
-    clock[0].append(0.0)
-    calls = []
-    monkeypatch.setattr(t, "tns_once", answering({"objname": "2026xyz"}, calls=calls))
-    assert t.tns_lookup(150.0, 2.0) == {"objname": "2026xyz"} and len(calls) == 1
+def test_the_none_body_gives_empty_and_nothing_else_does(monkeypatch):
+    fake.serve(monkeypatch, fake.NONE)
+    assert t.tns_once(10.0, -45.0) == {}
 
 
-def test_one_pair_is_never_enough_it_may_straddle_a_window_turn(clock, monkeypatch):
-    """Quota spent: the answer is empty, the canary lands in the next window and is full; the re-ask finds the record."""
-    clock[0].extend([0.0, 14.0])
-    monkeypatch.setattr(t, "tns_once", answering({}, CANARY_REC, {"objname": "2026xyz"}))
-    assert t.tns_lookup(150.0, 2.0) == {"objname": "2026xyz"}
+@pytest.mark.parametrize("body", [fake.REJECTED, fake.UPSTREAM_ERROR], ids=["rejected", "upstream_error"])
+def test_a_rejected_call_or_an_upstream_failure_raises_never_reads_as_none(monkeypatch, capsys, body):
+    fake.serve(monkeypatch, body)
+    with pytest.raises(t.TnsUnavailable) as raised:
+        t.tns_once(52.09, -27.38)
+    assert not isinstance(raised.value, t.TnsUnknownBody)  # a shape we know: nothing to warn about
+    assert capsys.readouterr().err == ""
 
 
-def test_pairs_further_apart_than_a_window_do_not_vouch(clock, monkeypatch):
-    clock[0].extend([0.0, 40.0, 61.0, 62.0, 75.0])  # pairs at 0 and 40 end at 61: two turns possible; at 40 and 62: fine
-    calls = []
-    monkeypatch.setattr(t, "tns_once", answering({}, CANARY_REC, {}, CANARY_REC, {}, CANARY_REC, calls=calls))
-    assert t.tns_lookup(150.0, 2.0) == {}
-    assert len(calls) == 6
+UNKNOWN_SHAPES = {
+    "other_data": '{"data":"x","id_code":200,"id_message":"OK"}',
+    "other_code": '{"data":[],"id_code":201,"id_message":"OK"}',
+    "server_code": '{"id_code":500}',
+    "empty_object": "{}",
+    "empty_object_data": '{"object_data":{},"object_name":"x"}',
+    "list": "[]",
+    "null": "null",
+    "not_json": "<html>Bad Gateway</html>",
+    "empty": "",
+}
 
 
-def test_a_throttled_canary_is_polled_until_it_answers_then_the_position_is_asked_again(clock, monkeypatch):
-    clock[0].extend([0.0, 40.0, 47.0, 54.0])  # first asked; after the throttle: asked, asked, checked
-    calls = []
-    monkeypatch.setattr(t, "tns_once", answering(
-        {}, {},  # the answer, its canary: throttled
-        {}, CANARY_REC,  # the canary polled until it answers; the position is not asked meanwhile
-        {}, CANARY_REC, {}, CANARY_REC,  # then two pairs within one window
-        calls=calls))
-    assert t.tns_lookup(150.0, 2.0) == {}
-    assert [w for w in clock[1] if w == t.TNS_THROTTLE_WAIT] == [t.TNS_THROTTLE_WAIT] * 2
-    canary = (t.TNS_CANARY["ra"], t.TNS_CANARY["dec"])
-    assert [c == canary for c in calls] == [False, True, True, True, False, True, False, True]
+@pytest.mark.parametrize("body", UNKNOWN_SHAPES.values(), ids=UNKNOWN_SHAPES.keys())
+def test_a_body_of_no_known_shape_is_unavailable_at_once_and_shows_in_the_journal(clock, monkeypatch, capsys, body):
+    asked = fake.serve(monkeypatch, body)
+    assert t.tns_lookup(52.09, -27.38) is None
+    assert len(asked) == 1  # it may not be temporary: not asked again
+    assert f"WARN: TNS answered with a body of no known shape: {body!r}\n" == capsys.readouterr().err
 
 
-def test_throttled_throughout_is_unavailable_never_not_in_tns(clock, monkeypatch):
-    clock[0].extend([0.0] * 100)
-    monkeypatch.setattr(t, "tns_once", lambda ra, dec: {})
-    assert t.tns_lookup(150.0, 2.0) is None
-    assert sum(w for w in clock[1] if w == t.TNS_THROTTLE_WAIT) == t.TNS_MAX_WAIT  # waited it out, then gave up
+def test_the_journal_gets_only_the_first_bytes_of_an_unknown_body(clock, monkeypatch, capsys):
+    fake.serve(monkeypatch, "x" * 5000)
+    assert t.tns_lookup(52.09, -27.38) is None
+    assert capsys.readouterr().err == f"WARN: TNS answered with a body of no known shape: {'x' * 200!r}\n"
 
 
-def test_a_failed_request_is_unavailable_and_a_failed_canary_is_throttled(clock, monkeypatch):
-    def down(ra, dec):
-        raise requests.ConnectionError("TNS down")
-
-    monkeypatch.setattr(t, "tns_once", down)
-    clock[0].append(0.0)
-    assert t.tns_lookup(150.0, 2.0) is None
-    monkeypatch.setattr(t, "tns_once", lambda ra, dec: down(ra, dec) if ra == t.TNS_CANARY["ra"] else {})
-    clock[0].extend([0.0] * 100)
-    assert t.tns_lookup(150.0, 2.0) is None  # never vouched for: never "not in TNS"
+# --- a lookup: asked again while it is temporary ------------------------------------------------
 
 
-class ThrottledTNS:
+def test_a_none_takes_one_ask(clock, monkeypatch):
+    asked = fake.serve(monkeypatch, fake.NONE)
+    assert t.tns_lookup(10.0, -45.0) == {}
+    assert len(asked) == 1 and clock.slept == [6.5]
+
+
+@pytest.mark.parametrize("dropped", [fake.REJECTED, fake.UPSTREAM_ERROR, requests.ConnectionError("down"), requests.Timeout("hung")],
+                         ids=["rejected", "upstream_error", "failed_request", "timed_out"])
+def test_a_dropped_call_then_a_record_is_the_record_never_none(clock, monkeypatch, dropped):
+    """The question that ended the canary: an empty answer that may be a dropped call must not become "none"."""
+    asked = fake.serve(monkeypatch, dropped, fake.RECORD)
+    assert t.tns_lookup(52.09, -27.38)["objname"] == "2026afma"
+    assert len(asked) == 2 and clock.slept == [6.5, 15.0, 6.5]
+
+
+def test_a_failed_http_status_is_a_failed_request_and_is_asked_again(clock, monkeypatch):
+    def refused():
+        raise requests.HTTPError("502")
+
+    answers = [SimpleNamespace(raise_for_status=refused), fake.response(fake.RECORD)]
+    monkeypatch.setattr(t.requests, "post", lambda url, json, timeout: answers.pop(0))
+    assert t.tns_lookup(52.09, -27.38)["objname"] == "2026afma"
+
+
+def test_a_dropped_call_then_a_none_is_a_none(clock, monkeypatch):
+    asked = fake.serve(monkeypatch, fake.REJECTED, fake.NONE)
+    assert t.tns_lookup(10.0, -45.0) == {} and len(asked) == 2
+
+
+def test_rejected_throughout_is_exactly_nine_asks_then_unavailable(clock, monkeypatch):
     """
-    ALeRCE's TNS proxy as measured 2026-10-01: `quota` answers per fixed `window`-second
-    window, then empty records until it turns. The windows start at `phase` (observed
-    at :23 past the minute, which a restart can move), and other users spend whatever is
-    left at `others_at` seconds into every window. Time advances only through calls and sleeps.
+    Literal values, never the constants, so changing the pause, the wait or the limit turns
+    this red. The asks start at 6.5, 28, 49.5 ... 178.5 s; a tenth would start at 200 s. The
+    count alone moves in steps (a limit of 185 s asks nine times too), so the settings
+    are pinned as well.
     """
-
-    def __init__(self, phase: float, others_at: float | None, quota: int = 10, window: float = 60.0):
-        self.t, self.phase, self.others_at, self.quota, self.window = 1000.0, phase, others_at, quota, window
-        self.used: dict[int, int] = {}
-
-    def now(self) -> float:
-        return self.t
-
-    def sleep(self, s: float) -> None:
-        self.t += s
-
-    def once(self, ra: float, dec: float) -> dict:
-        self.t += 0.9  # one call
-        w, into = divmod(self.t - self.phase, self.window)
-        spent = self.others_at is not None and into >= self.others_at
-        if spent or self.used.get(w, 0) >= self.quota:
-            return {}
-        self.used[w] = self.used.get(w, 0) + 1
-        if (ra, dec) == (t.TNS_CANARY["ra"], t.TNS_CANARY["dec"]):
-            return CANARY_REC
-        return {"objname": "2026xyz"} if ra == 150.0 else {}
+    asked = fake.serve(monkeypatch, fake.REJECTED)
+    assert t.tns_lookup(52.09, -27.38) is None
+    assert len(asked) == 9
+    assert clock.slept == [6.5] + [15.0, 6.5] * 8
+    assert (t.TNS_PAUSE, t.TNS_THROTTLE_WAIT, t.TNS_MAX_WAIT) == (6.5, 15.0, 180.0)
 
 
-def sweep(monkeypatch, window: float = 60.0):
-    """tns_lookup against every window phase and every moment others spend the quota."""
-    for phase in [p / 2 for p in range(120)]:
-        for others_at in [None, *range(0, 60, 3)]:
-            sim = ThrottledTNS(phase, others_at, window=window)
-            monkeypatch.setattr(t, "_now", sim.now)
-            monkeypatch.setattr(t.time, "sleep", sim.sleep)
-            monkeypatch.setattr(t, "tns_once", sim.once)
-            yield phase, others_at, t.tns_lookup(150.0, 2.0), t.tns_lookup(151.0, 2.0)
+def test_a_hanging_service_costs_the_limit_in_real_time_not_a_count_of_waits(clock, monkeypatch):
+    """
+    Each ask hangs for the request timeout, then fails. Counting only the waits, this would
+    be nine asks and over ten minutes per alert; a day's alerts could reach the unit's
+    timeout before the state is saved. Asks start at 6.5, 88 and 169.5 s; the last ends at 229.5 s.
+    """
+    asks = []
+
+    def hangs(url, json, timeout):
+        asks.append(clock.t)
+        clock.t += timeout
+        raise requests.Timeout("hung")
+
+    monkeypatch.setattr(t.requests, "post", hangs)
+    start = clock.t
+    assert t.tns_lookup(52.09, -27.38) is None
+    assert [a - start for a in asks] == [6.5, 88.0, 169.5]
+    assert clock.t - start == 229.5 <= t.TNS_MAX_WAIT + t.REQUEST_TIMEOUT
 
 
-def test_throttling_is_never_taken_for_not_in_tns_whatever_the_window_phase(monkeypatch):
-    """The rule may rely on the window length, never on where the windows turn."""
-    outcomes = {"found": 0, "not_in_tns": 0, "unavailable": 0}
-    for phase, others_at, known, unknown in sweep(monkeypatch):
-        assert known != {}, f"a known object passed as 'not in TNS': phase {phase}, others spend at {others_at}"
-        assert unknown in ({}, None)
-        outcomes["found"] += known is not None
-        outcomes["not_in_tns"] += unknown == {}
-        outcomes["unavailable"] += unknown is None
-    assert outcomes["found"] and outcomes["not_in_tns"]  # the sweep exercises both answers, not only "unavailable"
+# --- own ID ------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("names,oid,listed", [

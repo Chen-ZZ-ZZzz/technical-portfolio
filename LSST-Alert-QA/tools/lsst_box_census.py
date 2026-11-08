@@ -68,6 +68,7 @@ import requests
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))  # rubin_qa without an install
 
 from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, STATE_DIR, from_root  # noqa: E402
+from rubin_qa.photometry import sep_deg  # noqa: E402
 
 URL = "https://api-lsst.alerce.online/object_api/list_objects"
 CLASSIFIER = "stamp_classifier_rubin_beta"
@@ -103,12 +104,6 @@ Box = tuple[float, float, float, float]
 Chunk = tuple[str, int, int]  # kind (pre | week), firstmjd lo, hi
 
 _lock = threading.Lock()
-
-
-def sep_deg(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
-    a = math.radians
-    c = math.sin(a(dec1)) * math.sin(a(dec2)) + math.cos(a(dec1)) * math.cos(a(dec2)) * math.cos(a(ra2 - ra1))
-    return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 
 def cone(box: Box) -> tuple[float, float, float]:

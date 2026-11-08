@@ -248,3 +248,12 @@ def test_replay_tns_check_reads_the_own_id_through_the_shared_function():
     out = r.judge(alert, (151.22224217168346, -0.058046698868854496), rec)
     assert out["tns"] == "matched" and out["own_id_listed"] is True
     assert r.judge({**alert, "key": "ztf:ZTF26other"}, (151.22224217168346, -0.058046698868854496), rec)["own_id_listed"] is False
+
+
+def test_replay_tns_check_a_nan_record_is_not_a_match():
+    """NaN read as 0" through the tool's own copy of the clamp: "matched"."""
+    import replay_tns_check as r
+
+    alert = {"key": "ztf:ZTF26a", "category": "host", "conditions": ["bracketed"], "crossmatch": "host", "day": "2026-03-12"}
+    rec = {"objname": "2026x", "radeg": float("nan"), "decdeg": 0.0}
+    assert r.judge(alert, (150.0, 0.0), rec)["tns"] == "nearby_only"

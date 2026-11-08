@@ -7,11 +7,9 @@ rate; a low rate there means a problem. Most faint Rubin transients are never re
 so LSST risers should match far less. (Footprint D, spring 2026, defied that: brokers reported
 COSMOS Rubin transients systematically, so the reporting group is kept with every match.)
 
-Lookups go through ALeRCE's TNS service (host_match_check.tns_lookup). The service
-answers empty once its quota of 10 a minute is spent, so an empty answer means "not in
-TNS" only when a known TNS object, asked right after it in the same window, came back
-full. What stays unresolved is "unavailable", and the run exits 1.
-An answer counts as a match only within MATCH_ARCSEC of the alert's position; a
+Lookups go through ALeRCE's TNS service (host_match_check.tns_lookup). "not in TNS" is
+only what the service says in so many words; what stays unresolved is "unavailable", and
+the run exits 1. An answer counts as a match only within MATCH_ARCSEC of the alert's position; a
 farther record is listed with its separation, not matched.
 
     uv run tools/replay_tns_check.py logs/replay_D_2026-03-12_2026-05-15.json

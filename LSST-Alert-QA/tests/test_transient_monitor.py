@@ -15,6 +15,7 @@ from rubin_qa import transient_monitor as mon
 from rubin_qa.config import PROJECT_ROOT
 from rubin_qa.photometry import PhotPoint, SurveyObject, mag_to_njy
 from rubin_qa.sky_catalog import Crossmatch
+from tests import fake_tns
 from tests.test_sky_catalog import SNR_COLUMNS, psf_at, snr_answer
 
 NOW = 61310.0  # 2026-09-27
@@ -767,7 +768,7 @@ def test_none_and_unavailable_are_asked_again_until_a_record_appears(env, capsys
 
     calls = []
     monkeypatch.setattr(mon.tns, "tns_once", lambda ra, dec: calls.append(ra) or {})
-    mon.scan("D", (150, 12, 1))  # still nothing: kept, asked with one call, no canary
+    mon.scan("D", (150, 12, 1))  # still nothing: kept, asked with one call
     assert calls == [HIGH_B[0]] and "ztf:ZTF26aaa" in state()["tns_watch"]
     capsys.readouterr()
     monkeypatch.setattr(mon.tns, "tns_once", lambda ra, dec: tns_record("2026abc", ra, dec, found="2026-10-02 01:00:00"))
@@ -1010,7 +1011,7 @@ def test_an_interrupted_watch_write_keeps_the_evidence(watch, monkeypatch):
 
     monkeypatch.setattr(mon.Path, "write_text", half)
     with pytest.raises(KeyboardInterrupt):
-        mon._point_source_watch(ps_alerts(2), NOW + 1, True)  # the inner function: an interrupt is not an error to report
+        mon._point_source_watch(ps_alerts(2), NOW + 1, True, [])  # the inner function: an interrupt is not an error to report
     monkeypatch.setattr(mon.Path, "write_text", real)
     assert (mon.STATE_DIR / mon.PS_WATCH_FILE).read_text() == before
     assert ": 1 of 3 (SN 2026kfw S/N 6.3)" in mon.point_source_watch([], NOW + 2)[0]
@@ -1025,7 +1026,59 @@ def test_the_watch_never_fails_the_run(env, capsys, monkeypatch):
 
     monkeypatch.setattr(mon.tns, "tns_lookup", broken)
     assert mon.scan("D", (150, 12, 1)) == 0
-    assert "Point-source watch: could not run (RuntimeError: TNS gone); asked again next run" in capsys.readouterr().out
+    out, err = capsys.readouterr()
+    assert "; 1 lookups unavailable, asked again next run" in out  # an entry's failure, not the watch's
+    assert "ztf:ZTF26aaa: point-source watch lookup failed (RuntimeError: TNS gone)" in err
+    assert any("point-source watch lookup failed" in w for w in report()["warnings"])  # the journal rotates, the report stays
+
+
+def test_a_watch_file_that_cannot_be_read_costs_the_watch_not_the_run(env, capsys):
+    env["objects"] = [obj(NEW_ZTF)]
+    (mon.STATE_DIR / mon.PS_WATCH_FILE).write_text("{ not json")
+    assert mon.scan("D", (150, 12, 1)) == 0
+    assert "Point-source watch: could not run (JSONDecodeError" in capsys.readouterr().out
+
+
+BAD_RECORDS = {
+    "no_position": lambda ra, dec: {k: v for k, v in dict(classified("2026bad"), radeg=ra, decdeg=dec).items() if k != "radeg"},
+    "nan_position": lambda ra, dec: dict(classified("2026bad"), radeg=float("nan"), decdeg=dec),
+    "no_name": lambda ra, dec: {"name_prefix": "SN", "object_type": {"name": "SN Ia"}, "radeg": ra, "decdeg": dec},
+    "type_not_text": lambda ra, dec: dict(classified("2026bad"), radeg=ra, decdeg=dec, object_type={"name": 3}),
+    "type_not_a_record": lambda ra, dec: dict(classified("2026bad"), radeg=ra, decdeg=dec, object_type="SN Ia"),
+}
+
+
+@pytest.mark.parametrize("bad", BAD_RECORDS.values(), ids=BAD_RECORDS.keys())
+def test_one_bad_record_costs_one_entry_the_others_are_judged_and_saved(watch, capsys, monkeypatch, bad):
+    """Before, one bad record ended the watch for the run, and saved nothing of what it had found."""
+    watch.update({2: 6.3})
+    good = tns_answers({2: classified("2026kfw")})
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: bad(ra, dec) if ra == 1 else good(ra, dec))
+    warnings = []
+    lines = mon.point_source_watch(ps_alerts(1, 2), NOW, warnings=warnings)
+    objects = json.loads((mon.STATE_DIR / mon.PS_WATCH_FILE).read_text())["objects"]
+    assert objects["lsst:2"]["status"] == "sn" and "1 of 3 (SN 2026kfw S/N 6.3)" in lines[0]
+    assert (objects["lsst:1"]["status"], objects["lsst:1"]["checked_mjd"]) == ("watching", None)  # still due
+    assert "tns" not in objects["lsst:1"] and "1 lookups unavailable, asked again next run" in lines[0]
+    assert len(warnings) == 1 and warnings[0].startswith("lsst:1: ") and f"WARN: {warnings[0]}" in capsys.readouterr().err
+
+
+def test_a_record_the_watch_cannot_read_is_never_settled_as_not_there(watch, monkeypatch):
+    """A NaN position read as 0" here too: it would have matched and been judged on another object's record."""
+    monkeypatch.setattr(mon.tns, "tns_lookup", BAD_RECORDS["nan_position"])
+    mon.point_source_watch(ps_alerts(1), NOW)
+    entry = json.loads((mon.STATE_DIR / mon.PS_WATCH_FILE).read_text())["objects"]["lsst:1"]
+    assert entry["status"] == "watching" and entry["checked_mjd"] is None and "tns" not in entry
+
+
+def test_a_watch_match_is_the_same_2_arcsec_as_the_alerts(watch, monkeypatch):
+    """One radius (PS_MATCH_ARCSEC was a second copy until 2026-11-07): 1.9" matches, 2.1" is another object."""
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: dict(classified("2026near", kind=None), radeg=ra, decdeg=dec + 1.9 / 3600))
+    mon.point_source_watch(ps_alerts(1), NOW)
+    assert json.loads((mon.STATE_DIR / mon.PS_WATCH_FILE).read_text())["objects"]["lsst:1"]["tns"] == "SN 2026near"
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: dict(classified("2026far", kind=None), radeg=ra, decdeg=dec + 2.1 / 3600))
+    mon.point_source_watch(ps_alerts(5), NOW)
+    assert "tns" not in json.loads((mon.STATE_DIR / mon.PS_WATCH_FILE).read_text())["objects"]["lsst:5"]
 
 
 def test_the_daily_report_carries_the_watch_and_a_dry_run_saves_nothing(env, capsys, monkeypatch):
@@ -1767,7 +1820,7 @@ def test_none_yet_and_unavailable_carry_no_notice_and_no_complaint(env, capsys, 
     {"radeg": None}, {"decdeg": None}, {"radeg": float("nan")}, {"radeg": "52.09"}, {"objname": None},
 ], ids=["radeg_none", "decdeg_none", "radeg_nan", "radeg_text", "no_name"])
 def test_a_record_that_cannot_be_read_is_unavailable_never_none_yet(env, capsys, monkeypatch, broken):
-    """The alert is kept, the state saved, the run unharmed. NaN reads as 0" through sep_deg: it would have matched."""
+    """The alert is kept, the state saved, the run unharmed. A NaN separation would fail the match and read as none_yet."""
     code, r, said = scan_real_alert(env, monkeypatch, AFMA, lambda ra, dec: {**AFMA_TNS, **broken})
     assert said == {"status": "unavailable", "line": mon.TNS_UNAVAILABLE, "notice": None}
     assert code == 0 and r["exit_code"] == 0 and len(r["warnings"]) == 1
@@ -1831,3 +1884,73 @@ def test_a_record_arriving_on_a_later_run_gets_no_notice_for_now(env, capsys, mo
     code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: AFMA_TNS)
     assert code == 0 and "discovered 2026-09-28" in r["tns_earlier"][0]
     assert "NOTICE" not in capsys.readouterr().out
+
+
+# --- the real lookup, on the service's recorded bodies (2026-11-07) ---------------------------
+
+REAL_TNS_LOOKUP, REAL_TNS_ONCE = mon.tns.tns_lookup, mon.tns.tns_once
+
+
+@pytest.fixture
+def real_tns(env, monkeypatch):
+    """env fakes the lookup whole; here only requests.post is fake, and the clock."""
+    monkeypatch.setattr(mon.tns, "tns_once", REAL_TNS_ONCE)
+    return fake_tns.fake_clock(monkeypatch)
+
+
+def test_a_dropped_call_on_afma_still_finds_the_record_and_gives_the_notice(real_tns, env, capsys, monkeypatch):
+    """A rejected first ask, from the body to the report."""
+    asked = fake_tns.serve(monkeypatch, fake_tns.REJECTED, fake_tns.RECORD)
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, REAL_TNS_LOOKUP)
+    assert len(asked) == 2 and said["status"] == "record" and said["notice"]["kind"] == "onset_not_bracketed"
+    assert said["notice"]["gap_days"] == 31.79 and said["sep_arcsec"] == 0.86  # from the verbatim record body
+    assert "NOTICE: TNS discovery 31.8 d before" in capsys.readouterr().out and code == 0
+
+
+@pytest.mark.parametrize("body,status,asks", [
+    (fake_tns.NONE, "none_yet", 1),
+    (fake_tns.REJECTED, "unavailable", 9),
+    (fake_tns.UPSTREAM_ERROR, "unavailable", 9),
+    ('{"surprise":true}', "unavailable", 1),
+], ids=["none", "rejected_throughout", "upstream_throughout", "unknown_shape"])
+def test_only_the_services_own_none_reads_as_none_yet(real_tns, env, monkeypatch, body, status, asks):
+    asked = fake_tns.serve(monkeypatch, body)
+    code, r, said = scan_real_alert(env, monkeypatch, AFMA, REAL_TNS_LOOKUP)
+    assert said == {"status": status, "line": mon.TNS_LINE[status], "notice": None} and len(asked) == asks
+    assert code == 0 and AFMA["key"] in state("ecdfs")["reported"] and AFMA["key"] in state("ecdfs")["tns_watch"]
+
+
+@pytest.mark.parametrize("body", [fake_tns.REJECTED, fake_tns.UPSTREAM_ERROR, fake_tns.NONE, '{"surprise":true}'],
+                         ids=["rejected", "upstream", "none", "unknown_shape"])
+def test_on_a_later_run_only_a_record_is_news_everything_else_stays_watched(real_tns, env, monkeypatch, body):
+    asked = fake_tns.serve(monkeypatch, body)
+    code, r = asked_again_on_a_later_run(env, monkeypatch, REAL_TNS_ONCE)
+    assert code == 0 and len(asked) == 1 and r["tns_earlier"] == [] and AFMA["key"] in state("ecdfs")["tns_watch"]
+
+
+def test_on_a_later_run_a_record_body_is_news(real_tns, env, monkeypatch):
+    fake_tns.serve(monkeypatch, fake_tns.RECORD)
+    code, r = asked_again_on_a_later_run(env, monkeypatch, REAL_TNS_ONCE)
+    assert code == 0 and "now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28" in r["tns_earlier"][0]
+    assert state("ecdfs")["tns_watch"] == {}
+
+
+# --- a NaN position matches nothing (2026-11-07) ------------------------------------------------
+
+
+def test_a_nan_ra_associates_with_nothing_a_real_pair_still_does():
+    """The Dec window lets it through, and NaN read as 0" from sep_deg: a false associate, whose quiet points can bracket an onset."""
+    nan_ra = SurveyObject("lsst", "1", math.nan, 12.0)
+    ztf, lsst = SurveyObject("ztf", "ZTF26a", 200.0, 12.0), SurveyObject("lsst", "2", 200.0, 12.0)
+    found = mon.associate([nan_ra, ztf, lsst])
+    assert found[nan_ra.key] == [] and [o.key for o in found[ztf.key]] == [lsst.key]
+
+
+@pytest.mark.parametrize("ours,theirs", [(math.nan, 200.0), (200.0, math.nan)], ids=["our_ra", "their_ra"])
+def test_a_nan_ra_is_never_a_note_on_someone_elses_alert(ours, theirs):
+    """A note replaces an alert, so a false match here loses the alert."""
+    assert mon._alerted_elsewhere(SurveyObject("lsst", "1", ours, 12.0), {"ztf:ZTF26a": {"ra": theirs, "dec": 12.0}}) is None
+
+
+def test_a_real_position_is_still_a_note():
+    assert mon._alerted_elsewhere(SurveyObject("lsst", "1", 200.0, 12.0), {"ztf:ZTF26a": {"ra": 200.0, "dec": 12.0}}) == "ztf:ZTF26a"

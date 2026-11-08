@@ -161,9 +161,16 @@ def fetch_alerce_lsst(oid: str) -> tuple[list[PhotPoint], str | None, str | None
 
 
 def sep_deg(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
+    """
+    Angular separation in degrees; NaN when any input is NaN. The clamp below exists for
+    rounding, but it would turn NaN into 1.0, which is 0 degrees: a match, for any radius.
+    A NaN result fails a `<=` test and passes a `>` one, so test it with `<=`.
+    """
     a = math.radians
     c = (math.sin(a(dec1)) * math.sin(a(dec2))
          + math.cos(a(dec1)) * math.cos(a(dec2)) * math.cos(a(ra2 - ra1)))
+    if math.isnan(c):
+        return math.nan
     return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 

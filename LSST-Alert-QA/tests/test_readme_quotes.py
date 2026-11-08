@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from rubin_qa import classifier, replay, sky_catalog, tns, transient_monitor
+from rubin_qa import classifier, replay, sky_catalog, transient_monitor
 from rubin_qa.antares_api import ANTARES_MAX_PAGE_SIZE
 from rubin_qa.config import ALERCE_MAX_PAGE_SIZE, DEFAULT_SECONDS_PER_OBJECT, SECONDS_PER_OBJECT
 from tests.test_sso_frozen import FROZEN_FILES
@@ -148,8 +148,6 @@ GUARDED = {
         ("lookback", r"(\d+)-day lookback", transient_monitor.LOOKBACK_DAYS),
         ("association radius", r"([\d.]+)″ association radius", transient_monitor.ASSOC_RADIUS_ARCSEC),
         ("light-curve call", r"measured ([\d.]+) s per light-curve call", replay.SECONDS_PER_CALL),
-        ("TNS window", r"requests per (\d+) s window|pairs fall within (\d+) s|its assumed (\d+) s",
-         tns.TNS_WINDOW_SECONDS),
         ("seconds per object, ztf", _latency_row("ztf"), SECONDS_PER_OBJECT["ztf"]),
         ("seconds per object, lsst", _latency_row("lsst"), SECONDS_PER_OBJECT["lsst"]),
         ("seconds per object, antares", r"The constant for antares is now\s+\*\*([\d.]+)s\*\*", SECONDS_PER_OBJECT["antares"]),

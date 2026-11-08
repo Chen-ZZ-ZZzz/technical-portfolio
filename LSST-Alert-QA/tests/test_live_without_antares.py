@@ -157,15 +157,14 @@ def _fake_network(now: float) -> None:
             return SimpleNamespace(status_code=200, content=maskbits)
         raise RuntimeError(f"unexpected GET {url}")
 
-    # ALeRCE's TNS service: the transient is SN 2026grd; the canary answers as always
+    # ALeRCE's TNS service: the transient is SN 2026grd; anywhere else its real "none" body
     def post(url, json=None, timeout=None):
         assert url == tns.ALERCE_TNS_URL, f"unexpected POST {url}"
-        records = {(ra, dec): {"objname": "2026grd", "name_prefix": "SN", "object_type": {"id": 3, "name": "SN Ia"},
-                               "radeg": ra, "decdeg": dec, "discoverydate": "2026-09-30 05:00:00"},
-                   (tns.TNS_CANARY["ra"], tns.TNS_CANARY["dec"]): {"objname": tns.TNS_CANARY["name"]}}
-        rec = next((r for (r_ra, r_dec), r in records.items()
-                    if abs(r_ra - json["ra"]) < 1e-4 and abs(r_dec - json["dec"]) < 1e-4), {})
-        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"object_data": rec})
+        here = abs(ra - json["ra"]) < 1e-4 and abs(dec - json["dec"]) < 1e-4
+        body = ({"object_data": {"objname": "2026grd", "name_prefix": "SN", "object_type": {"id": 3, "name": "SN Ia"},
+                                 "radeg": ra, "decdeg": dec, "discoverydate": "2026-09-30 05:00:00"}}
+                if here else {"data": [], "id_code": 200, "id_message": "OK"})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: body, text=str(body))
 
     requests.get = get
     requests.post = post

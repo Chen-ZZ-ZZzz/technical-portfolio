@@ -85,6 +85,21 @@ def test_sep_deg():
     assert ph.sep_deg(359.5, 0.0, 0.5, 0.0) == pytest.approx(1.0)
 
 
+@pytest.mark.parametrize("position", range(4))
+def test_sep_deg_gives_nan_for_nan_in_any_argument_never_a_match(position):
+    """The clamp used to turn NaN into a cosine of 1.0, which is 0 degrees: a match at any radius."""
+    args = [150.0, 12.0, 151.0, 13.0]
+    args[position] = math.nan
+    assert math.isnan(ph.sep_deg(*args))
+
+
+def test_sep_deg_keeps_its_clamp_a_point_is_0_from_itself_whatever_the_rounding():
+    """Rounding pushes the cosine of some identical points just past 1, which acos refuses."""
+    for i in range(2000):
+        ra, dec = (i * 0.1737) % 360, (i * 0.0731) % 180 - 90
+        assert ph.sep_deg(ra, dec, ra, dec) == pytest.approx(0.0, abs=1e-5)
+
+
 # --- the ALeRCE listing, both surveys (ANTARES left the live path 2026-10-03) ----------------
 
 

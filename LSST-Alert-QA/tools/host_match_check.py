@@ -78,8 +78,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 from rubin_qa import sky_catalog as sc  # noqa: E402
 from rubin_qa.antares_api import sky_distance_clause  # noqa: E402
 from rubin_qa.config import CACHE_DIR, LOGS_DIR, PROJECT_ROOT, STATE_DIR  # noqa: E402
+from rubin_qa.photometry import sep_deg  # noqa: E402
 from rubin_qa.tns import (  # noqa: E402,F401  (re-exported for replay_tns_check and the tests)
-    TNS_CANARY, TNS_MAX_WAIT, TNS_PAUSE, TNS_THROTTLE_WAIT, TNS_WINDOW_SECONDS, tns_batch, tns_lookup, tns_once,
+    TNS_MAX_WAIT, TNS_PAUSE, TNS_THROTTLE_WAIT, tns_batch, tns_lookup, tns_once,
 )
 from rubin_qa.config import FOOTPRINTS  # noqa: E402
 
@@ -161,7 +162,7 @@ def antares_tns_sne(footprint: str) -> list[dict]:
                                            {"term": {"catalogs": "tns_public_objects"}}]}}}
     out = {}
     for locus in search(query):
-        if sep_arcsec(locus.ra, locus.dec, ra0, dec0) > radius * 3600:
+        if not sep_arcsec(locus.ra, locus.dec, ra0, dec0) <= radius * 3600:  # never `>`: a NaN position would stay in
             continue
         for r in (locus.catalog_objects or {}).get("tns_public_objects", []):
             if str(r.get("type") or "").startswith(SN_TYPE_PREFIXES):
@@ -220,18 +221,16 @@ def resolve_host(hostname: str) -> tuple[float, float, str] | None:
 
 
 def sep_arcsec(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
-    a = math.radians
-    c = math.sin(a(dec1)) * math.sin(a(dec2)) + math.cos(a(dec1)) * math.cos(a(dec2)) * math.cos(a(ra2 - ra1))
-    return math.degrees(math.acos(max(-1.0, min(1.0, c)))) * 3600
+    return sep_deg(ra1, dec1, ra2, dec2) * 3600
 
 
 def _sample_one(sn: dict, rec: dict | None, path: pathlib.Path) -> str | None:
     """Save one SN from its TNS answer; the reason it stays pending if it cannot be (nothing saved)."""
     if rec is None:
-        return f"TNS unavailable (request failed, or still throttled after {TNS_MAX_WAIT:.0f} s)"
+        return f"TNS unavailable (no answer within {TNS_MAX_WAIT:.0f} s, or a body of no known shape)"
     if not rec:
-        # these SNe come from a TNS crossmatch, so an empty answer is never "no host"
-        return "not found at ALeRCE's TNS service (vouched for by the canary in the same window)"
+        # these SNe come from a TNS crossmatch, so a "none" is never "no host"
+        return "not found at ALeRCE's TNS service (it answered: none)"
     if rec.get("objname") != sn["name"]:
         sn["tns_mismatch"] = rec.get("objname")
     sn["hostname"] = (rec.get("hostname") or "").strip()
@@ -253,8 +252,8 @@ def _sample_one(sn: dict, rec: dict | None, path: pathlib.Path) -> str | None:
 def run_sample(footprints: list[str]) -> int:
     """
     SNe whose TNS answer cannot be used go on PENDING (with the reason) and are asked
-    first by the next run, independently of the ANTARES listing. The TNS answers come
-    in one canary-bracketed batch. Exit 1 while any are pending.
+    first by the next run, independently of the ANTARES listing. Exit 1 while any are
+    pending.
     """
     SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
     path, pending_path = SAMPLE_DIR / "sne.jsonl", SAMPLE_DIR / PENDING_FILE
