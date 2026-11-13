@@ -159,6 +159,6 @@ OUTPUT_COLUMNS = [
     "broker", "survey", "oid", "ndet", "mag_range", "timespan_days",
     "newest_ztf_mjd", "newest_lsst_mjd", "unknown_survey_dets",
     "top_class", "class_prob", "consensus", "n_classifiers",
-    "n_agree", "n_disagree",
+    "n_agree", "n_disagree", "unknown_tags",
     "confirmed", "has_issues", "completeness_issues", "flag", "flag_reasons", "status",
 ]

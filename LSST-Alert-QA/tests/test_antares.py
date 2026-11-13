@@ -29,10 +29,12 @@ from rubin_qa.antares_api import (
     fetch_antares_locus,
     list_loci,
 )
-from rubin_qa.classifier import classify_antares
+from rubin_qa.__main__ import unknown_tag_split
+from rubin_qa.classifier import PIPELINE_TAGS, SCIENCE_TAGS, classify_antares
 from rubin_qa.config import OUTPUT_COLUMNS, RETRY_ATTEMPTS, RETRY_DELAY
 from rubin_qa.reporting import build_antares_qa_row, run_antares_pipeline
 from rubin_qa.validators import validate_antares
+from tests import fake_antares
 
 
 def make_alert(mjd: float, mag: float | None, **extra) -> SimpleNamespace:
@@ -792,6 +794,117 @@ class TestClassifyAntares:
         cl = classify_antares([])
         assert (cl["flag"], cl["flag_reason"]) == (None, None)
         assert cl["top_class"] is None and cl["consensus"] is None
+
+
+LANTERN = "lantern_xgboost_t2.0.7_c0.95"
+
+
+def tag_split(tags: list) -> tuple[list, list, list]:
+    """A recording's tags by class, in served order: what a test asserts of it before relying on it."""
+    return ([t for t in tags if t in SCIENCE_TAGS], [t for t in tags if t in PIPELINE_TAGS],
+            [t for t in tags if t not in SCIENCE_TAGS and t not in PIPELINE_TAGS])
+
+
+class TestTagClassesOnRecordedLoci:
+    """
+    The tag classes and their text on real loci (tests/fake_antares.py: recorded 2026-11-13,
+    byte for byte, with the real client on top). Each test first asserts what it needs of
+    its recording.
+    """
+
+    @pytest.fixture(autouse=True)
+    def recorded(self, monkeypatch):
+        return fake_antares.serve_recorded(monkeypatch)
+
+    @pytest.mark.parametrize("locus_id,min_unknown", [
+        ("ANT20262tl85caoepac", 0),  # its pipeline tags served out of order
+        ("ANT2022r8hygxeyd6qm", 2),  # two unknown tags, so their order is tested too
+    ])
+    def test_tag_lists_are_sorted_whatever_order_antares_serves(self, locus_id, min_unknown):
+        """
+        ANTARES serves a locus's tags in no fixed order (README, Known API Quirks): the flag's
+        lists and unknown_tags are sorted, so the served order and its reverse give one text.
+        """
+        tags = fake_antares.served_tags(locus_id)
+        science, pipeline, unknown = tag_split(tags)
+        assert science == [] and len(pipeline) >= 2 and len(unknown) >= min_unknown
+        cl, reversed_cl = classify_antares(tags), classify_antares(tags[::-1])
+        assert cl["flag"] == f"no_science_tags (pipeline: {sorted(pipeline)}; unknown: {sorted(unknown)})"
+        assert (cl["flag"], cl["unknown_tags"]) == (reversed_cl["flag"], reversed_cl["unknown_tags"])
+        assert cl["unknown_tags"] == sorted(unknown)
+
+    def test_uniform_random_sample_is_a_pipeline_tag(self):
+        """
+        Chen, 2026-11-13: ANTARES describes it as 1% of all LSST alerts, uniformly and randomly
+        sampled. How an alert was picked says nothing about the object.
+        """
+        tags = fake_antares.served_tags("ANT20262tl85caoepac")
+        assert "uniform_random_sample" in tags and tag_split(tags)[0] == []
+        cl = classify_antares(tags)
+        assert cl["flag"] == ("no_science_tags (pipeline: ['in_LSSTDDF', 'lc_feature_extractor', "
+                              "'lsst_scimma_quality_transient', 'uniform_random_sample']; unknown: [])")
+        assert (cl["flag_reason"], cl["verdict"], cl["unknown_tags"]) == ("no_science_tags", "review_major", [])
+
+    def test_no_tag_is_in_both_sets(self):
+        """classify_antares looks for science tags first: a tag in both sets would score as science unseen."""
+        assert not SCIENCE_TAGS & PIPELINE_TAGS
+
+    @pytest.mark.parametrize("locus_id,other_science,expected", [
+        ("ANT20250fk7udcecmrt", [], ("microlensing_candidate", "pass", None)),
+        ("ANT2026b0g1vijrn6ym", ["extragalactic"],
+         ("extragalactic, microlensing_candidate", "review_major", "multiple_science_tags")),
+    ])
+    def test_microlensing_candidate_is_a_science_tag(self, locus_id, other_science, expected):
+        """
+        Chen, 2026-11-13: a microlensing event is a class claim. Alone it is the locus's one
+        science tag (PASS); beside another it splits the vote.
+        """
+        tags = fake_antares.served_tags(locus_id)
+        assert "microlensing_candidate" in tags
+        assert sorted(t for t in tag_split(tags)[0] if t != "microlensing_candidate") == other_science
+        cl = classify_antares(tags)
+        assert (cl["top_class"], cl["verdict"], cl["flag_reason"]) == expected
+
+    @pytest.mark.parametrize("locus_id", ["ANT2026b0g1vijrn6ym", "ANT2022r8hygxeyd6qm"])
+    def test_lantern_xgboost_stays_unknown_pending_a_decision(self, locus_id):
+        """
+        Pins a pending decision, not a permanent rule: lantern_xgboost_t2.0.7_c0.95 is
+        unclassified until Chen decides what the tag is, and no prefix rule classes
+        lantern_xgboost_* (Chen, 2026-11-13; CLAUDE.md, "QA pipeline"). The round that
+        classifies it changes this test on purpose.
+        """
+        tags = fake_antares.served_tags(locus_id)
+        assert LANTERN in tags
+        assert LANTERN in classify_antares(tags)["unknown_tags"]
+
+    def test_unknown_tags_are_recorded_beside_a_science_tag(self):
+        """
+        The row's unknown_tags is written whether or not the locus has a science tag: the flag
+        names unknown tags only when it has none, so without the column this locus's
+        lantern tag would reach no report.
+        """
+        assert tag_split(fake_antares.served_tags("ANT2026sx3pbuillwqe"))[0] != []
+        row = fake_antares.recorded_row("ANT2026sx3pbuillwqe")
+        assert row["status"] == "PASS" and row["flag"] is None
+        assert row["unknown_tags"] == [LANTERN]
+        assert fake_antares.recorded_row("ANT20262tl85caoepac")["unknown_tags"] == []
+
+    def test_the_summary_counts_unknown_tags_and_reads_back_from_the_csv(self, tmp_path):
+        """The journal rotates; the report alone reproduces the count (README, Pipeline QA Report)."""
+        df = pd.DataFrame([fake_antares.recorded_row(i) for i in ("ANT2026sx3pbuillwqe", "ANT20262tl85caoepac")],
+                          columns=OUTPUT_COLUMNS)
+        assert unknown_tag_split(df) == f"unknown tags: {LANTERN} 1"
+        df.to_csv(tmp_path / "r.csv", index=False)
+        assert unknown_tag_split(pd.read_csv(tmp_path / "r.csv")) == f"unknown tags: {LANTERN} 1"
+        assert unknown_tag_split(df.iloc[1:]) == "unknown tags: none"
+
+    def test_a_report_without_the_column_is_not_recorded_never_none(self, tmp_path):
+        """A report written before unknown_tags existed: no count is not a count of none."""
+        df = pd.DataFrame([fake_antares.recorded_row("ANT20262tl85caoepac")], columns=OUTPUT_COLUMNS)
+        assert unknown_tag_split(df.drop(columns="unknown_tags")) == "unknown tags: not recorded"
+        df.loc[len(df)] = df.iloc[0]
+        df.at[1, "unknown_tags"] = None
+        assert unknown_tag_split(df) == "unknown tags: none; not recorded on 1 of 2"
 
 
 class TestBuildAntaresQaRow:

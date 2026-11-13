@@ -107,7 +107,8 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
     always passes it (a caller that does not leaves the cell empty, never wrong). The
     newest detection fills that survey's newest_<survey>_mjd only, from the detections
     timespan_days spans (_detection_mjds); an ALeRCE object has no detection of an unknown
-    survey, so unknown_survey_dets is 0. flag and flag_reasons: _flag_and_reasons.
+    survey, so unknown_survey_dets is 0. unknown_tags is ANTARES's (build_antares_qa_row):
+    ALeRCE has no tags, so the cell stays empty. flag and flag_reasons: _flag_and_reasons.
     """
     dets = data["dets"]
     ms   = data["ms"]
@@ -175,6 +176,7 @@ def build_qa_row(oid: str, data: dict, issues: list, cl: dict, survey: str | Non
         "n_classifiers":      cl.get("n_classifiers", 0),
         "n_agree":            cl.get("n_agree", 0),
         "n_disagree":         cl.get("n_disagree", 0),
+        "unknown_tags":       None,
         "confirmed":          confirmed,
         "has_issues":         bool(issues),
         "completeness_issues": issues,
@@ -272,7 +274,9 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
     No n_classifiers<2 threshold: ANTARES provides discrete tags, not multi-classifier
     probability votes — tag presence is the classification signal. The newest detection
     per survey and unknown_survey_dets come from fetch_antares_locus's summary
-    (newest_detections); flag and flag_reasons: _flag_and_reasons.
+    (newest_detections); unknown_tags, the tags in neither of classifier.py's sets, sorted,
+    from classify_antares on every row, science tags or not ([] when there are none);
+    flag and flag_reasons: _flag_and_reasons.
     """
     dets = data["dets"]
     ms   = data["ms"]
@@ -330,6 +334,7 @@ def build_antares_qa_row(locus_id: str, data: dict, issues: list, cl: dict) -> d
         "n_classifiers":       cl.get("n_classifiers", 0),
         "n_agree":             cl.get("n_agree", 0),
         "n_disagree":          cl.get("n_disagree", 0),
+        "unknown_tags":        cl["unknown_tags"],
         "confirmed":           confirmed,
         "has_issues":          bool(issues),
         "completeness_issues": issues,

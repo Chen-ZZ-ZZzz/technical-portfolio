@@ -10,125 +10,63 @@ HIGH_CONFIDENCE_THRESHOLD = 0.90   # weighted consensus → clean label, no flag
 MAJORITY_THRESHOLD        = 0.65   # weighted consensus → majority, minor flag
 OUTLIER_PROB_THRESHOLD    = 0.30   # dissenting classifier below this → outlier, not genuine split
 
-# ANTARES tag taxonomy (from get_available_tags() as of 2026-04). Mostly ZTF filters;
-# the Rubin ones then were young_rubin_transients (science) and
-# lsst_scimma_quality_transient (pipeline). Re-read get_available_tags() for new ones:
-# an unknown tag is flagged in no_science_tags, never silently scored.
+# ANTARES tag classes. A tag is science when it says something about the object: a class,
+# a behaviour of its light curve, or its surroundings. It is pipeline when it says how the
+# alert was processed, selected or sampled, or where it lies in a survey's footprint, and
+# nothing about the object. A tag in neither set is unknown: classify_antares names it in
+# the no_science_tags flag, writes it to the row's unknown_tags and the run's summary
+# counts it by name, and it is never scored. Every tag is a filter output, not a confirmed
+# classification (README, "Broker Classifications").
 #
-# SCIENCE_TAGS: astrophysical classifications — count toward consensus.
-# All tags are filter outputs, not confirmed classifications. Tags with the _candidate
-# suffix are explicitly probabilistic; tags without it are still automated filter passes,
-# not spectroscopically verified. Treat every tag as a candidate until followed up.
-#
-#   dimmers:                    persistently dimming light curve.
-#   extragalactic:              positional association (random or real) with extended sources
-#                               (2MASS XSC, NED, SDSS, etc.). Coincidence not ruled out —
-#                               combine with other tags before drawing conclusions.
-#   young_extragalactic_candidate: wide-net filter for young extragalactic transients. Cuts
-#                               stars and Galactic-plane alerts but NO catalog crossmatch
-#                               (unlike 'extragalactic'). Downstream filtering required.
-#   nuclear_transient:          one or more alerts within <0.6 arcsec of a source nucleus in
-#                               the ZTF reference frame. Positional criterion only — AGN flare
-#                               or TDE candidate, but not classified by this tag alone.
-#                               ZTF filter only currently.
-#   high_amplitude_variable_star_candidate /
-#   high_amplitude_transient_candidate: split by _is_var_star() using Pan-STARRS sgscore1 > 0.4
-#                               (closer to 1 = star) plus positional matching. Amplitude =
-#                               weighted std dev of light curve (weights = 1/magerr²), threshold
-#                               0.5 mag — more rigorous than max-min. Variable star path requires
-#                               host-corrected magnitudes; if uncorrected, filter skips entirely.
-#                               Transient path always tags regardless of correction status.
-#   high_flux_ratio_wrt_nn:     large flux change relative to nearest catalog neighbor within
-#                               1 arcsec — i.e. 10^(-0.4*(magpsf - magnr)) >> 1. Flags transient
-#                               excess over the quiescent reference source; not a class by itself.
-#   recent_reddening:           g-band slope minus r-band slope > 0 within the past 14 days —
-#                               color is getting redder recently.
-#   imhb_candidate:             galaxy showing possible long-duration, short-timescale variability
-#                               characteristic of an accreting intermediate mass black hole (IMBH).
-#   soraisam_sublum:            intermediate luminosity optical transient (ILOT) candidate.
-#   nova_test:                  transient candidate exhibiting bluer color evolution. Despite the
-#                               name, the filter selects on color trend, not nova morphology.
-#   sso_candidates:             ZTF detections of previously known Solar System small bodies,
-#                               after detection reliability check.
-#   sso_confirmed:              subset of sso_candidates where positional residuals vs JPL
-#                               Horizons ephemerides are < 1 arcsec.
-#   SN_candies:                 SN candidate in the Rubin alert stream.
-#   young_rubin_transients:     young transient in the Rubin alert stream.
-#   in_m31:                     along the line of sight to M31.
-#   blue_transient / ECL_blue_transient_candidate: blue transient candidate (color-selected).
-#   dwarf_nova_outburst:        one or more alerts showing dwarf nova outburst activity.
+# Each entry's comment says why the tag is in its class. What a tag's filter does is on
+# ANTARES's filter pages, by tag name, where Chen reads the descriptions; neither the code
+# nor the tests can reach them. antares-client's get_available_tags() lists the tag names
+# ANTARES serves, nothing more. lantern_xgboost_t2.0.7_c0.95 is in neither set on purpose,
+# a pending decision (CLAUDE.md, "QA pipeline").
 SCIENCE_TAGS: frozenset = frozenset({
-    "dimmers",
-    "extragalactic",
-    "young_extragalactic_candidate",
-    "nuclear_transient",
-    "high_amplitude_variable_star_candidate",
-    "high_amplitude_transient_candidate",
-    "blue_transient",
-    "ECL_blue_transient_candidate",
-    "dwarf_nova_outburst",
-    "high_flux_ratio_wrt_nn",
-    "recent_reddening",
-    "sso_candidates",
-    "sso_confirmed",
-    "imhb_candidate",
-    "SN_candies",
-    "soraisam_sublum",
-    "young_rubin_transients",
-    "nova_test",
-    "in_m31",
+    "dimmers",                                  # light curve: dims persistently
+    "extragalactic",                            # surroundings: matched to an extended source (a chance match not ruled out)
+    "young_extragalactic_candidate",            # class: young extragalactic transient (no catalogue match)
+    "nuclear_transient",                        # surroundings: within 0.6″ of a source's nucleus
+    "high_amplitude_variable_star_candidate",   # class: high-amplitude variable star
+    "high_amplitude_transient_candidate",       # class: high-amplitude transient
+    "blue_transient",                           # class: blue transient, by colour
+    "ECL_blue_transient_candidate",             # class: blue transient, by colour
+    "dwarf_nova_outburst",                      # class: dwarf nova outburst
+    "high_flux_ratio_wrt_nn",                   # light curve: far brighter than the reference source under it
+    "recent_reddening",                         # light curve: colour reddening over the last 14 days
+    "sso_candidates",                           # class: known solar-system object
+    "sso_confirmed",                            # class: known solar-system object, on its ephemeris
+    "imhb_candidate",                           # class: accreting intermediate-mass black hole
+    "SN_candies",                               # class: supernova candidate (Rubin stream)
+    "soraisam_sublum",                          # class: intermediate-luminosity optical transient
+    "young_rubin_transients",                   # light curve: young transient (Rubin stream)
+    "nova_test",                                # light curve: bluer colour evolution
+    "in_m31",                                   # surroundings: on the line of sight to M31
+    "microlensing_candidate",                   # class: microlensing event
 })
 
-# PIPELINE_TAGS: processing, filter, footprint, or infrastructure tags — excluded from
-# classification.
-#   high_snr:                   data quality selector — top ~3% by detection confidence
-#                               (SNR = 1/sigmapsf). Says "well measured", not "what it is".
-#                               Useful in validators: a high_snr object still failing rb or
-#                               coordinate checks is more suspicious, since measurement quality
-#                               cannot be blamed.
-#   lsst_scimma_quality_transient: LSST alert passes quality cuts for transient crossmatching
-#                               by SCIMMA: SNR > 10, no quality flags, not a known SSO.
-#                               Quality gate, not a classification.
-#   iso_forest_anomaly_detection: isolation forest trained on 1M ANTARES loci, 106 LC features.
-#                               Aims to tag supernovae, CVs, and unusual events. ML pipeline tag.
-#   LAISS_RFC_AD_filter:        random forest classifier/anomaly detector trained on spectroscopic
-#                               SNe with LC + host galaxy features. ML pipeline tag.
-#   lc_feature_extractor:       computes 78 light curve features for incoming alerts. Pure pipeline.
-#   refitt_newsources_snrcut:   new sources with SNR > 5, appropriate for the REFITT broker.
-#   siena_mag_coord_cut:        magnitude (r<17) and coordinate filter for Siena College telescope.
-#   matheson_extreme_vpdf:      measures how extreme delta_mag is for stars. Variability metric,
-#                               not a classification.
-#   superphot_plus_classified:  successfully processed by the superphot_plus classifier. Passage
-#                               tag only — the classification result is elsewhere.
-#   anomaly_transient_dmdt_visited_v1: passed through anomaly_transient_dmdt filter; result
-#                               stored in locus property, not this tag.
-#   desi_target:                positional match to DESI brightness range — catalog crossmatch,
-#                               weak extragalactic hint. Excluded from classification.
-#   in_LSSTDDF:                 inside an LSST Deep Drilling Field — spatial/survey footprint only.
-#   in_shadow_virgo:            spatial footprint tag.
-#   NUTTelA_TAO:                no public description available.
-#   random_tagger_filter:       test/kafka infrastructure tag.
-#   test_dev_all / test_dev_lsst / test_dev_ztf: development test tags based on siena_mag_coord_cut.
 PIPELINE_TAGS: frozenset = frozenset({
-    "lc_feature_extractor",
-    "refitt_newsources_snrcut",
-    "siena_mag_coord_cut",
-    "iso_forest_anomaly_detection",
-    "LAISS_RFC_AD_filter",
-    "desoto_classified",
-    "superphot_plus_classified",
-    "matheson_extreme_vpdf",
-    "in_LSSTDDF",
-    "in_shadow_virgo",
-    "NUTTelA_TAO",
-    "desi_target",
-    "lsst_scimma_quality_transient",
-    "high_snr",
-    "anomaly_transient_dmdt_visited_v1",
-    "random_tagger_filter",
-    "test_dev_all",
-    "test_dev_lsst",
-    "test_dev_ztf",
+    "lc_feature_extractor",                     # processing: light-curve features computed
+    "refitt_newsources_snrcut",                 # selection: new sources at S/N > 5, for the REFITT broker
+    "siena_mag_coord_cut",                      # selection: magnitude and position cut, for the Siena telescope
+    "iso_forest_anomaly_detection",             # processing: anomaly detector's pass; no class
+    "LAISS_RFC_AD_filter",                      # processing: classifier/anomaly detector's pass; result elsewhere
+    "desoto_classified",                        # processing: a classifier's pass, by its name; no description read
+    "superphot_plus_classified",                # processing: superphot+ ran; its result is elsewhere
+    "matheson_extreme_vpdf",                    # processing: a variability metric; no class
+    "in_LSSTDDF",                               # footprint: an LSST deep drilling field
+    "in_shadow_virgo",                          # footprint
+    "NUTTelA_TAO",                              # no description available: kept out of scoring
+    "desi_target",                              # selection: DESI's brightness range; at most a weak hint
+    "lsst_scimma_quality_transient",            # quality gate: S/N > 10, no quality flags, no known SSO
+    "high_snr",                                 # quality: top ~3% by detection S/N
+    "anomaly_transient_dmdt_visited_v1",        # processing: filter visited; result in a locus property
+    "random_tagger_filter",                     # infrastructure: test tag
+    "test_dev_all",                             # infrastructure: development test tag
+    "test_dev_lsst",                            # infrastructure: development test tag
+    "test_dev_ztf",                             # infrastructure: development test tag
+    "uniform_random_sample",                    # sampling: a random 1% of LSST alerts; says nothing about the object
 })
 
 
@@ -142,14 +80,19 @@ def classify_antares(tags: list) -> dict:
     No tags     → no verdict and no flag: validate_antares reports no_classification,
                   its one owner (2026-11-04), so a row names it once.
 
+    Every list of tags it returns or writes into a flag is sorted: ANTARES serves a locus's
+    tags in no fixed order (README, "Known API Quirks"), and an unchanged locus must give
+    the same text. unknown_tags, the tags in neither set, comes with every verdict, science
+    tags or not: the row's unknown_tags (build_antares_qa_row).
+
     Return shape matches classify_object so build_antares_qa_row can use it. Every flag
     comes with its flag_reason, a fixed key (the row's flag_reasons, build_antares_qa_row).
     """
-    science = [t for t in tags if t in SCIENCE_TAGS]
+    science = sorted(t for t in tags if t in SCIENCE_TAGS)
+    unknown = sorted(t for t in tags if t not in SCIENCE_TAGS and t not in PIPELINE_TAGS)
 
     if not science:
-        pipeline_only = [t for t in tags if t in PIPELINE_TAGS]
-        unknown = [t for t in tags if t not in SCIENCE_TAGS and t not in PIPELINE_TAGS]
+        pipeline_only = sorted(t for t in tags if t in PIPELINE_TAGS)
         tagged = bool(pipeline_only or unknown)
         return {
             "top_class": None, "class_prob": None, "consensus": None,
@@ -157,9 +100,9 @@ def classify_antares(tags: list) -> dict:
             "flag": f"no_science_tags (pipeline: {pipeline_only}; unknown: {unknown})" if tagged else None,
             "flag_reason": "no_science_tags" if tagged else None,
             "verdict": "review_major",
+            "unknown_tags": unknown,
         }
 
-    science = sorted(science)
     n = len(science)
     top_class = ", ".join(science)
     consensus = round(1.0 / n, 4)
@@ -183,6 +126,7 @@ def classify_antares(tags: list) -> dict:
         "flag":          flag,
         "flag_reason":   reason,
         "verdict":       verdict,
+        "unknown_tags":  unknown,
     }
 
 

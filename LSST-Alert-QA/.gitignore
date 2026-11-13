@@ -37,3 +37,7 @@ htmlcov/
 logs/
 state/
 cache/
+
+# Viewer: site/ is for live use; its reports link points at this workspace's reports/.
+# No trailing slash: git keeps a symlink as a file, and "reports/" matches only directories.
+/viewer/site/reports

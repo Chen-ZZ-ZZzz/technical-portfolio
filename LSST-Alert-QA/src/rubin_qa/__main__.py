@@ -87,21 +87,50 @@ def newest_line(df: pd.DataFrame, survey: str, run_mjd: float) -> str:
     return "; ".join(parts)
 
 
+def _list_cell(cell) -> list | None:
+    """
+    A report's list cell: the list itself, or its text as the CSV holds it ("['a', 'b']"),
+    parsed. An empty cell (None, or NaN read back from the CSV) is None: nothing recorded.
+    """
+    if isinstance(cell, str):
+        return ast.literal_eval(cell)
+    return cell if isinstance(cell, list) else None
+
+
+def _by_count(counts: collections.Counter) -> str:
+    """"a 3, b 1": each name with its count, by count, then name."""
+    return ", ".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
 def flag_split(df: pd.DataFrame) -> str:
     """
     "flagged=196/196 (insufficient_classifiers 196, ndet_lt_2 115)": the flagged rows, and
     how many rows carry each key of flag_reasons (a row with several counts under each),
-    by count, then key. A report read back from its CSV holds each list as its text,
-    "['ndet_lt_2']", which is parsed, so the CSV reproduces the line.
+    by count, then key. Read from the report's columns, so the CSV reproduces the line.
     """
-    def keys_of(cell) -> list:
-        if isinstance(cell, str):
-            return ast.literal_eval(cell)
-        return cell if isinstance(cell, list) else []
-
-    counts = collections.Counter(k for cell in df["flag_reasons"] for k in keys_of(cell))
-    split = ", ".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    counts = collections.Counter(k for cell in df["flag_reasons"] for k in _list_cell(cell) or [])
+    split = _by_count(counts)
     return f"flagged={df['flag'].notna().sum()}/{len(df)}" + (f" ({split})" if split else "")
+
+
+def unknown_tag_split(df: pd.DataFrame) -> str:
+    """
+    "unknown tags: lantern_xgboost_t2.0.7_c0.95 165, eyoue_slsn_prefilter 1": the ANTARES
+    tags in neither of classifier.py's sets, each with the number of loci carrying it, by
+    count, then name, so a new tag shows in the journal on the first run that meets it.
+    Read from the report's unknown_tags column, so the CSV reproduces it. "none" only for
+    rows that recorded their list: a report without the column is "not recorded", and
+    rows without a list are counted as not recorded, never as none.
+    """
+    if "unknown_tags" not in df.columns:
+        return "unknown tags: not recorded"
+    lists = [_list_cell(cell) for cell in df["unknown_tags"]]
+    missing = sum(tags is None for tags in lists)
+    if missing == len(df):
+        return "unknown tags: not recorded"
+    counts = collections.Counter(t for tags in lists if tags for t in tags)
+    return (f"unknown tags: {_by_count(counts) or 'none'}"
+            + (f"; not recorded on {missing} of {len(df)}" if missing else ""))
 
 
 def _planned_count(rest: list) -> int:
@@ -237,15 +266,18 @@ def main() -> None:
 
     sample = sample_line(df)
     newest = newest_line(df, survey, run_mjd)
+    tags = unknown_tag_split(df) if survey == "antares" else None  # ALeRCE has no tags
     if quiet:
-        print(f"{label}  n={len(df)}  {flag_split(df)}  | {newest}  → {csv_path}"
-              + (f"  | {sample}" if sample else ""))
+        print(f"{label}  n={len(df)}  {flag_split(df)}" + (f"  | {tags}" if tags else "")
+              + f"  | {newest}  → {csv_path}" + (f"  | {sample}" if sample else ""))
     else:
         print(f"\n=== {label} Data Quality Report ===")
         if sample:
             print(sample)
         print(df[SUMMARY_COLUMNS].to_string())
         print(f"\n{newest}")
+        if tags:
+            print(tags)
         print(f"{flag_split(df)}  |  full report: {csv_path}")
 
     stopped = df.attrs.get("stopped_at_deadline")

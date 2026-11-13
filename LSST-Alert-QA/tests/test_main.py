@@ -14,6 +14,7 @@ import pytest
 
 import rubin_qa.__main__ as main_module
 from rubin_qa.config import OUTPUT_COLUMNS, mjd_to_datetime, utc_and_age
+from tests import fake_antares
 
 # 2026-11-04 06:49:52.5 UTC, the 11-04 ANTARES unit's start; the half second keeps the
 # whole-second stamp off a float boundary
@@ -194,6 +195,22 @@ class TestOutput:
         _run_cli(["antares", "256"], tmp_path, result=df)
         out = capsys.readouterr().out
         assert "sample: 237 loci checked" in out and "by survey ZTF 237 / LSST 0" in out
+
+    def test_an_antares_run_counts_its_unknown_tags_beside_the_flag_split(self, tmp_path, capsys, monkeypatch):
+        """
+        Two recorded loci through the pipeline (tests/fake_antares.py), one carrying an unknown
+        tag beside a science tag: the count follows the flag split on the one line, and gets
+        its own line before it in the full report. ALeRCE runs carry no part (their tests above).
+        """
+        fake_antares.serve_recorded(monkeypatch)
+        df = pd.DataFrame([fake_antares.recorded_row(i) for i in ("ANT2026sx3pbuillwqe", "ANT20262tl85caoepac")],
+                          columns=OUTPUT_COLUMNS)
+        part = "unknown tags: lantern_xgboost_t2.0.7_c0.95 1"
+        _run_cli(["antares", "2", "-q"], tmp_path, result=df.copy())
+        (line,) = capsys.readouterr().out.strip().splitlines()
+        assert line.startswith(f"ANTARES  n=2  {main_module.flag_split(df)}  | {part}  | newest ZTF of the 2 checked: ")
+        _run_cli(["antares", "2"], tmp_path, result=df.copy())
+        assert f"\n{part}\n{main_module.flag_split(df)}  |  full report: " in capsys.readouterr().out
 
     def test_verbose_prints_summary_table_and_flag_count(self, tmp_path, capsys):
         _run_cli(["ztf", "3"], tmp_path, result=_report(3, flagged=2))
