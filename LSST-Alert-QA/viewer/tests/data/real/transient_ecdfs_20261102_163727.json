@@ -1,0 +1,63 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-02T15:37:27+00:00",
+ "run_mjd": 61346.65100779273,
+ "since_mjd": 61332.65100779273,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 0,
+  "parked": 0
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "37 objects active since 2026-10-19",
+   "newest_mjd": 61338.399467600044
+  },
+  "lsst": {
+   "status": "failed",
+   "detail": "alerce lsst listing page 1: {'Error code': 422, 'Message': [{'type': 'less_than_equal', 'loc': ['query', 'page_size'], 'msg': 'Input should be less than or equal to 200', 'input': '1000', 'ctx': {'le': 200}}], 'Data': {}} (objects gathered before it are kept)",
+   "newest_mjd": 61108.033147378665
+  }
+ },
+ "photometry": {
+  "fetched": 0,
+  "not_fetched": 37,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 37,
+  "by_survey": {
+   "ztf": 37
+  },
+  "kept": 0
+ },
+ "rejected": {
+  "old_no_recent_detection": 27,
+  "single_detection": 10
+ },
+ "parked": {
+  "count": 0,
+  "new": [],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 1
+}

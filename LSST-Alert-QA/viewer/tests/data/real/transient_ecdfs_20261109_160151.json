@@ -1,0 +1,76 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-09T15:01:51+00:00",
+ "run_mjd": 61353.626287754676,
+ "since_mjd": 61339.626287754676,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 2,
+  "parked": 192
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "95 objects active since 2026-10-26",
+   "newest_mjd": 61353.29407409998,
+   "answered_mjd": 61353.29407409998
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "4322 objects active since 2026-10-26",
+   "newest_mjd": 61349.25149069997,
+   "answered_mjd": 61349.25149069997
+  }
+ },
+ "photometry": {
+  "fetched": 696,
+  "not_fetched": 3721,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 4417,
+  "by_survey": {
+   "lsst": 4322,
+   "ztf": 95
+  },
+  "kept": 2
+ },
+ "rejected": {
+  "old_no_recent_detection": 1559,
+  "preexisting_ztf_no_rise": 34,
+  "single_detection": 2162,
+  "single_night": 446,
+  "too_few_detections": 23,
+  "unbracketed": 191
+ },
+ "parked": {
+  "count": 193,
+  "new": [
+   {
+    "key": "ztf:ZTF26aceqroj",
+    "first_det_mjd": 61349.313472200185,
+    "code": "no_quiet_point"
+   }
+  ],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 0
+}

@@ -1,0 +1,64 @@
+{
+ "mode": "init",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-12T08:54:00+00:00",
+ "run_mjd": 61356.370836442096,
+ "since_mjd": 61342.370836442096,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 0,
+  "parked": 0
+ },
+ "listings": {
+  "ztf": {
+   "status": "failed",
+   "detail": "alerce ztf listing page 1: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /ztf/v1/objects?ra=53.1&dec=-27.8&radius=10152.0&lastmjd=61342.370836442096&lastmjd=99999.0&firstmjd=0.0&firstmjd=99999.0&page=1&page_size=200 (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 111] Connection refused\")) (objects gathered before it are kept)",
+   "newest_mjd": null,
+   "answered_mjd": null
+  },
+  "lsst": {
+   "status": "failed",
+   "detail": "alerce lsst listing page 1: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /object_api/list_objects?survey=lsst&ra=53.1&dec=-27.8&radius=10152.0&lastmjd=61342.370836442096&lastmjd=99999.0&firstmjd=0.0&firstmjd=99999.0&page=1&page_size=200 (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 111] Connection refused\")) (objects gathered before it are kept)",
+   "newest_mjd": null,
+   "answered_mjd": null
+  }
+ },
+ "photometry": {
+  "fetched": 0,
+  "not_fetched": 0,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 0,
+  "by_survey": {},
+  "kept": 0
+ },
+ "rejected": {},
+ "parked": {
+  "count": 0,
+  "new": [],
+  "resolved": [],
+  "expired": []
+ },
+ "recorded": {
+  "by_category": {},
+  "parked": 0
+ },
+ "absorbed": [],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 0 of 3"
+ ],
+ "warnings": [],
+ "exit_code": 1
+}

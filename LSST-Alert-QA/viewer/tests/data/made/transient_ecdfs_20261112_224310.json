@@ -1,0 +1,69 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  0.5
+ ],
+ "run_utc": "2026-11-12T21:43:10+00:00",
+ "run_mjd": 61356.904977368,
+ "since_mjd": 61342.904977368,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 33,
+  "parked": 958
+ },
+ "listings": {
+  "ztf": {
+   "status": "failed",
+   "detail": "alerce ztf listing page 1: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /ztf/v1/objects?ra=53.1&dec=-27.8&radius=1800.0&lastmjd=61342.904977368&lastmjd=99999.0&firstmjd=0.0&firstmjd=99999.0&page=1&page_size=200 (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 111] Connection refused\")) (objects gathered before it are kept)",
+   "newest_mjd": 61356.42130789999,
+   "answered_mjd": null
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "764 objects active since 2026-10-29",
+   "newest_mjd": 61356.28727110948,
+   "answered_mjd": 61356.28727110948
+  }
+ },
+ "photometry": {
+  "fetched": 404,
+  "not_fetched": 360,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 764,
+  "by_survey": {
+   "lsst": 764
+  },
+  "kept": 0
+ },
+ "rejected": {
+  "old_no_recent_detection": 65,
+  "old_no_rise": 236,
+  "single_detection": 295,
+  "single_night": 67,
+  "too_few_detections": 18,
+  "unbracketed": 83
+ },
+ "parked": {
+  "count": 958,
+  "new": [],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 3 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 1
+}

@@ -1,0 +1,1645 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-11T15:02:43+00:00",
+ "run_mjd": 61355.6268947589,
+ "since_mjd": 61341.6268947589,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 8,
+  "parked": 414
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "96 objects active since 2026-10-28",
+   "newest_mjd": 61355.3807639,
+   "answered_mjd": 61355.3807639
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "6522 objects active since 2026-10-28",
+   "newest_mjd": 61355.23650956963,
+   "answered_mjd": 61355.23650956963
+  }
+ },
+ "photometry": {
+  "fetched": 2703,
+  "not_fetched": 3915,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 6618,
+  "by_survey": {
+   "lsst": 6522,
+   "ztf": 96
+  },
+  "kept": 21
+ },
+ "rejected": {
+  "old_no_recent_detection": 791,
+  "old_no_rise": 1441,
+  "preexisting_ztf_no_rise": 34,
+  "single_detection": 3124,
+  "single_night": 357,
+  "too_few_detections": 272,
+  "unbracketed": 578
+ },
+ "parked": {
+  "count": 593,
+  "new": [
+   {
+    "key": "lsst:171141216503070996",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216510935087",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216510935157",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216528760936",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216534528149",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216542392404",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549732376",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549732430",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553926769",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553926795",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169615",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169705",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560218248",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216562315340",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216569655346",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216575422552",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216575946817",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216578044012",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216674512924",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216689717289",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216693387396",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216695484587",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216700727469",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216701251720",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216725893294",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216727466089",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216776749072",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216787234823",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216787759233",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216794050624",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216801390631",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216802439306",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216813449320",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216816594957",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216817643551",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216817643633",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216848576614",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216850673853",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216853819393",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216854867976",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216864829455",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216865353821",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216867450912",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216916209677",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216949239835",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216949764165",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216971260051",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216972308611",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216979648545",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216999047310",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252746576437",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252767023192",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252767547520",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252778033193",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252780654727",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252784324742",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252784848937",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252784849025",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252786946103",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252787994796",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252805820431",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252805820562",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252806869091",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252810539149",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811063432",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811063453",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811587593",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811587597",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811587599",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811587666",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811587981",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209066",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209095",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209096",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209163",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209180",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209182",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209262",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252825219199",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252825743434",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586535866458",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586539536454",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586559459536",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586564702219",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586566275203",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586566799427",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586580430864",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620811718750",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620838457443",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620888789033",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620910809146",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213343268946",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213343793185",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213344841862",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213345366096",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213345366180",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213345890340",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213346938914",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213349560473",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213353230433",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213354803351",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213357948935",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213358997719",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213360046245",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213363716136",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213369483403",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213371580420",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213372629066",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213372629096",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213372629109",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213374201985",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213378920601",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213379969121",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213380493454",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213381017716",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213381542044",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213382066194",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213382590497",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213382590627",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213385736235",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213386260643",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213386784852",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213389406365",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213394124835",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213394649098",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213396746327",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213400940700",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213404610564",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213406707767",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213407232182",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213409853446",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213412474934",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213414572164",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213415096381",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213419814942",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213421387792",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213425057796",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213426106503",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213427154992",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213427155048",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213427679292",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213428203581",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213428203650",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213428727938",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213430825088",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213430825102",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213434495001",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213434495010",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213435019762",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213435543793",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213436067990",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213436067996",
+    "first_det_mjd": 61353.240472107456,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213487448085",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213487448138",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213491642420",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213503701077",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213504225420",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213504225446",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213506322611",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213507895450",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213511565400",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213516808345",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213529915486",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213533061122",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213533585546",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213534634048",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213538828293",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213538828303",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213549314185",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213550362772",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213552459833",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213570809940",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185213571334257",
+    "first_det_mjd": 61353.24093611041,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232014737411",
+    "first_det_mjd": 61353.32557626335,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232043573292",
+    "first_det_mjd": 61353.32557626335,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232058778350",
+    "first_det_mjd": 61353.32557626335,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232059301904",
+    "first_det_mjd": 61353.32557626335,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232176218236",
+    "first_det_mjd": 61353.32602616248,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171185232228122740",
+    "first_det_mjd": 61353.32602616248,
+    "code": "no_quiet_point"
+   }
+  ],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [
+  {
+   "day": "2026-11-11",
+   "key": "lsst:313958955291246599",
+   "ra": 52.54441203806697,
+   "dec": -27.21882090495586,
+   "category": "unchecked",
+   "conditions": [
+    "re_brightening"
+   ],
+   "onset": "old",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 525,627: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "re_brightening"
+   ],
+   "gal_b": -54.84785868879542,
+   "onset_status": "not_new",
+   "first_det_mjd": 61048.10105773396,
+   "last_quiet_mjd": null,
+   "n_det": 12,
+   "rise": null,
+   "rapid_rise_mag": 1.690683225779889,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "313958955291246599"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta: VS 0.49",
+    "alerce stamp_classifier_rubin_beta_20260421: VS 0.39"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216516702285",
+   "ra": 51.98703047060476,
+   "dec": -27.04268620055096,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 519,629: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -55.30905426828688,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.135857905916,
+   "last_quiet_mjd": null,
+   "n_det": 10,
+   "rise": {
+    "band": "i",
+    "mag": 0.4906959511342339,
+    "sigma": 3.091086804694914,
+    "days": 12.100651663713506
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216516702285"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.94"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216542392404",
+   "ra": 51.28290218624896,
+   "dec": -28.156312738757112,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 512,618: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -56.0895410149549,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.135857905916,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": null,
+   "rapid_rise_mag": 2.174985878490162,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216542392404"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.67"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216700727469",
+   "ra": 51.34202600701816,
+   "dec": -28.922373789509624,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 513,610: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -56.1308504708833,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.1360799451,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": {
+    "band": "i",
+    "mag": null,
+    "sigma": 3.9725159477867935,
+    "days": 12.10042962453008
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216700727469"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.59"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216710688856",
+   "ra": 53.11829662424656,
+   "dec": -29.22156340664072,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 531,607: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -54.62215544858227,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.1360799451,
+   "last_quiet_mjd": null,
+   "n_det": 7,
+   "rise": {
+    "band": "i",
+    "mag": 0.6269819197598989,
+    "sigma": 3.069668735252567,
+    "days": 12.10042962453008
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216710688856"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.94"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216924598283",
+   "ra": 52.36453343674568,
+   "dec": -27.27758707234311,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "too_few_detections",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 523,627: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -55.015088108050314,
+   "onset_status": "not_new",
+   "first_det_mjd": 61343.13656267027,
+   "last_quiet_mjd": null,
+   "n_det": 2,
+   "rise": {
+    "band": "i",
+    "mag": null,
+    "sigma": 7.420337332574488,
+    "days": 12.099946899361385
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "171141216924598283"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.73"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141216948715611",
+   "ra": 52.31300529773886,
+   "dec": -28.14922732685579,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 523,618: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -55.18850549383644,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.13656267027,
+   "last_quiet_mjd": null,
+   "n_det": 6,
+   "rise": null,
+   "rapid_rise_mag": 1.295162999782029,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216948715611"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.73"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141252785373287",
+   "ra": 52.688515005991995,
+   "dec": -26.831072765670985,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 526,631: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -54.657216718780454,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.300043392184,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": null,
+   "rapid_rise_mag": 2.9899222169482833,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141252785373287"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.74"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171141252814209144",
+   "ra": 53.468140620313505,
+   "dec": -26.33558942600336,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 534,636: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -53.88314161891966,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.300043392184,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": null,
+   "rapid_rise_mag": 1.0802665547347274,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141252814209144"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.76"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171167620944363574",
+   "ra": 51.23210013175712,
+   "dec": -27.297863895211112,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "too_few_detections",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 512,626: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -56.01245104819193,
+   "onset_status": "not_new",
+   "first_det_mjd": 61349.25149069997,
+   "last_quiet_mjd": null,
+   "n_det": 2,
+   "rise": {
+    "band": "i",
+    "mag": 0.32556312917222824,
+    "sigma": 4.736204745496529,
+    "days": 5.9845593296631705
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "171167620944363574"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.53"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213345366109",
+   "ra": 53.79734345584732,
+   "dec": -29.059130851672986,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "too_few_detections",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 537,609: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -54.013975169089036,
+   "onset_status": "not_new",
+   "first_det_mjd": 61353.240472107456,
+   "last_quiet_mjd": null,
+   "n_det": 2,
+   "rise": {
+    "band": "i",
+    "mag": null,
+    "sigma": 4.365227790680999,
+    "days": 1.9960374621732626
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "171185213345366109"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.77"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213360046245",
+   "ra": 54.213237411762385,
+   "dec": -28.74662533842149,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 542,612: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.61302247045255,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61353.240472107456,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": {
+    "band": "i",
+    "mag": null,
+    "sigma": 27.112382869102127,
+    "days": 1.9955779221781995
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171185213360046245"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.91"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213404610564",
+   "ra": 54.49314492321,
+   "dec": -27.26807543455528,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 544,627: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.14680599877142,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61353.240472107456,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": {
+    "band": "i",
+    "mag": 0.6973515463398747,
+    "sigma": 7.324972500322588,
+    "days": 1.9960374621732626
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171185213404610564"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.59"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213419814942",
+   "ra": 52.49073806739891,
+   "dec": -27.09299981680624,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 524,628: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -54.874658409036726,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61353.240472107456,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": null,
+   "rapid_rise_mag": 2.147938541141162,
+   "crossmatch_flags": [],
+   "context": [
+    "recurrent: lsst:314011740582969421 detected here since 2026-01-20",
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171185213419814942"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.70"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213430825102",
+   "ra": 53.27764289137736,
+   "dec": -26.65821978522936,
+   "category": "unchecked",
+   "conditions": [
+    "rapid_rise"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 532,633: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rapid_rise"
+   ],
+   "gal_b": -54.10911587759611,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61353.240472107456,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": null,
+   "rapid_rise_mag": 1.9999022853429658,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171185213430825102"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.68"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-11",
+   "key": "lsst:171185213534634104",
+   "ra": 51.18401656216687,
+   "dec": -28.17681538541386,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "too_few_detections",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 511,618: HTTP 502 '<html>\\r\\n<head><title>502 Bad Gateway</title></head>\\r\\n<body>\\r\\n<center><h1>502 Bad'"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -56.17864516182013,
+   "onset_status": "not_new",
+   "first_det_mjd": 61353.24093611041,
+   "last_quiet_mjd": null,
+   "n_det": 2,
+   "rise": {
+    "band": "i",
+    "mag": 0.8074444507729719,
+    "sigma": 4.1912797106531094,
+    "days": 1.9955734592222143
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "171185213534634104"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.75"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  }
+ ],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 0
+}

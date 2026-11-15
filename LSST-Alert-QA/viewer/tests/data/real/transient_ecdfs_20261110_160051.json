@@ -1,0 +1,1459 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-10T15:00:51+00:00",
+ "run_mjd": 61354.62559419374,
+ "since_mjd": 61340.62559419374,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 2,
+  "parked": 193
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "95 objects active since 2026-10-27",
+   "newest_mjd": 61353.29407409998,
+   "answered_mjd": 61353.29407409998
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "5743 objects active since 2026-10-27",
+   "newest_mjd": 61353.32602616248,
+   "answered_mjd": 61353.32602616248
+  }
+ },
+ "photometry": {
+  "fetched": 2164,
+  "not_fetched": 3674,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 5838,
+  "by_survey": {
+   "lsst": 5743,
+   "ztf": 95
+  },
+  "kept": 7
+ },
+ "rejected": {
+  "old_no_recent_detection": 884,
+  "old_no_rise": 1149,
+  "preexisting_ztf_no_rise": 34,
+  "single_detection": 2790,
+  "single_night": 398,
+  "too_few_detections": 168,
+  "unbracketed": 408
+ },
+ "parked": {
+  "count": 414,
+  "new": [
+   {
+    "key": "lsst:171141216502546554",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216503595118",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216504119384",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216504119442",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216507789369",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216507789444",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216508313711",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216508837962",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216509362193",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216509886580",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216510410862",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216510935165",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216513032397",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216514605175",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216516702270",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216516702285",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216518799387",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216518799447",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216519848055",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216520896628",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216522469476",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216523518028",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216524566641",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216525090949",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216527188066",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216527712361",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530333742",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530333766",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530858058",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530858116",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216531906713",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216534528139",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216535052332",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216536625227",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216536625323",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216538722405",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216539246641",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216540295246",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216541343894",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216542392434",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216543440958",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216543965298",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216545538148",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216546586710",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216547110994",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216547635299",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549208085",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216551829549",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216554975257",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216556023822",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216558645396",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169558",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169560",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169672",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169683",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169693",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560742483",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216561266705",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216561791045",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216562839571",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216562839657",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216563888236",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216569655395",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216571752524",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216576995374",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216578568314",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216579092570",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216579616834",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216579616900",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216580665387",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216581189697",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216581189744",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216581714012",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216582238377",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216583811210",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216588005628",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216592723990",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216639910028",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216644628507",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216645152827",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216646725709",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216647250109",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216648822863",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216651968608",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216651968619",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216652492923",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216653541553",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216659832879",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216660357227",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216664027238",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216664551569",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216668745877",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216669270042",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216669270164",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216675037293",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216676610176",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216684474515",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216690765862",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216691290214",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216692863089",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216696008845",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216699154467",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216699154548",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216704397434",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216704921717",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216707018813",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216707543092",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216707543119",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216710688915",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216712261761",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216713834665",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216714358848",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216720650323",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216727466024",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216731136018",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216731660327",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216731660442",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216770981991",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216774127729",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216775176204",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216775176246",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216776224913",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216778322060",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216778846328",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216779370501",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216779370506",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216782516294",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216786710609",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216790380652",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216790904930",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216795099262",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216796672021",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216797196344",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216803487785",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216803487881",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216805060786",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216807157799",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216810303491",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216810303507",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216811876491",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216817643568",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216818167961",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216819740810",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216828653612",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216829177861",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216835469371",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216837042277",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216837042291",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216837566614",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216844906648",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216844906660",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216848576527",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216851722284",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216855392263",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216859586641",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216861683869",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216863256720",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216863256758",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216864305332",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216866926930",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216866926931",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216907296816",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216908345461",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216909394019",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216913588260",
+    "first_det_mjd": 61343.13656267027,
+    "code": "quiet_too_shallow"
+   },
+   {
+    "key": "lsst:171141216925646878",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216948715611",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216952385542",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216952909845",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216975454222",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141217000620064",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252742906083",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252755488895",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252756537479",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252757061635",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252757586021",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252758634582",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252763353187",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252765974645",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252765974708",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252767023182",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252767023216",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252768072213",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252779081732",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252779081791",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252779081835",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252780130339",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252781178911",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252783800445",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252783800447",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252785373287",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252790616070",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252790616138",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252790616281",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252790616290",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252791140419",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252801626145",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252801626264",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252808966149",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252808966262",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252811063369",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209144",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252814209639",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252825743371",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252825743527",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586529050648",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586534817902",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586545303617",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586555265036",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586557362226",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586565226513",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167586565750895",
+    "first_det_mjd": 61349.10992965501,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620763484215",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620779212870",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620797562896",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620809621600",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620827971629",
+    "first_det_mjd": 61349.251021051765,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620917624839",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620958519385",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620977393692",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171167620978966552",
+    "first_det_mjd": 61349.25149069997,
+    "code": "no_quiet_point"
+   }
+  ],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141216532430993",
+   "ra": 54.27356311830692,
+   "dec": -27.830297362515715,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 542,621: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.42933680222561,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.135857905916,
+   "last_quiet_mjd": null,
+   "n_det": 5,
+   "rise": {
+    "band": "i",
+    "mag": 0.5395038071310736,
+    "sigma": 7.60416452276134,
+    "days": 10.104614201540244
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216532430993"
+   },
+   "classifications": [
+    "alerce nuclear_classifier: off-nuclear 1.00",
+    "alerce stamp_classifier_rubin_beta_20260421: SN 0.98"
+   ],
+   "tns": {
+    "status": "record",
+    "line": "AT 2026ahhp, discovered 2026-10-30",
+    "discovered": "2026-10-30 03:15:38.123",
+    "sep_arcsec": 0.05,
+    "own_id_listed": true,
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141216591675408",
+   "ra": 52.78413752192842,
+   "dec": -29.283388422443743,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "too_few_detections",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 527,607: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -54.918816786483454,
+   "onset_status": "not_new",
+   "first_det_mjd": 61343.135857905916,
+   "last_quiet_mjd": null,
+   "n_det": 2,
+   "rise": {
+    "band": "i",
+    "mag": 2.6121118847565357,
+    "sigma": 3.2968430633965338,
+    "days": 10.104614201540244
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [],
+   "brokers": {
+    "alerce": "171141216591675408"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.66"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141216861159437",
+   "ra": 52.60933013606948,
+   "dec": -29.46796428005744,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 525,605: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -55.09024539820939,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.13634107108,
+   "last_quiet_mjd": null,
+   "n_det": 8,
+   "rise": {
+    "band": "r",
+    "mag": 0.3042734693377685,
+    "sigma": 4.235221379741043,
+    "days": 4.216096507472685
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216861159437"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.95"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141216913588260",
+   "ra": 54.023138410460405,
+   "dec": -26.607707049775183,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "quiet_too_shallow",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 540,633: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.444414691103326,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.13656267027,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": {
+    "band": "i",
+    "mag": 0.41702063282468493,
+    "sigma": 21.7826350517955,
+    "days": 10.10437344013917
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "recurrent: ztf:ZTF18acuavde, a ZTF object from 2018",
+    "onset not bracketed (quiet_too_shallow), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216913588260"
+   },
+   "classifications": [
+    "alerce nuclear_classifier: nuclear 1.00",
+    "alerce stamp_classifier_rubin_beta_20260421: SN 0.67"
+   ],
+   "tns": {
+    "status": "record",
+    "line": "AT 2018fcv, AGN, discovered 2018-08-15",
+    "discovered": "2018-08-15 06:57:36.000",
+    "sep_arcsec": 0.22,
+    "own_id_listed": false,
+    "notice": {
+     "kind": "onset_not_bracketed",
+     "gap_days": 2997.85,
+     "text": "TNS discovery 2997.8 d before our first detection (ASAS-SN data; 0.22\" away, TNS does not list our ID). Onset not bracketed: if it is the same source, this is LSST's first detection, not the transient's start."
+    }
+   }
+  },
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141252808966262",
+   "ra": 53.410443888425974,
+   "dec": -26.490918117780804,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 534,635: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.96235023018755,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.300043392184,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": {
+    "band": "i",
+    "mag": 3.139389931790071,
+    "sigma": 4.072908094431004,
+    "days": 9.94089271822304
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141252808966262"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.56"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  },
+  {
+   "day": "2026-11-10",
+   "key": "lsst:171141252811063369",
+   "ra": 53.01662462794755,
+   "dec": -26.45956982095309,
+   "category": "unchecked",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "unavailable",
+   "evidence": [
+    "tile 530,635: ReadTimeout"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -54.303412027852076,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.300043392184,
+   "last_quiet_mjd": null,
+   "n_det": 3,
+   "rise": {
+    "band": "i",
+    "mag": null,
+    "sigma": 7.776846456342355,
+    "days": 9.94089271822304
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141252811063369"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: bogus 0.66"
+   ],
+   "tns": {
+    "status": "none_yet",
+    "line": "none yet; asked again each run for 30 d (a report often comes days after an alert)",
+    "notice": null
+   }
+  }
+ ],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 0
+}

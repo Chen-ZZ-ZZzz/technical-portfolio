@@ -1,0 +1,1127 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-05T15:00:51+00:00",
+ "run_mjd": 61349.62559313397,
+ "since_mjd": 61335.62559313397,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 0,
+  "parked": 0
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "89 objects active since 2026-10-22",
+   "newest_mjd": 61349.37785879988,
+   "answered_mjd": 61349.37785879988
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "4322 objects active since 2026-10-22",
+   "newest_mjd": 61349.25149069997,
+   "answered_mjd": 61349.25149069997
+  }
+ },
+ "photometry": {
+  "fetched": 1153,
+  "not_fetched": 3258,
+  "failed": 0
+ },
+ "fetch_errors": [],
+ "objects": {
+  "total": 4411,
+  "by_survey": {
+   "lsst": 4322,
+   "ztf": 89
+  },
+  "kept": 2
+ },
+ "rejected": {
+  "old_no_recent_detection": 1095,
+  "old_no_rise": 436,
+  "preexisting_ztf_no_rise": 55,
+  "single_detection": 2163,
+  "single_night": 447,
+  "too_few_detections": 23,
+  "unbracketed": 190
+ },
+ "parked": {
+  "count": 192,
+  "new": [
+   {
+    "key": "lsst:171141216503070835",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216504643709",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216505692302",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216507789353",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216507789371",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216507789435",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216509362314",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216510410769",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216513032409",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216515129454",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216515129475",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216515129525",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216516178045",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216516178080",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216517750836",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216518275152",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216518275176",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216518799528",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216519848103",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216520372279",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216520896605",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216521420867",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216521420901",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216521945181",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216521945209",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216522993675",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216523518056",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216523518075",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216525090943",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216526139472",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216526663826",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216527188096",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216528236713",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216529285155",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216529285276",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216529809512",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530333855",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530858052",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216530858118",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216531906726",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216532430993",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216532430997",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216532955244",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216533479485",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216534528036",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216536100876",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216536100998",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216537673737",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216537673852",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216538722413",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216541343850",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216541343852",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216542392340",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216543441029",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216545013924",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216545538099",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216545538128",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216545538147",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216546586679",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216546586718",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216547635287",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216548159619",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216548683839",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549208170",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549208175",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549732428",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216549732481",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216550256736",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216550781031",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216551829570",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216551829654",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216552353882",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216552878191",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553402468",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553402486",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553926658",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216553926662",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216556548103",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216557072397",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216557072490",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216557596809",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216558645295",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169541",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559169675",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559693919",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216559693931",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560218121",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560218128",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560218285",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216560742633",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216561791088",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216562315535",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216562839613",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216563888274",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216564936789",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216564936842",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216567033941",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216567033963",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216568082489",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216569131080",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216569655304",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216570703882",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216571752526",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216572801039",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216573325329",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216574898191",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216574898195",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216574898298",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216575422505",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216578043980",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216578568307",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216580141181",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216581189718",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216582238266",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216583286900",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216583811145",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216586432570",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216586956959",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216587481096",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216587481172",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216590627394",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216591151124",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216592199804",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216592724093",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216593248288",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216594297092",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216594821131",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216594821185",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216594821232",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216594821382",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216596918360",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216596918367",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216596918369",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216596918416",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216597442564",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216597966917",
+    "first_det_mjd": 61343.135857905916,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216661405791",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216666648726",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216668745796",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216670318716",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216676085788",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216677134454",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216679755881",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216683425927",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216685523049",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216687620241",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216688144393",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216688668738",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216696533470",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216707018889",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216710688856",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216715407498",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216718028884",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216725368987",
+    "first_det_mjd": 61343.1360799451,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216786186249",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216786186451",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216788807815",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216795099282",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216795623436",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216800342057",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216803487752",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216808206450",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216808730724",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216817643559",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216821313667",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216821837846",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216824459299",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216824983578",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216834945164",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216842285181",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216855916570",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216857489562",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216859586687",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216860635161",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216861159437",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216863780890",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216865353774",
+    "first_det_mjd": 61343.13634107108,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216905199774",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216915161162",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141216956579906",
+    "first_det_mjd": 61343.13656267027,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141246786994182",
+    "first_det_mjd": 61343.2785131828,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141246789616598",
+    "first_det_mjd": 61343.2785131828,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252746576367",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252757585924",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252757586047",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252763877396",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252763877453",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252763877526",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252765974624",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252779081871",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252784848914",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   },
+   {
+    "key": "lsst:171141252784849030",
+    "first_det_mjd": 61343.300043392184,
+    "code": "no_quiet_point"
+   }
+  ],
+  "resolved": [],
+  "expired": []
+ },
+ "alerts": [
+  {
+   "day": "2026-11-05",
+   "key": "lsst:171141216521945181",
+   "ra": 52.088979913356205,
+   "dec": -27.3811726809613,
+   "category": "host",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "host",
+   "evidence": [
+    "SER r=17.7 sep=0.1\" d_DLR=0.1",
+    "nuclear: within 1\" of the host centre",
+    "WISE W1-W2=-0.31 AB, not AGN-like"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -55.273052101082776,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.135857905916,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": {
+    "band": "i",
+    "mag": 1.0469661998960853,
+    "sigma": 7.17656464790861,
+    "days": 6.115632794055273
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [
+    "nuclear"
+   ],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216521945181"
+   },
+   "classifications": [
+    "alerce stamp_classifier_rubin_beta_20260421: AGN 0.73"
+   ],
+   "tns": {
+    "status": "record",
+    "line": "SN 2026afma, SN Ia, discovered 2026-09-28"
+   }
+  },
+  {
+   "day": "2026-11-05",
+   "key": "lsst:171141216668745796",
+   "ra": 54.48050170370357,
+   "dec": -27.533952646966743,
+   "category": "host",
+   "conditions": [
+    "rising"
+   ],
+   "onset": "no_quiet_point",
+   "crossmatch": "host",
+   "evidence": [
+    "EXP r=22.8 sep=3.3\" d_DLR=3.2",
+    "WISE colour: no measurement (S/N < 5 in W1 or W2)"
+   ],
+   "all_conditions": [
+    "rising"
+   ],
+   "gal_b": -53.20164493105764,
+   "onset_status": "unbracketed",
+   "first_det_mjd": 61343.1360799451,
+   "last_quiet_mjd": null,
+   "n_det": 4,
+   "rise": {
+    "band": "i",
+    "mag": 0.874192450107055,
+    "sigma": 7.016755592681303,
+    "days": 6.115410754871846
+   },
+   "rapid_rise_mag": null,
+   "crossmatch_flags": [],
+   "context": [
+    "onset not bracketed (no_quiet_point), parked"
+   ],
+   "brokers": {
+    "alerce": "171141216668745796"
+   },
+   "classifications": [
+    "alerce nuclear_classifier: off-nuclear 1.00",
+    "alerce stamp_classifier_rubin_beta_20260421: SN 0.83"
+   ],
+   "tns": {
+    "status": "record",
+    "line": "AT 2026ahly, discovered 2026-10-30"
+   }
+  }
+ ],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 0 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": [],
+ "exit_code": 0
+}

@@ -1,0 +1,27 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-12T08:54:04+00:00",
+ "run_mjd": 61356.37088591821,
+ "since_mjd": 61342.37088591821,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "state_before": {
+  "reported": 0,
+  "parked": 0
+ },
+ "error": "network error after 3 attempts: down. State not updated - will retry next run.",
+ "warnings": [
+  "network error (attempt 1/3): down; retrying in 0s",
+  "network error (attempt 2/3): down; retrying in 0s"
+ ],
+ "exit_code": 1
+}
