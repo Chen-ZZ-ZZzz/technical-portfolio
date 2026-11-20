@@ -5,6 +5,7 @@ Description=Scan systemd journal periodically
 OnBootSec=9min
 OnCalendar=hourly
 Persistent=true
+AccuracySec=1us
 
 [Install]
 WantedBy=timers.target

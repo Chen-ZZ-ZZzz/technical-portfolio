@@ -62,13 +62,18 @@ which is how a failed run surfaces in the next report.
 
     OnCalendar=hourly
     Persistent=true
-    OnBootSec=16min
+    OnBootSec=9min
+    AccuracySec=1s
 
 Calendar timers read the realtime clock and fire immediately on resume for any
 deadline that passed during sleep. `Persistent=true` catches up hour marks
 missed while powered off; `OnBootSec` covers quick reboots that cross no hour
 boundary. Extra firings cost nothing, since the cursor guarantees each run
 scans only what is new.
+
+Set `AccuracySec=1us` so it starts at the hour mark itself rather than at a
+fixed second up to a minute later; the cursor means the exact start doesn’t
+matter for coverage.
 
 The service exits 0 whether or not it finds anything. A non-zero exit means
 the pipeline broke, not that the journal contains warnings.
