@@ -5,6 +5,7 @@ Description=Run the transient monitor daily
 OnCalendar=*-*-* 16:00:00
 Persistent=true
 RandomizedDelaySec=120
+AccuracySec=1s
 
 [Install]
 WantedBy=timers.target

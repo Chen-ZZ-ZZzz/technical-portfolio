@@ -12,7 +12,7 @@ Operational settings (timeouts, retries, deadlines) are not quoted: the README p
 to them (CLAUDE.md, "Documentation: one home per fact").
 
 The same table guards systemd/README.md's summary of the unit files (cadence, command,
-start timeouts, write paths) against the files, its "frozen" against the files test_sso_frozen pins
+start timeouts, write paths, timer accuracy) against the files, its "frozen" against the files test_sso_frozen pins
 (active and dormant cannot be read from a file: arming is the install), and the README's
 antares-client version against the lock. It checks what the docs say about the units,
 never that a unit works: that is the user's install.
@@ -176,6 +176,9 @@ GUARDED = {
          unit("lsst-transient-monitor.service.example", "TimeoutStartSec")),
         ("sampler schedule", r"`OnCalendar=(\w+)` \+ `RandomizedDelaySec=(\d+)`",
          (unit("lsst-latency-sample.timer", "OnCalendar"), unit("lsst-latency-sample.timer", "RandomizedDelaySec"))),
+        # one accuracy for every timer not frozen: a timer without the line reads <no AccuracySec in ...>
+        ("timer accuracy", r"`AccuracySec=(\w+)`",
+         agreed(*(unit(f"{t}.timer", "AccuracySec") for t in TIMERS if not frozen(t)))),
         # the write-path table: every unit not frozen has a row naming it (a row may name two)
         *[(f"write paths, {t}", rf"\| (?:`[\w-]+`, )*`{t}`(?:, `[\w-]+`)* \| ((?:`\w+/`(?:, )?)+) \|", writes(t))
           for t in TIMERS if not frozen(t)],

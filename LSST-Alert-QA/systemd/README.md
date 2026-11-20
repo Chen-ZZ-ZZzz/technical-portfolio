@@ -49,6 +49,34 @@ which apply to plain `.service`/`.timer` units.
 
 ---
 
+# Timers
+
+Every timer that isn't frozen sets `AccuracySec=1s`. With systemd's default of 1 min,
+systemd moves each start to one second inside the minute, shared by all timers and
+fixed until the next boot (the man page calls it host-specific), so that timers can
+share a wake-up. It does so after adding `RandomizedDelaySec`, so every start falls on
+that same second, whatever the random delay drew. With 1 s, the random delay spreads
+the starts over the delay's range. From
+[systemd.timer(5)](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html),
+under `RandomizedDelaySec`: the random delay is added first, then the result may be
+shifted to coalesce with other timer events; to spread events, set `AccuracySec`
+small and `RandomizedDelaySec` larger. The man page suggests 1us; 1s is what is
+installed and was observed, and nothing here is timed to finer than a second.
+
+Seen on the ANTARES timer, in local time: under the default, 35 of its 36 scheduled
+starts from 2026-11-04 11:30 to 2026-11-13 06:00 fell at second :49 (the other at
+17:00:24 on 11-12); under 1 s, its 28 starts from 2026-11-13 17:00 to 2026-11-20 11:30
+fell at :01–:23.
+
+What systemd has loaded, after a `daemon-reload` (a disabled timer is not loaded, so it
+is not listed):
+
+```bash
+systemctl --user show -p Id -p AccuracyUSec -p RandomizedDelayUSec 'lsst-*.timer'
+```
+
+---
+
 # Logging
 
 Units log to the journal under their `SyslogIdentifier` and set no

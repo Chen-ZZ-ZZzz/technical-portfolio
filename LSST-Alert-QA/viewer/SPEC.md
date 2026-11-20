@@ -52,7 +52,7 @@ Tests are written from these rules, not from the page’s code.
 31. Given exit 1, when two listings failed, Message shows "ERROR: LSST and ZTF listings failed".
     Given transient_ecdfs_20261112_095402.json, then "ERROR: LSST and ZTF listings failed".
     Given transient_ecdfs_20261112_095400_init.json, then "ERROR: LSST and ZTF listings failed".
-32. Given exit 1, when no listing failed (including without listings at all), then the Message shows "ERROR: Network failed". Assume: The monitor writes exit 1 without a failed listing only for network errors; a new cause needs a new line.
+32. Given exit 1, when no listing failed (including without listings at all), then the Message shows "ERROR: Network failed". Assumed: The monitor writes exit 1 without a failed listing only for network errors; a new cause needs a new line.
     Given transient_ecdfs_20261112_095404.json, then "ERROR: Network failed".
 33. Message is exactly one of the texts defined above (Rules 29 to 32), with nothing added.
     Given transient_ecdfs_20261102_163727.json, then the Message is exactly "ERROR: LSST listing failed". as report's listings.lsst.detail contains "422", the Message must not.
@@ -62,7 +62,7 @@ Tests are written from these rules, not from the page’s code.
 35. When click on sortable column headers, flip the order if sorted by it, else sort by it (Rules 38 to 43).
 36. When click on other column headers, nothing happens.
 37. Given there is a second sort order, flip does not flip the second sort.
-38. When sorted by Date, newest first. Assume: No same run_utc.
+38. When sorted by Date, newest first. Assumed: No same run_utc.
 39. All except Date must be sorted by Date secondly, newest first.
 40. When sorted by Report, in alphabetical order
 41. When sorted by Exit, in descend order, non zero first.
@@ -78,3 +78,29 @@ Tests are written from these rules, not from the page’s code.
 49. On the report page, there is a link to the report being shown. When a user clicks it, the file opens in a new tab. The link text: "Raw JSON"
     Given ?file=transient_ecdfs_20261105_160051.json, the new tab’s address ends in reports/transient_ecdfs_20261105_160051.json
     Given ?file=transient_<f>oobar_20251004_000000.json, the new tab’s address ends in reports/transient_%3Cf%3Eoobar_20251004_000000.json
+50. Cone line on the report page. Labels: "Cone", "RA", "Dec", "Radius". Values: ra=cone.0, dec=cone.1, r=cone.2. It shows "Cone" "RA <ra>°" "Dec <dec>°" "Radius <r>°". The line shows these four texts, in this order; what separates them is free. Values as written in the report; whole number shows with ".0". Also, the minus is the plain keyboard hyphen. Assumed: Report writes cone values as decimal numbers (90.0, never 90).
+    Given ?file=transient_ecdfs_20261111_160243.json, then "Cone" "RA 53.1°" "Dec -27.8°" "Radius 2.82°".
+    Given ?file=transient_<f>oobar_20251004_000000.json, then "Cone" "RA 200.5°" "Dec 90.0°" "Radius 1.25°".
+51. Top level keys: None must be missed
+   - mode
+   - footprint
+   - cone
+   - run_utc
+   - run_mjd
+   - since_mjd
+   - settings
+   - state_before
+   - listings
+   - photometry
+   - fetch_errors
+   - objects
+   - rejected
+   - parked
+   - alerts, or recorded by init
+   - tns_earlier
+   - point_source_watch
+   - warnings
+   - exit_code
+
+53. When parked.new has more than 10 entries, it is collapsed under a line with its count ("192 newly parked"); a click expands all entries, another collapses them.
+54. Listing status per survey. "LSST quiet since 2026-11-07"

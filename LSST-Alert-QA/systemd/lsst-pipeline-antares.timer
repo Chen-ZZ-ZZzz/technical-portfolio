@@ -4,7 +4,8 @@ Description=Run LSST ANTARES pipeline daily
 [Timer]
 OnCalendar=*-*-* 07:00:00
 Persistent=true
-RandomizedDelaySec=29
+RandomizedDelaySec=25
+AccuracySec=1s
 
 [Install]
 WantedBy=timers.target
