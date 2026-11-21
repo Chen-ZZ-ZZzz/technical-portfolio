@@ -944,12 +944,30 @@ def _tns_read(rec: dict, key: str, ra: float, dec: float, warnings: list[str]) -
     return ("record", sep) if sep <= TNS_MATCH_ARCSEC else ("none_yet", None)
 
 
-def _tns_line(rec: dict) -> str:
+def _tns_line(rec: dict, discovered: str | None = None) -> str:
+    """Name, class and discovery; the day of the discovery unless `discovered` says it (_retry_tns)."""
     kind = (rec.get("object_type") or {}).get("name")
-    found = rec.get("discoverydate")
-    found = found[:10] if isinstance(found, str) else ""
+    if discovered is None:
+        found = rec.get("discoverydate")
+        discovered = found[:10] if isinstance(found, str) else ""
     return (f"{rec.get('name_prefix', '')} {rec['objname']}".strip() + (f", {kind}" if kind else "")
-            + (f", discovered {found}" if found else ""))
+            + (f", discovered {discovered}" if discovered else ""))
+
+
+def _discovery_mjd(when) -> tuple[float, bool]:
+    """
+    A TNS discovery date as (MJD, to_the_day). A time of exactly 00:00:00.000 is taken as a
+    date reported to the day (2026fgl's record is one): to_the_day is True and the MJD is the
+    day's start. Each reader picks its end of the day: _discovery_notice its end, so its gap
+    can only understate TNS's lead; _retry_tns its start, so its lags can only understate
+    ours. Raises on a missing or unreadable date.
+    """
+    found = _utc_to_mjd(when)
+    return found, found.is_integer()  # midnight UTC exactly
+
+
+def _lag(days: float, what: str) -> str:
+    return f"{abs(days):.2f} d {'after' if days > 0 else 'before'} {what}"
 
 
 def _discovery_notice(rec: dict, key: str, onset: NewVerdict, conditions: list[str], sep_arcsec: float) -> dict | None:
@@ -971,8 +989,7 @@ def _discovery_notice(rec: dict, key: str, onset: NewVerdict, conditions: list[s
     """
     if "re_brightening" in conditions:
         return None
-    found = _utc_to_mjd(rec.get("discoverydate"))
-    to_the_day = found.is_integer()  # midnight UTC exactly
+    found, to_the_day = _discovery_mjd(rec.get("discoverydate"))
     if to_the_day:
         found += 1.0
     gap = onset.first_det_mjd - found
@@ -1010,9 +1027,15 @@ def _add_tns(c: Candidate, now: float, warnings: list[str]) -> tuple[dict, dict 
     discovered (the record's discovery date as TNS sent it; the line keeps only the day),
     sep_arcsec and own_id_listed. notice is _discovery_notice's, null when there is none;
     a report whose tns has no notice key predates the field.
+
+    The entry: {ra, dec, alerted_mjd, first_det_mjd}, first_det_mjd for _retry_tns's second
+    lag, left out on a re_brightening (old object, no onset claimed) and absent from entries
+    written before 2026-11-21.
     """
     o = c.obj
     entry = {"ra": o.ra, "dec": o.dec, "alerted_mjd": now}
+    if "re_brightening" not in c.conditions and c.onset is not None and c.onset.first_det_mjd is not None:
+        entry["first_det_mjd"] = c.onset.first_det_mjd
     try:
         rec = tns.tns_lookup(o.ra, o.dec)  # {} only when the service said "none"
     except Exception as e:  # display context: whatever goes wrong, the run goes on
@@ -1041,8 +1064,12 @@ def _retry_tns(watch: dict, now: float, warnings: list[str]) -> tuple[dict, list
     Ask TNS again for earlier alerts that had no record yet (or no answer). One paced call
     each: only a record is news, and a "none" or a call that failed, whatever the cause, is
     asked again next run. Returns (still watched, report lines). A record that appears here
-    gets no discovery notice: the line gives its date and the lag behind the alert (user,
-    2026-11-07; the paths that end here: CLAUDE.md, "A TNS discovery ahead").
+    gets no discovery notice (user, 2026-11-07; the paths that end here: CLAUDE.md, "A TNS
+    discovery ahead"). Its line gives the discovery's time in UTC and how far it lies from
+    our alert and, when the entry has it, from our first detection: each lag from the whole
+    timestamp, to two decimals, with its own after/before. A date reported to the day counts
+    from that day's start and shows "(date only)" (_discovery_mjd). An unreadable date
+    costs the line its time and lags, not the line (user, 2026-11-21).
     """
     still, lines = {}, []
     for key, e in sorted(watch.items()):
@@ -1058,13 +1085,17 @@ def _retry_tns(watch: dict, now: float, warnings: list[str]) -> tuple[dict, list
         except Exception:  # display context: kept, asked again next run
             rec = {}
         if _tns_read(rec, key, e["ra"], e["dec"], warnings)[0] == "record":
-            lag = ""
             try:
-                days = date_to_mjd(rec["discoverydate"][:10]) - 1 - e["alerted_mjd"]
-                lag = f" ({abs(days):.0f} d {'after' if days > 0 else 'before'} our alert)"
-            except (KeyError, TypeError, ValueError):  # no readable date: the line goes without its lag
-                pass
-            lines.append(f"  {when}: now in TNS: {_tns_line(rec)}{lag}")
+                found, to_the_day = _discovery_mjd(rec["discoverydate"])
+                d = datetime.datetime.fromisoformat(rec["discoverydate"])
+                stamp = f"{d:%Y-%m-%d} (date only)" if to_the_day else f"{d:%Y-%m-%d %H:%M} UTC"
+                lags = [_lag(found - e["alerted_mjd"], "our alert")]
+                if e.get("first_det_mjd") is not None:
+                    lags.append(_lag(found - e["first_det_mjd"], "our first detection"))
+                said = f"{_tns_line(rec, stamp)}: {', '.join(lags)}"
+            except (KeyError, TypeError, ValueError):  # no readable date: the line goes without its time and lags
+                said = _tns_line(rec)
+            lines.append(f"  {when}: now in TNS: {said}")
         else:
             still[key] = e
     return still, lines

@@ -1,6 +1,7 @@
 """
 ALeRCE's TNS service as it really answers: bodies recorded verbatim on 2026-11-07
-(tests/data/tns/), served through requests.post, so a test runs the real tns_once. A fake
+(record_date_only.json on 2026-11-21; tests/data/tns/), served through requests.post, so a
+test runs the real tns_once. A fake
 that hands tns_once's result to its callers cannot show what tns_once does with a body:
 that is how a rejected call read as "not in TNS" for weeks (README, "Replay Validation").
 """
@@ -13,6 +14,7 @@ from rubin_qa import tns as t
 
 BODIES = Path(__file__).parent / "data" / "tns"
 RECORD = (BODIES / "record.json").read_text()  # SN 2026afma, at the alert position in test_transient_monitor
+RECORD_DATE_ONLY = (BODIES / "record_date_only.json").read_text()  # SN 2026fgl: discovered 2026-03-10 00:00:00.000
 NONE = (BODIES / "none.json").read_text()
 REJECTED = (BODIES / "rejected.json").read_text()
 UPSTREAM_ERROR = (BODIES / "upstream_error.json").read_text()

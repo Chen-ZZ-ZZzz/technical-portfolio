@@ -776,7 +776,8 @@ def test_none_and_unavailable_are_asked_again_until_a_record_appears(env, capsys
     mon.scan("D", (150, 12, 1))
     out = capsys.readouterr().out
     assert "No new transient alerts." in out
-    assert "  ztf:ZTF26aaa (alert 2026-09-27): now in TNS: SN 2026abc, SN Ia, discovered 2026-10-02 (5 d after our alert)" in out
+    assert ("  ztf:ZTF26aaa (alert 2026-09-27): now in TNS: SN 2026abc, SN Ia, discovered 2026-10-02 01:00 UTC: "
+            "5.04 d after our alert, 10.04 d after our first detection") in out.splitlines()
     assert state()["tns_watch"] == {}
 
 
@@ -1854,12 +1855,12 @@ def test_whatever_goes_wrong_in_the_notice_the_alert_and_the_run_go_on(env, caps
     assert "a bug in the notice" in r["warnings"][0] and AFMA["key"] in state("ecdfs")["reported"]
 
 
-def asked_again_on_a_later_run(env, monkeypatch, answer):
-    """An earlier alert in the state's tns_watch, asked again."""
+def asked_again_on_a_later_run(env, monkeypatch, answer, key=AFMA["key"], now=AFMA_RUN_MJD, **entry):
+    """An earlier alert in the state's tns_watch, asked again: AFMA's, alerted the day before, unless entry says otherwise."""
     env["objects"] = []
-    mon._save_state(mon.state_file("ecdfs"), {"last_mjd": None, "reported": {}, "parked": {}, "tns_watch": {
-        AFMA["key"]: {"ra": AFMA["ra"], "dec": AFMA["dec"], "alerted_mjd": AFMA_RUN_MJD - 1}}})
-    monkeypatch.setattr(mon, "now_mjd", lambda: AFMA_RUN_MJD)
+    watched = {"ra": AFMA["ra"], "dec": AFMA["dec"], "alerted_mjd": AFMA_RUN_MJD - 1, **entry}
+    mon._save_state(mon.state_file("ecdfs"), {"last_mjd": None, "reported": {}, "parked": {}, "tns_watch": {key: watched}})
+    monkeypatch.setattr(mon, "now_mjd", lambda: now)
     monkeypatch.setattr(mon.tns, "tns_once", answer)
     code = mon.scan("ecdfs", mon.FOOTPRINTS["ecdfs"][0])
     return code, report("transient_ecdfs_*.json")
@@ -1875,14 +1876,20 @@ def test_a_record_that_cannot_be_read_stays_watched_when_it_turns_up_on_a_later_
 def test_an_unreadable_date_on_a_later_run_costs_the_line_its_lag_not_the_run(env, monkeypatch):
     answer = {**AFMA_TNS, "discoverydate": "soon"}
     code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: answer)
-    assert code == 0 and "now in TNS: SN 2026afma" in r["tns_earlier"][0] and "our alert)" not in r["tns_earlier"][0]
+    assert code == 0 and r["tns_earlier"] == ["  lsst:171141216521945181 (alert 2026-11-04): now in TNS: SN 2026afma, SN Ia, "
+                                              "discovered soon"]
     assert state("ecdfs")["tns_watch"] == {}
 
 
+# AFMA's record on a later run, for an entry without first_det_mjd (written before 2026-11-21)
+AFMA_LATER_LINE = ("  lsst:171141216521945181 (alert 2026-11-04): now in TNS: SN 2026afma, SN Ia, "
+                   "discovered 2026-09-28 08:14 UTC: 37.28 d before our alert")
+
+
 def test_a_record_arriving_on_a_later_run_gets_no_notice_for_now(env, capsys, monkeypatch):
-    """Left out by decision (2026-11-07): the line still gives the discovery date and the lag behind the alert."""
+    """Left out by decision (2026-11-07): the line still gives the discovery's time and its lag behind the alert."""
     code, r = asked_again_on_a_later_run(env, monkeypatch, lambda ra, dec: AFMA_TNS)
-    assert code == 0 and "discovered 2026-09-28" in r["tns_earlier"][0]
+    assert code == 0 and r["tns_earlier"] == [AFMA_LATER_LINE]
     assert "NOTICE" not in capsys.readouterr().out
 
 
@@ -1931,8 +1938,60 @@ def test_on_a_later_run_only_a_record_is_news_everything_else_stays_watched(real
 def test_on_a_later_run_a_record_body_is_news(real_tns, env, monkeypatch):
     fake_tns.serve(monkeypatch, fake_tns.RECORD)
     code, r = asked_again_on_a_later_run(env, monkeypatch, REAL_TNS_ONCE)
-    assert code == 0 and "now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28" in r["tns_earlier"][0]
+    assert code == 0 and r["tns_earlier"] == [AFMA_LATER_LINE]
     assert state("ecdfs")["tns_watch"] == {}
+
+
+# The tns_earlier line (user, 2026-11-21): the discovery's time, then each lag from the whole
+# timestamp, to two decimals, with its own after/before. Served through the fake from the
+# recorded bodies: afma (record.json, discovered 2026-09-28 08:14:49.632, MJD 61311.34363) and
+# fgl (record_date_only.json, discovered 2026-03-10 00:00:00.000, MJD 61109, counted from that
+# day's start). Times are literal MJDs (.25 is 06:00 UTC, .5 12:00, .625 15:00, .875 21:00), none
+# giving a lag that ends in an exact half at the third decimal; now is within 30 d of each alert.
+AFMA_AT = {"key": AFMA["key"], "ra": AFMA["ra"], "dec": AFMA["dec"], "now": 61314.625}  # now 2026-10-01 15:00
+FGL_AT = {"key": "lsst:1706", "ra": 149.2181651, "dec": 3.4699191, "now": 61110.625}  # its TNS position; now 03-11 15:00
+
+
+@pytest.mark.parametrize("body,at,alerted,first,line", [
+    (fake_tns.RECORD, AFMA_AT, 61309.625, 61306.625,  # alert 09-26 15:00, first detection 09-23 15:00
+     "  lsst:171141216521945181 (alert 2026-09-26): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "1.72 d after our alert, 4.72 d after our first detection"),
+    (fake_tns.RECORD, AFMA_AT, 61313.625, 61312.625,  # alert 09-30 15:00, first detection 09-29 15:00
+     "  lsst:171141216521945181 (alert 2026-09-30): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "2.28 d before our alert, 1.28 d before our first detection"),
+    (fake_tns.RECORD, AFMA_AT, 61313.625, 61308.625,  # alert 09-30 15:00, first detection 09-25 15:00
+     "  lsst:171141216521945181 (alert 2026-09-30): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "2.28 d before our alert, 2.72 d after our first detection"),
+    (fake_tns.RECORD, AFMA_AT, 61311.25, 61308.625,  # alert 09-28 06:00, two hours before the discovery that day
+     "  lsst:171141216521945181 (alert 2026-09-28): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "0.09 d after our alert, 2.72 d after our first detection"),
+    (fake_tns.RECORD, AFMA_AT, 61309.875, 61306.625,  # (a) with the alert 6 h later: its lag 0.25 d shorter, not cut to the day
+     "  lsst:171141216521945181 (alert 2026-09-26): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "1.47 d after our alert, 4.72 d after our first detection"),
+    (fake_tns.RECORD_DATE_ONLY, FGL_AT, 61107.5, 61104.5,  # alert 03-08 12:00, first detection 03-05 12:00
+     "  lsst:1706 (alert 2026-03-08): now in TNS: SN 2026fgl, SN Ia, discovered 2026-03-10 (date only): "
+     "1.50 d after our alert, 4.50 d after our first detection"),
+    (fake_tns.RECORD, AFMA_AT, 61309.625, None,  # (a) for an entry without first_det_mjd
+     "  lsst:171141216521945181 (alert 2026-09-26): now in TNS: SN 2026afma, SN Ia, discovered 2026-09-28 08:14 UTC: "
+     "1.72 d after our alert"),
+], ids=["a_after_both", "b_before_both", "c_after_first_detection_before_alert", "d_later_on_the_alerts_own_day",
+        "e_alert_six_hours_later", "f_date_only", "g_no_first_detection"])
+def test_a_later_record_gives_its_time_and_a_lag_behind_each(real_tns, env, capsys, monkeypatch, body, at, alerted, first,
+                                                             line):
+    fake_tns.serve(monkeypatch, body)
+    for survey, (item, err) in env["newest"].items():  # a quiet sky on that date: each listing's newest is older than its window
+        env["newest"][survey] = ({**item, "lastmjd": at["now"] - 30}, err)
+    entry = {"alerted_mjd": alerted, **({"first_det_mjd": first} if first is not None else {})}
+    code, r = asked_again_on_a_later_run(env, monkeypatch, REAL_TNS_ONCE, **at, **entry)
+    assert code == 0 and r["tns_earlier"] == [line] and line in capsys.readouterr().out.splitlines()
+
+
+def test_a_re_brightening_alert_is_watched_without_its_first_detection(env, monkeypatch):
+    """Old object, no onset claimed: the later line gives the lag behind the alert only (user, 2026-11-21)."""
+    env["objects"] = [obj(REBRIGHT, oid="ZTF18old")]
+    monkeypatch.setattr(mon.tns, "tns_lookup", lambda ra, dec: {})
+    mon.scan("D", (150, 12, 1))
+    assert state()["tns_watch"] == {"ztf:ZTF18old": {"ra": HIGH_B[0], "dec": HIGH_B[1], "alerted_mjd": NOW}}
 
 
 # --- a NaN position matches nothing (2026-11-07) ------------------------------------------------
