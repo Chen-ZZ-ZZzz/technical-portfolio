@@ -81,26 +81,3 @@ Tests are written from these rules, not from the page’s code.
 50. Cone line on the report page. Labels: "Cone", "RA", "Dec", "Radius". Values: ra=cone.0, dec=cone.1, r=cone.2. It shows "Cone" "RA <ra>°" "Dec <dec>°" "Radius <r>°". The line shows these four texts, in this order; what separates them is free. Values as written in the report; whole number shows with ".0". Also, the minus is the plain keyboard hyphen. Assumed: Report writes cone values as decimal numbers (90.0, never 90).
     Given ?file=transient_ecdfs_20261111_160243.json, then "Cone" "RA 53.1°" "Dec -27.8°" "Radius 2.82°".
     Given ?file=transient_<f>oobar_20251004_000000.json, then "Cone" "RA 200.5°" "Dec 90.0°" "Radius 1.25°".
-51. Top level keys: None must be missed
-   - mode
-   - footprint
-   - cone
-   - run_utc
-   - run_mjd
-   - since_mjd
-   - settings
-   - state_before
-   - listings
-   - photometry
-   - fetch_errors
-   - objects
-   - rejected
-   - parked
-   - alerts, or recorded by init
-   - tns_earlier
-   - point_source_watch
-   - warnings
-   - exit_code
-
-53. When parked.new has more than 10 entries, it is collapsed under a line with its count ("192 newly parked"); a click expands all entries, another collapses them.
-54. Listing status per survey. "LSST quiet since 2026-11-07"

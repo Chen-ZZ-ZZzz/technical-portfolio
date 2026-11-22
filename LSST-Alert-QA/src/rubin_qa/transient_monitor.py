@@ -88,7 +88,6 @@ from .photometry import (  # noqa: F401  (NETWORK_ERRORS re-exported for tools/)
     discover_alerce,
     fetch_alerce_lsst,
     fetch_alerce_ztf,
-    njy_to_mag,
     sep_deg,
     truncate,
 )
@@ -115,9 +114,16 @@ MIN_SPAN_DAYS = 0.5
 MIN_ABS_GAL_LAT = 20.0  # |b| below this: dust, crowding, stellar variables
 RAPID_RISE_MAG = 1.0  # kilonova-like: >= 1 mag brighter within RAPID_RISE_DAYS
 RAPID_RISE_DAYS = 3.0
-RISING_SIGMA = 3.0  # rising: latest minus earliest post-onset flux, in combined sigma
-RISING_MIN_MAG = 0.3  # ... and at least this much brighter
+# Both rise paths: a rise must stand this many combined sigma above its base, and a base
+# below this many of its own sigma is no measured level, so a magnitude against it is a
+# lower limit (the floor: _floor_mag). Renamed from RISING_SIGMA on 2026-11-21.
+RISE_SIGMA = 3.0
+RISING_MIN_MAG = 0.3  # rising: at least this much brighter
 RISING_MIN_SPAN_DAYS = 0.5  # ... measured on at least two nights
+# rapid_rise: a base night whose points disagree more than this chance allows (chi2 about
+# their weighted mean) is no level to measure from. With right errors 1 steady base in 1000
+# would be vetoed; the real rate is far higher, from outliers (_steady; README, "Replay Validation").
+STEADY_BASE_P = 0.001
 ASSOC_RADIUS_ARCSEC = 1.5  # survey objects this close are the same place
 STATE_RETENTION_DAYS = 60.0
 MAX_RETRIES = 3
@@ -174,9 +180,15 @@ class NewVerdict:
 @dataclass
 class Rise:
     band: str
-    mag: float  # brightening, mag (inf when it rose from nothing)
-    sigma: float
+    mag: float  # brightening, mag, against the floor max(base, RISE_SIGMA * base_err): always finite
+    sigma: float  # level minus base, in combined sigma (rapid_rise: the smallest over its rise nights)
     days: float
+    limit: bool = False  # mag is a lower limit: the base is below RISE_SIGMA of its own error
+    level: float = 0.0  # nJy: the risen flux (rising: its latest point; rapid_rise: the rise night that set mag)
+    base: float = 0.0  # nJy: what the rise is measured from; below -RISE_SIGMA * base_err, below the template
+    base_err: float = 0.0
+    base_points: int = 1  # rapid_rise: the base night's points (rising measures from one point)
+    base_chi2: float = 0.0  # rapid_rise: the base night's chi2 about its mean (_steady)
 
 
 @dataclass
@@ -187,7 +199,7 @@ class Candidate:
     conditions: list[str]
     onset: NewVerdict
     rise: Rise | None
-    rapid: float | None
+    rapid: Rise | None
     match: sky_catalog.Crossmatch
     context: list[str] = field(default_factory=list)
 
@@ -197,6 +209,7 @@ class Evaluation:
     candidate: Candidate | None = None
     reason: str | None = None  # why nothing is reported (None when candidate is set)
     parked: NewVerdict | None = None
+    vetoed: Rise | None = None  # a rapid rise the steady test stopped (rapid_rise), whatever else happened
 
 
 # ------------------------------------------------------------------ helpers
@@ -315,12 +328,97 @@ def judge_new(
     return v
 
 
+def _measured_by_visit(points: list[PhotPoint], band: str) -> tuple[list[PhotPoint], set[float]]:
+    """
+    The band's measured points, oldest first: finite flux and a finite positive error, so
+    forced photometry and negative flux count and upper limits never do. One per visit (the
+    same MJD to 1e-6 d): the forced flux where a visit has both, so no exposure counts twice
+    in a weighted mean. Also the visits (MJD rounded to 1e-6) that hold a detection.
+    """
+    by_visit, det_at = {}, set()
+    for p in points:
+        if p.band != band or not (_finite(p.flux) and _finite(p.flux_err) and p.flux_err > 0):
+            continue
+        visit = round(p.mjd, 6)
+        if p.detected:
+            det_at.add(visit)
+        if visit not in by_visit or not p.detected:
+            by_visit[visit] = p
+    return [by_visit[v] for v in sorted(by_visit)], det_at
+
+
+def _nights(points: list[PhotPoint]) -> list[list[PhotPoint]]:
+    """Points, oldest first, split where consecutive ones are MIN_SPAN_DAYS or more apart: spans_nights's nights."""
+    nights: list[list[PhotPoint]] = []
+    for p in points:
+        if nights and not spans_nights(nights[-1][-1].mjd, p.mjd):
+            nights[-1].append(p)
+        else:
+            nights.append([p])
+    return nights
+
+
+def _weighted_mean(points: list[PhotPoint]) -> tuple[float, float]:
+    """Inverse-variance weighted mean flux and its error."""
+    w = [1 / p.flux_err ** 2 for p in points]
+    return sum(wi * p.flux for wi, p in zip(w, points)) / sum(w), 1 / math.sqrt(sum(w))
+
+
+def _floor_mag(level: float, base: float, base_err: float) -> tuple[float, bool]:
+    """
+    The brightening in mag from base to level (> 0), measured against the floor
+    max(base, RISE_SIGMA * base_err), and whether it is a lower limit (user, 2026-11-21).
+    A base measured at RISE_SIGMA or better is its own floor. One below it, negative ones
+    included, is no level: the magnitude is then against its RISE_SIGMA upper value, a lower
+    limit, never the infinite "rose from nothing" that rising gave before 2026-11-21.
+    """
+    floor = max(base, RISE_SIGMA * base_err)
+    return 2.5 * math.log10(level / floor), base < RISE_SIGMA * base_err
+
+
+def _chi2_sf(x: float, dof: int) -> float:
+    """P(chi2 with dof degrees of freedom >= x), closed forms for whole dof (scipy is not a dependency)."""
+    if dof <= 0:
+        return 1.0
+    h = x / 2
+    if dof % 2 == 0:
+        term = total = 1.0
+        for i in range(1, dof // 2):
+            term *= h / i
+            total += term
+        return math.exp(-h) * total
+    total = math.erfc(math.sqrt(h))
+    if dof > 1:
+        term = math.sqrt(2 * x / math.pi) * math.exp(-h)
+        total += term
+        for r in range(2, (dof - 1) // 2 + 1):
+            term *= x / (2 * r - 1)
+            total += term
+    return total
+
+
+def _steady(points: list[PhotPoint]) -> tuple[bool, float]:
+    """
+    (steady, chi2): do the points agree about their weighted mean, at STEADY_BASE_P? A single
+    point cannot be tested and passes (user, 2026-11-21): the floor and RISE_SIGMA still apply.
+    """
+    mean, _ = _weighted_mean(points)
+    chi2 = sum(((p.flux - mean) / p.flux_err) ** 2 for p in points)
+    return _chi2_sf(chi2, len(points) - 1) >= STEADY_BASE_P, chi2
+
+
+def _below_template(r: Rise) -> bool:
+    """The base is significantly negative: the source was fainter than in the template, a variable."""
+    return r.base <= -RISE_SIGMA * r.base_err
+
+
 def rising(points: list[PhotPoint], first_det_mjd: float) -> Rise | None:
     """
     Same band, earliest vs latest measured flux from the first detection on,
-    forced photometry included: >= RISING_SIGMA and >= RISING_MIN_MAG over at
-    least RISING_MIN_SPAN_DAYS. Forced photometry sits at a fixed position, so
-    an asteroid leaves only zero flux behind and can never look like rising.
+    forced photometry included: >= RISE_SIGMA and >= RISING_MIN_MAG over at
+    least RISING_MIN_SPAN_DAYS, the magnitude against the earliest point's floor
+    (_floor_mag). Forced photometry sits at a fixed position, so an asteroid
+    leaves only zero flux behind and can never look like rising.
     """
     measured = [p for p in points if _finite(p.flux) and _finite(p.flux_err) and p.flux_err > 0
                 and p.mjd >= first_det_mjd - 1e-6]
@@ -331,45 +429,76 @@ def rising(points: list[PhotPoint], first_det_mjd: float) -> Rise | None:
         if late.mjd - early.mjd < RISING_MIN_SPAN_DAYS or late.flux <= 0:
             continue
         sigma = (late.flux - early.flux) / math.hypot(early.flux_err, late.flux_err)
-        mag = 2.5 * math.log10(late.flux / early.flux) if early.flux > 0 else math.inf
-        if sigma >= RISING_SIGMA and mag >= RISING_MIN_MAG and (best is None or sigma > best.sigma):
-            best = Rise(band, mag, sigma, late.mjd - early.mjd)
+        mag, limit = _floor_mag(late.flux, early.flux, early.flux_err)
+        if sigma >= RISE_SIGMA and mag >= RISING_MIN_MAG and (best is None or sigma > best.sigma):
+            best = Rise(band, mag, sigma, late.mjd - early.mjd, limit, late.flux, early.flux, early.flux_err)
     return best
 
 
 def rapid_rise(points: list[PhotPoint], now: float, window: float = RAPID_RISE_DAYS,
-               persistent: bool = False) -> float | None:
+               persistent: bool = False) -> tuple[Rise | None, Rise | None]:
     """
-    Largest same-band brightening (mag) ending on a band's latest detection,
-    against detections up to `window` days before it; that latest detection
-    must fall within `window` days of now. Detections only. None if no pair.
+    The largest same-band rise ending on a band's latest detection, which must fall
+    within `window` days of now. Returns (rise, vetoed): the best band whose base passed
+    the steady test, and the best band the steady test stopped; either may be None.
+    evaluate applies RAPID_RISE_MAG, to both.
 
-    persistent (old objects, user 2026-10-03): the elevated level - at least
-    RAPID_RISE_MAG above the rise's baseline - must be seen on two nights. An
-    asteroid passes a position once and a bad detection does not repeat, while a
-    real re-brightening is still bright the next night. Old objects need it most:
-    they sit at one position for years while asteroids keep passing (the
-    2026-10-03 asteroid probe found asteroid detections merged into 3 genuine
-    loci). Cost: a one-night delay, as for the two-night rule on new objects.
+    Measured points (_measured_by_visit: forced photometry and negative flux included, one
+    per visit) are split into nights (_nights). The rise night is the latest night holding
+    a detection; persistent, the two latest (below), each ending within `window` of the
+    latest detection. The base is the earliest night in the `window` days before the
+    (first) rise night, its weighted mean: fixed by time, never the faintest point, whose
+    gap to the brightest grows with the number of points (it was the faintest until
+    2026-11-21: README, "Replay Validation"). The earliest night, not every point in the
+    window: a riser seen nightly would carry its own rise into the base. Each rise night's
+    weighted mean must be above zero and RISE_SIGMA above the base; the magnitude is against
+    the floor (_floor_mag), the smallest over the rise nights.
+
+    Steady base (user, 2026-11-21): the base night's points must agree about their mean
+    (_steady). An outlier there, such as a forced point far off its neighbours or two visits
+    37 s apart that disagree, makes a rise from a level that was never there. A one-point
+    base cannot be tested and passes. A rise the test stopped is returned as vetoed, so the
+    run lists it (rapid_rise_vetoed) instead of dropping it silently.
+
+    persistent (old objects, user 2026-10-03): the elevated level must be seen on two
+    nights, each at least the rise. An asteroid passes a position once and a bad detection
+    does not repeat, while a real re-brightening is still bright the next night. Old objects
+    need it most: they sit at one position for years while asteroids keep passing (the
+    2026-10-03 asteroid probe found asteroid detections merged into 3 genuine loci). Cost:
+    a one-night delay, as for the two-night rule on new objects.
     """
-    best = None
-    dets = [p for p in detections(points) if p.flux > 0]
-    for band in {p.band for p in dets}:
-        pts = [p for p in dets if p.band == band]
-        latest = pts[-1]
-        if latest.mjd < now - window:
+    best: Rise | None = None
+    vetoed: Rise | None = None
+    for band in sorted({p.band for p in points}):
+        pts, det_at = _measured_by_visit(points, band)
+        if not det_at or max(det_at) < now - window:
             continue
-        prior = [p for p in pts if latest.mjd - window <= p.mjd < latest.mjd]
-        if not prior:
+        latest = max(det_at)
+        held = [n for n in _nights(pts) if any(round(p.mjd, 6) in det_at for p in n) and n[-1].mjd > latest - window]
+        rise_nights = held[-2:] if persistent else held[-1:]
+        if len(rise_nights) < (2 if persistent else 1):
             continue
-        base = max(prior, key=lambda p: njy_to_mag(p.flux))  # the faintest: what the rise is measured from
-        if persistent:
-            up = [p for p in pts if p.mjd > base.mjd and njy_to_mag(p.flux) <= njy_to_mag(base.flux) - RAPID_RISE_MAG]
-            if not up or not spans_nights(up[0].mjd, up[-1].mjd):
-                continue
-        rise = njy_to_mag(base.flux) - njy_to_mag(latest.flux)
-        best = rise if best is None else max(best, rise)
-    return best
+        start = rise_nights[0][0].mjd
+        before = [p for p in pts if start - window <= p.mjd < start]
+        if not before:
+            continue  # no base inside the rate window: a rate cannot be judged
+        base_night = _nights(before)[0]
+        base, base_err = _weighted_mean(base_night)
+        levels = [_weighted_mean(n) for n in rise_nights]
+        if min(lv for lv, _ in levels) <= 0:
+            continue
+        sigmas = [(lv - base) / math.hypot(err, base_err) for lv, err in levels]
+        if min(sigmas) < RISE_SIGMA:
+            continue
+        (mag, limit), level = min((_floor_mag(lv, base, base_err), lv) for lv, _ in levels)
+        steady, chi2 = _steady(base_night)
+        r = Rise(band, mag, min(sigmas), rise_nights[-1][-1].mjd - base_night[0].mjd, limit, level, base, base_err,
+                 len(base_night), chi2)
+        if steady and (best is None or r.mag > best.mag):
+            best = r
+        elif not steady and (vetoed is None or r.mag > vetoed.mag):
+            vetoed = r
+    return best, vetoed
 
 
 # ------------------------------------------------------------------ one object
@@ -451,16 +580,18 @@ def evaluate(
     v = judge_new(obj.survey, obj.points, now, now - since_mjd, bracket_days, min_detections, old_ids, extra)
     recent = v.first_det_mjd is not None and v.first_det_mjd >= since_mjd and not old_ids
     rise = rising(obj.points, v.first_det_mjd) if recent else None
-    rapid = rapid_rise(obj.points, now, persistent=not recent)  # an old object's rise must persist
-    rapid_hit = rapid is not None and rapid >= RAPID_RISE_MAG
+    rapid, vetoed = rapid_rise(obj.points, now, persistent=not recent)  # an old object's rise must persist
+    rapid_hit = rapid is not None and rapid.mag >= RAPID_RISE_MAG
+    # listed by the run whatever else happens here: the steady test never stops a rise silently
+    vetoed = vetoed if vetoed is not None and vetoed.mag >= RAPID_RISE_MAG and not rapid_hit else None
     moving = rise is not None or rapid_hit
 
     if v.status == NOT_NEW and not moving:
-        return Evaluation(reason=NOT_NEW_REASON.get(v.code, v.code))
+        return Evaluation(reason=NOT_NEW_REASON.get(v.code, v.code), vetoed=vetoed)
 
     parked = v if v.status == UNBRACKETED else None
     if v.status == UNBRACKETED and not moving:
-        return Evaluation(reason="unbracketed", parked=parked)
+        return Evaluation(reason="unbracketed", parked=parked, vetoed=vetoed)
 
     match = classify(obj.ra, obj.dec)
     category = SKY_CATEGORY[sky_context(match)]
@@ -476,7 +607,7 @@ def evaluate(
             context.append(f"onset not bracketed ({parked.code}), parked")
     return Evaluation(
         candidate=Candidate(obj, gal_b, category, conditions, v, rise, rapid if rapid_hit else None, match, context),
-        parked=parked,
+        parked=parked, vetoed=vetoed,
     )
 
 
@@ -708,6 +839,36 @@ def update_parked(prev: dict, parked_now: dict, seen: set[str], since_mjd: float
     return parked, resolved, expired
 
 
+def _rise_phrase(r: Rise) -> str:
+    """
+    A rise in the journal's words (user, 2026-11-21): its magnitude; ">= ... (lower limit)"
+    when its base is below RISE_SIGMA of its error; and from a base below its template no
+    magnitude at all, only the flux it gained, since ">= +7 mag" from a negative base would
+    read as a brightening the data don't show. The record keeps mag and mag_limit for all three.
+    """
+    if _below_template(r):
+        return f"{r.band} from below its template: +{r.level - r.base:.0f} nJy"
+    if r.limit:
+        return f"{r.band} >= +{r.mag:.2f} mag (lower limit)"
+    return f"{r.band} +{r.mag:.2f} mag"
+
+
+def _base_phrase(r: Rise, points: bool = False) -> str:
+    text = f"base {r.base:.0f} +/- {r.base_err:.0f} nJy"
+    if points:
+        text += f" from {r.base_points} point{'' if r.base_points == 1 else 's'}"
+    return text + (f", below {RISE_SIGMA:g} sigma" if r.limit and not _below_template(r) else "")
+
+
+def _rapid_phrase(r: Rise) -> str:
+    return f"{_rise_phrase(r)} within {RAPID_RISE_DAYS:g} d, {r.sigma:.1f} sigma ({_base_phrase(r, points=True)})"
+
+
+def _vetoed_line(key: str, r: Rise) -> str:
+    return (f"  {key}  {_rise_phrase(r)} within {RAPID_RISE_DAYS:g} d, {r.sigma:.1f} sigma: base not steady "
+            f"({_base_phrase(r, points=True)}, chi2 {r.base_chi2:.1f} on {r.base_points - 1} dof)")
+
+
 def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = None, notice: str | None = None) -> None:
     o, v = c.obj, c.onset
     print(f"{o.key}  {c.category} · {', '.join(c.conditions)}  new: {', '.join(new_conditions)}")
@@ -720,10 +881,9 @@ def _print_candidate(c: Candidate, new_conditions: list[str], tns: str | None = 
         onset += f", not bracketed ({v.code})"
     print(f"  onset: {onset}")
     if c.rise:
-        mag = "from nothing" if math.isinf(c.rise.mag) else f"+{c.rise.mag:.2f} mag"
-        print(f"  rising: {c.rise.band} {mag}, {c.rise.sigma:.1f} sigma over {c.rise.days:.1f} d")
+        print(f"  rising: {_rise_phrase(c.rise)}, {c.rise.sigma:.1f} sigma over {c.rise.days:.1f} d ({_base_phrase(c.rise)})")
     if c.rapid is not None:
-        print(f"  rapid rise: {c.rapid:.2f} mag within {RAPID_RISE_DAYS:g} d")
+        print(f"  rapid rise: {_rapid_phrase(c.rapid)}")
     print(f"  DR10: {c.match.verdict}" + (f" - {'; '.join(c.match.evidence)}" if c.match.evidence else ""))
     for line in c.context:
         print(f"  context: {line}")
@@ -742,6 +902,16 @@ def _json_float(x) -> float | None:
     return float(x) if _finite(x) else None
 
 
+def rise_record(r: Rise | None, rapid: bool = False) -> dict | None:
+    """A Rise as the record writes it: rise and rapid_rise in alert_record's docstring, which lists the keys."""
+    if r is None:
+        return None
+    return {"band": r.band, "mag": _json_float(r.mag), "mag_limit": r.limit, "level": _json_float(r.level),
+            "base": _json_float(r.base), "base_err": _json_float(r.base_err),
+            **({"base_points": r.base_points} if rapid else {}),
+            "sigma": _json_float(r.sigma), "days": _json_float(r.days)}
+
+
 def alert_record(c: Candidate, new_conditions: list[str], anchor: str | None, day: str) -> dict:
     """
     One alert or note as a JSON record, built here for the live report and the replay
@@ -754,11 +924,20 @@ def alert_record(c: Candidate, new_conditions: list[str], anchor: str | None, da
       crossmatch   the DR10 verdict; evidence: its lines
       note_on      a note only: the key of the alert it is a note on
     then what the printed report shows besides: gal_b; onset_status, first_det_mjd,
-    last_quiet_mjd (the bracketing quiet point) and n_det; rise {band, mag, sigma, days},
-    whose mag is null when the object rose from nothing (the only non-finite case there);
-    rapid_rise_mag; crossmatch_flags (the AGN flags the category depends on); context;
-    brokers; classifications. Any non-finite float is null. The live report adds tns to
-    alerts (scan; its keys: _add_tns's docstring); notes and replay records have none.
+    last_quiet_mjd (the bracketing quiet point) and n_det; rise {band, mag, mag_limit,
+    level, base, base_err, sigma, days} and rapid_rise {band, mag, mag_limit, level, base,
+    base_err, base_points, sigma, days}, each null when that path did not fire: mag is
+    against the floor (_floor_mag), always finite, a lower limit when mag_limit; level and
+    base are difference fluxes in nJy, and a base at or below -RISE_SIGMA * base_err is below
+    the template (the journal then gives no magnitude); crossmatch_flags (the AGN flags the
+    category depends on); context; brokers; classifications. Any non-finite float is null.
+    The live report adds tns to alerts (scan; its keys: _add_tns's docstring); notes and
+    replay records have none.
+
+    The format boundary (2026-11-21): a record written before then has rise {band, mag,
+    sigma, days}, whose mag is null when the object rose from nothing, and rapid_rise_mag
+    (the rise in mag, or null) where rapid_rise stands now. A reader tells the two apart by
+    these keys (mag_limit, rapid_rise), never by the date.
     """
     o, v, r = c.obj, c.onset, c.rise
     return {
@@ -773,9 +952,8 @@ def alert_record(c: Candidate, new_conditions: list[str], anchor: str | None, da
         "first_det_mjd": _json_float(v.first_det_mjd) if v else None,
         "last_quiet_mjd": _json_float(v.last_quiet_mjd) if v else None,
         "n_det": v.n_det if v else None,
-        "rise": None if r is None else {"band": r.band, "mag": _json_float(r.mag), "sigma": _json_float(r.sigma),
-                                        "days": _json_float(r.days)},
-        "rapid_rise_mag": _json_float(c.rapid),
+        "rise": rise_record(r),
+        "rapid_rise": rise_record(c.rapid, rapid=True),
         "crossmatch_flags": list(c.match.flags),
         "context": list(c.context),
         "brokers": dict(o.broker_refs),
@@ -1156,6 +1334,8 @@ class DayResult:
     expired: list[str]
     # the same event seen by another survey: (candidate, new paths, key of the alert it is a note on)
     notes: list[tuple[Candidate, list[str], str]] = field(default_factory=list)
+    # rapid rises the steady test stopped (rapid_rise), object by object: listed, never silent
+    vetoed: list[tuple[SurveyObject, Rise]] = field(default_factory=list)
 
 
 def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, classify,
@@ -1172,8 +1352,11 @@ def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, c
     candidates: list[Candidate] = []
     parked_now: dict = {}
     rejected: Counter = Counter()
+    vetoed: list[tuple[SurveyObject, Rise]] = []
     for o in objs:
         ev = evaluate(o, now, since, links[o.key], bracket_days, min_detections, classify)
+        if ev.vetoed is not None:
+            vetoed.append((o, ev.vetoed))
         if ev.parked is not None:
             parked_now[o.key] = {"survey": o.survey, "first_det_mjd": ev.parked.first_det_mjd,
                                  "code": ev.parked.code}
@@ -1204,7 +1387,7 @@ def judge_day(objs: list[SurveyObject], now: float, since: float, state: dict, c
                        "ra": c.obj.ra, "dec": c.obj.dec, **({"note_on": anchor} if anchor else {})}
     newly_parked = sorted(k for k in parked_now if k not in prev_parked)
     state["parked"] = parked
-    return DayResult(candidates, alerts, rejected, parked, newly_parked, resolved, expired, notes)
+    return DayResult(candidates, alerts, rejected, parked, newly_parked, resolved, expired, notes, vetoed)
 
 
 def _alerted_elsewhere(obj: SurveyObject, reported: dict) -> str | None:
@@ -1256,8 +1439,10 @@ def scan(
     (ListingCheck's fields; a report without answered_mjd predates the field, and its
     quiet detail carries the date itself), photometry
     {fetched, not_fetched, failed}, fetch_errors ["<key>: <error>"], objects {total,
-    by_survey, kept}, rejected {reason: n}, parked {count, new [{key, first_det_mjd,
-    code}], resolved, expired}; then, live, alerts (alert_record for each alert, with tns,
+    by_survey, kept}, rejected {reason: n}, rapid_rise_vetoed [{key, the rapid rise the steady
+    test stopped under alert_record's rapid_rise keys, base_chi2, base_dof}] (none before
+    2026-11-21),
+    parked {count, new [{key, first_det_mjd, code}], resolved, expired}; then, live, alerts (alert_record for each alert, with tns,
     then for each note), or, init, no alerts but recorded {by_category, parked} (the INIT
     line) and absorbed (the same records, none of them reported); then tns_earlier (the
     lines of _retry_tns: TNS for earlier alerts, not an earlier discovery, which is an
@@ -1330,6 +1515,10 @@ def scan(
           f"kept: {len(day.candidates)}")
     for reason, n in sorted(day.rejected.items()):
         print(f"  rejected {reason}: {n}")
+    if day.vetoed:
+        print(f"Rapid rise stopped by an unsteady base: {len(day.vetoed)}")
+        for o, r in day.vetoed:
+            print(_vetoed_line(o.key, r))
     print(f"Parked, onset not bracketed: {len(day.parked)}  "
           f"(new {len(day.newly_parked)}, resolved {len(day.resolved)}, expired unbracketed {len(day.expired)})")
     for k in day.newly_parked:
@@ -1402,6 +1591,8 @@ def scan(
         "fetch_errors": [f"{o.key}: {e}" for o in objs for e in o.fetch_errors],
         "objects": {"total": len(objs), "by_survey": dict(sorted(by_survey.items())), "kept": len(day.candidates)},
         "rejected": dict(sorted(day.rejected.items())),
+        "rapid_rise_vetoed": [{"key": o.key, **rise_record(r, rapid=True), "base_chi2": _json_float(r.base_chi2),
+                               "base_dof": r.base_points - 1} for o, r in day.vetoed],
         "parked": {"count": len(day.parked),
                    "new": [{"key": k, "first_det_mjd": _json_float(day.parked[k]["first_det_mjd"]),
                             "code": day.parked[k]["code"]} for k in day.newly_parked],

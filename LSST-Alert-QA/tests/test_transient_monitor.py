@@ -6,6 +6,7 @@ import json
 import math
 import os
 import time
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -13,7 +14,7 @@ from requests.exceptions import ConnectionError
 
 from rubin_qa import transient_monitor as mon
 from rubin_qa.config import PROJECT_ROOT
-from rubin_qa.photometry import PhotPoint, SurveyObject, mag_to_njy
+from rubin_qa.photometry import PhotPoint, SurveyObject, lsst_points_from_alerce, mag_to_njy, truncate
 from rubin_qa.sky_catalog import Crossmatch
 from tests import fake_tns
 from tests.test_sky_catalog import SNR_COLUMNS, psf_at, snr_answer
@@ -35,6 +36,29 @@ def lim(mjd, maglim=20.5, band="r", oid="ZTF26aaa"):
 
 def forced(mjd, flux, err, band="r", oid="1706"):
     return PhotPoint("lsst", oid, mjd, band, flux, err, False, "test")
+
+
+def lsst_det(mjd, flux, err, band="r", oid="1706"):
+    return PhotPoint("lsst", oid, mjd, band, flux, err, True, "test")
+
+
+ALERCE_LC = Path(__file__).parent / "data" / "alerce_lc"
+
+
+def recorded_lsst(oid):
+    """
+    An LSST light curve as ALeRCE's client answered query_lightcurve(oid, survey="lsst",
+    format="json"), written with json.dumps and nothing changed, read through the monitor's
+    own conversion. lsst_313677517099106352: drawn at random from the ecdfs cone, recorded
+    2026-11-21 20:32 UTC; lsst_170235219334922248 (SN 2026ivl) and lsst_170261592629837872
+    (AT 2026jmz), replay D objects: recorded 2026-11-21 20:56 UTC. ALeRCE has added forced
+    points since replay D cached its light curves in the spring, some at visits with a
+    detection, where the rule takes the forced flux: sliced to the same day, these hold more
+    points than the replay judged. So the jmz test pins 1.49 mag where README "Replay
+    Validation" gives the replay cache's 1.64, and ivl's stopped rise is 1.45, not 1.41.
+    Tests slice them (truncate) and add their own points; the files stay as recorded.
+    """
+    return lsst_points_from_alerce(oid, json.loads((ALERCE_LC / f"lsst_{oid}.json").read_text()))[0]
 
 
 def obj(points, survey="ztf", oid="ZTF26aaa", ra=HIGH_B[0], dec=HIGH_B[1], **kw):
@@ -187,9 +211,10 @@ def test_not_rising(late_flux, late_err, days):
     assert mon.rising(pts, FIRST) is None
 
 
-def test_rising_from_nothing():
+def test_a_rise_from_a_base_consistent_with_zero_is_a_lower_limit():
+    """The floor (user, 2026-11-21): against 3 sigma of a base below it, never the infinite "from nothing"."""
     r = mon.rising([forced(FIRST, -20.0, 50.0), forced(NOW - 1, 900.0, 60.0)], FIRST)
-    assert math.isinf(r.mag) and r.sigma > 3
+    assert (r.mag, r.limit, r.base, r.level) == (pytest.approx(1.9453781), True, -20.0, 900.0) and r.sigma > 3
 
 
 def test_rising_ignores_points_before_onset_and_other_bands():
@@ -198,7 +223,9 @@ def test_rising_ignores_points_before_onset_and_other_bands():
 
 
 def test_rapid_rise_same_band_within_window():
-    assert mon.rapid_rise([det(NOW - 2.5, 19.5), det(NOW - 1.0, 18.9), det(NOW - 0.2, 18.3)], NOW) == pytest.approx(1.2)
+    """Measured from the earliest night in the window (19.5), never from every point in it."""
+    rise, vetoed = mon.rapid_rise([det(NOW - 2.5, 19.5), det(NOW - 1.0, 18.9), det(NOW - 0.2, 18.3)], NOW)
+    assert (rise.mag, vetoed) == (pytest.approx(1.2), None)
 
 
 @pytest.mark.parametrize("points", [
@@ -208,13 +235,152 @@ def test_rapid_rise_same_band_within_window():
     [],
 ])
 def test_no_rapid_rise(points):
-    assert mon.rapid_rise(points, NOW) is None
+    assert mon.rapid_rise(points, NOW) == (None, None)
 
 
-def test_rapid_rise_ignores_upper_limits_and_negative_flux():
+def test_rapid_rise_never_uses_upper_limits_and_measures_from_a_negative_base():
+    """
+    Upper limits have no flux and never count. A negative detection is a measurement (since
+    2026-11-21; before, detections at or below zero were dropped): here it is the earliest
+    night in the window, so the rise is a lower limit against 3 sigma of it.
+    """
     pts = [lim(NOW - 2.0, 21.0), PhotPoint("ztf", "z", NOW - 1.5, "r", -500.0, 50.0, True, "t"),
            det(NOW - 1.0, 19.0), det(NOW - 0.5, 18.8)]
-    assert mon.rapid_rise(pts, NOW) == pytest.approx(0.2)
+    rise, vetoed = mon.rapid_rise(pts, NOW)
+    assert (rise.mag, rise.limit, rise.base, rise.base_points, vetoed) == (pytest.approx(7.1597719), True, -500.0, 1, None)
+
+
+# --- the floor, the steady base (user, 2026-11-21) -------------------------------------------
+
+
+@pytest.mark.parametrize("level,mag,fires", [(2515.0, 1.0013450, True), (2509.0, 0.9987517, False)], ids=["above", "below"])
+def test_rapid_rise_at_the_magnitude_threshold_under_the_floor(level, mag, fires):
+    """A base measured at 20 sigma is its own floor: RAPID_RISE_MAG applies to the plain magnitude."""
+    rise, _ = mon.rapid_rise([forced(NOW - 2.0, 1000.0, 50.0), lsst_det(NOW - 0.5, level, 50.0)], NOW)
+    assert (rise.mag, rise.limit, rise.mag >= mon.RAPID_RISE_MAG) == (pytest.approx(mag), False, fires)
+
+
+@pytest.mark.parametrize("level,mag,rises", [(1320.0, 0.3014348, True), (1316.0, 0.2981397, False)], ids=["above", "below"])
+def test_rising_at_the_magnitude_threshold_under_the_floor(level, mag, rises):
+    assert mon._floor_mag(level, 1000.0, 50.0) == (pytest.approx(mag), False)
+    assert (mon.rising([forced(FIRST, 1000.0, 50.0), forced(NOW - 1, level, 50.0)], FIRST) is not None) == rises
+
+
+@pytest.mark.parametrize("base,mag,limit,fires", [(290.0, 1.0092308, True, True), (310.0, 0.9736297, False, False)],
+                         ids=["below", "above"])
+def test_the_floor_switches_at_a_base_of_3_sigma(base, mag, limit, fires):
+    """Below RISE_SIGMA the base is no level: the magnitude is against its 3 sigma value, a lower limit."""
+    rise, _ = mon.rapid_rise([forced(NOW - 2.0, base, 100.0), lsst_det(NOW - 0.5, 760.0, 50.0)], NOW)
+    assert (rise.mag, rise.limit, rise.mag >= mon.RAPID_RISE_MAG) == (pytest.approx(mag), limit, fires)
+
+
+@pytest.mark.parametrize("base,mag,limit", [(290.0, 2.0597719, True), (310.0, 2.0241708, False)], ids=["below", "above"])
+def test_a_rising_floor_marks_its_limit(base, mag, limit):
+    r = mon.rising([forced(FIRST, base, 100.0), forced(NOW - 1, 2000.0, 50.0)], FIRST)
+    assert (r.mag, r.limit) == (pytest.approx(mag), limit)
+
+
+@pytest.mark.parametrize("pair,steady,chi2", [((770.0, 1230.0), True, 10.58), ((765.0, 1235.0), False, 11.045)],
+                         ids=["steady", "unsteady"])
+def test_the_steady_test_either_side_of_its_threshold(pair, steady, chi2):
+    """chi2 10.580 on 1 dof (p 0.00114) passes; 11.045 (p 0.00089) is vetoed, and returned as such."""
+    pts = [forced(NOW - 2.00, pair[0], 100.0), forced(NOW - 1.99, pair[1], 100.0), lsst_det(NOW - 0.5, 3000.0, 50.0)]
+    rise, vetoed = mon.rapid_rise(pts, NOW)
+    r = rise if steady else vetoed
+    assert (rise is None, vetoed is None) == (not steady, steady)
+    assert (r.mag, r.base_chi2, r.base_points) == (pytest.approx(1.1928031), pytest.approx(chi2), 2)
+
+
+def test_a_one_point_base_passes_the_steady_test():
+    """It cannot be tested (user, 2026-11-21); the floor and RISE_SIGMA still apply."""
+    rise, vetoed = mon.rapid_rise([forced(NOW - 2.0, 1000.0, 50.0), lsst_det(NOW - 0.5, 3000.0, 50.0)], NOW)
+    assert (rise.mag, rise.base_points, vetoed) == (pytest.approx(1.1928031), 1, None)
+
+
+@pytest.mark.parametrize("level,mag,sigma,fires", [(760.0, 1.0092308, 2.9516097, False), (790.0, 1.0512646, 3.0857738, True)],
+                         ids=["z_below_3", "z_above_3"])
+def test_rapid_rise_needs_rise_sigma_however_large_the_magnitude(level, mag, sigma, fires):
+    """Over 100 +/- 100 nJy (floor 300) both levels clear RAPID_RISE_MAG; at 2.95 sigma that is no rise, at 3.09 it is."""
+    assert mon._floor_mag(level, 100.0, 100.0) == (pytest.approx(mag), True)
+    rise, vetoed = mon.rapid_rise([forced(NOW - 2.0, 100.0, 100.0), lsst_det(NOW - 0.5, level, 200.0)], NOW)
+    assert (rise is not None, vetoed) == (fires, None)
+    if fires:
+        assert (rise.mag, rise.sigma) == (pytest.approx(mag), pytest.approx(sigma))
+
+
+@pytest.mark.parametrize("days_before,fires", [(2.99, True), (3.01, False)], ids=["inside", "outside"])
+def test_the_base_night_lies_within_rapid_rise_days_of_the_rise_night(days_before, fires):
+    """A base night 2.99 d before the rise night is in the rate window; at 3.01 d there is no base: no rate."""
+    rise, vetoed = mon.rapid_rise([forced(NOW - 0.5 - days_before, 1000.0, 50.0), lsst_det(NOW - 0.5, 3000.0, 50.0)], NOW)
+    assert (rise.mag if rise else None, vetoed) == (pytest.approx(1.1928031) if fires else None, None)
+
+
+@pytest.mark.parametrize("dof,x", [(1, 10.828), (2, 13.816), (3, 16.266), (4, 18.467)])
+def test_the_chi2_survival_at_the_textbook_one_in_a_thousand_points(dof, x):
+    """Both parity branches of the hand-written closed forms, at the tabulated p = 0.001 values."""
+    assert mon._chi2_sf(x, dof) == pytest.approx(0.001, rel=1e-3)
+
+
+QUIET = "313677517099106352"  # recorded_lsst: drawn at random from the ecdfs cone
+
+
+@pytest.mark.parametrize("band,t,level,err,mag,limit,fires", [
+    # 1.5 mag over a base consistent with zero: i, 2026-10-30, 5 forced points, 29 +/- 158 nJy
+    ("i", 61344.3000, 1887.0, 200.0, 1.4997714, True, True),
+    # 0.9 mag there: still 4.1 sigma, so the magnitude is what stops it
+    ("i", 61344.3000, 1086.0, 200.0, 0.8999162, True, False),
+    # 1.5 mag over a base near S/N 20: r, 2025-11-23, 2 detections, 2785 +/- 146 nJy
+    ("r", 61003.2296, 11087.0, 206.0, 1.4999520, False, True),
+    ("r", 61003.2296, 6380.0, 206.0, 0.8999686, False, False),
+], ids=["zero_1.5", "zero_0.9", "sn20_1.5", "sn20_0.9"])
+def test_an_injected_rise_on_a_recorded_quiet_light_curve(band, t, level, err, mag, limit, fires):
+    """
+    The positive control (user, 2026-11-21): a detection injected one day after a quiet night of a
+    recorded light curve, which is sliced there and never edited. Through the measure itself, a new
+    object's path; persistence has its own tests.
+    """
+    pts = truncate(recorded_lsst(QUIET), t - 1e-6) + [lsst_det(t, level, err, band, QUIET)]
+    rise, vetoed = mon.rapid_rise(pts, t + 0.01)
+    assert (rise.band, rise.mag, rise.limit, vetoed) == (band, pytest.approx(mag), limit, None)
+    assert (rise.mag >= mon.RAPID_RISE_MAG) == fires
+
+
+def test_an_unsteady_base_stops_a_false_rapid_rise_on_sn_2026ivl():
+    """
+    Replay D, 2026-04-14: the i-band base night holds a forced point of -12855 nJy between ~19000s an
+    hour apart (chi2 2111 on 2 dof); counted, it would make a 1.45 mag rise (1.41 in the replay's
+    cache: recorded_lsst). The veto is returned; its rising alert stands.
+    """
+    now = mon.date_to_mjd("2026-04-14")
+    o = obj(truncate(recorded_lsst("170235219334922248"), now), survey="lsst", oid="170235219334922248")
+    ev = mon.evaluate(o, now, now - mon.LOOKBACK_DAYS, classify=xm("host", "EXP"))
+    assert ev.candidate.conditions == ["rising"]
+    assert (ev.vetoed.band, ev.vetoed.mag, ev.vetoed.base_points, ev.vetoed.base_chi2) == (
+        "i", pytest.approx(1.4549024), 3, pytest.approx(2111.2181))
+
+
+def test_at_2026jmz_fires_rapid_rise():
+    """
+    Replay D, 2026-04-15: u from a base consistent with zero (521 +/- 214 nJy, 3 points, steady) to
+    2530 nJy, the mean of forced points added since the replay (1.64 mag there: recorded_lsst).
+    """
+    now = mon.date_to_mjd("2026-04-15")
+    o = obj(truncate(recorded_lsst("170261592629837872"), now), survey="lsst", oid="170261592629837872")
+    c = mon.evaluate(o, now, now - mon.LOOKBACK_DAYS, classify=xm("host", "EXP")).candidate
+    assert c.conditions == ["rising", "rapid_rise"]
+    assert (c.rapid.band, c.rapid.mag, c.rapid.limit, c.rapid.base, c.rapid.base_points) == (
+        "u", pytest.approx(1.4901936), True, pytest.approx(521.4686436), 3)
+
+
+def test_the_rapid_and_vetoed_lines_from_below_the_template_give_no_magnitude():
+    """User, 2026-11-21: ">= +7.16 mag" from a -500 nJy base reads as a brightening the data don't show."""
+    pts = [PhotPoint("ztf", "z", NOW - 1.5, "r", -500.0, 50.0, True, "t"), det(NOW - 1.0, 19.0), det(NOW - 0.5, 18.8)]
+    rise, _ = mon.rapid_rise(pts, NOW)
+    assert mon._rapid_phrase(rise) == ("r from below its template: +110148 nJy within 3 d, 21.8 sigma "
+                                       "(base -500 +/- 50 nJy from 1 point)")
+    assert mon._vetoed_line("ztf:z", dataclasses.replace(rise, base_points=2, base_chi2=30.0)) == (
+        "  ztf:z  r from below its template: +110148 nJy within 3 d, 21.8 sigma: base not steady "
+        "(base -500 +/- 50 nJy from 2 points, chi2 30.0 on 1 dof)")
 
 
 # --- association and context ---------------------------------------------------------------
@@ -325,7 +491,7 @@ def test_an_old_ztf_object_rising_fast_is_re_brightening_never_preexisting():
     make re_brightening impossible for ZTF.
     """
     c = mon.evaluate(obj(REBRIGHT, oid="ZTF18old"), NOW, SINCE, classify=xm("host", "EXP")).candidate
-    assert (c.category, c.conditions, c.rapid) == ("host", ["re_brightening"], pytest.approx(1.2))
+    assert (c.category, c.conditions, c.rapid.mag) == ("host", ["re_brightening"], pytest.approx(1.2))
 
 
 @pytest.mark.parametrize("oid,label", [("ZTF18old", "preexisting_ztf_no_rise"), ("ZTF26old", "old_no_rise")])
@@ -365,6 +531,24 @@ def test_lsst_rising_tier_without_a_bracket():
     assert (c.category, c.conditions) == ("host", ["rising"])
     assert ev.parked is None  # too few detections to be judged new at all: nothing to park
     assert c.onset.code == "too_few_detections"
+
+
+# lsst:171141216924598283's 11-11 alert: two detections, no forced points, the first negative
+LSST_TWO_DETECTIONS = [lsst_det(FIRST, -1097.0, 523.0, "i"), lsst_det(FIRST + 1.0, 3591.0, 354.0, "i")]
+
+
+def test_lsst_rising_on_two_detections_from_a_negative_one():
+    """The shape the real two-detection alerts had (2026-11-10..14), beside LSST_RISER's forced photometry."""
+    c = mon.evaluate(obj(LSST_TWO_DETECTIONS, survey="lsst", oid="1706"), NOW, SINCE, classify=xm("host", "EXP")).candidate
+    assert (c.conditions, c.onset.code) == (["rising"], "too_few_detections")
+    assert (c.rise.mag, c.rise.limit, c.rise.base) == (pytest.approx(0.8989812), True, -1097.0)
+
+
+def test_two_detections_too_little_above_their_floor_do_not_rise():
+    """lsst:171198427780612219's 11-13 shape: "from nothing" before 2026-11-21, -0.85 mag against its floor now."""
+    ev = mon.evaluate(obj([lsst_det(FIRST, -573.0, 178.0), lsst_det(FIRST + 1.0, 245.0, 196.0)], survey="lsst", oid="1706"),
+                      NOW, SINCE, classify=boom)
+    assert (ev.candidate, ev.reason) == (None, "too_few_detections")
 
 
 @pytest.mark.parametrize("points,survey,oid", [
@@ -1479,11 +1663,51 @@ def test_a_report_is_written_whole_or_not_at_all(env, capsys, monkeypatch):
     assert state()["last_mjd"] == NOW  # the state is saved all the same
 
 
-def test_a_rise_from_nothing_is_null_and_the_report_strict_json(env, monkeypatch):
+def test_a_rise_is_written_with_its_limit_and_its_base(env, monkeypatch):
+    """The record format since 2026-11-21 (alert_record): mag always finite, mag_limit beside it."""
     env["objects"] = [obj(NEW_ZTF)]
-    monkeypatch.setattr(mon, "rising", lambda points, first: mon.Rise("r", math.inf, 6.0, 4.0))
+    monkeypatch.setattr(mon, "rising", lambda points, first: mon.Rise("r", 1.95, 6.0, 4.0, True, 900.0, -20.0, 50.0))
     assert mon.scan("D", (150, 12, 1)) == 0
-    assert report()["alerts"][0]["rise"] == {"band": "r", "mag": None, "sigma": 6.0, "days": 4.0}
+    assert report()["alerts"][0]["rise"] == {"band": "r", "mag": 1.95, "mag_limit": True, "level": 900.0, "base": -20.0,
+                                             "base_err": 50.0, "sigma": 6.0, "days": 4.0}
+    assert report()["alerts"][0]["rapid_rise"] is None and "rapid_rise_mag" not in report()["alerts"][0]
+
+
+def test_a_limit_is_marked_in_the_record_and_the_journal(env, capsys):
+    env["objects"] = [obj(LSST_TWO_DETECTIONS, survey="lsst", oid="1706")]
+    assert mon.scan("D", (150, 12, 1)) == 0
+    assert ("  rising: i >= +0.90 mag (lower limit), 7.4 sigma over 1.0 d (base -1097 +/- 523 nJy, below 3 sigma)"
+            in capsys.readouterr().out.splitlines())
+    assert report()["alerts"][0]["rise"] == {"band": "i", "mag": pytest.approx(0.8989812), "mag_limit": True, "level": 3591.0,
+                                             "base": -1097.0, "base_err": 523.0, "sigma": pytest.approx(7.4231037), "days": 1.0}
+
+
+def test_a_base_below_its_template_gets_no_magnitude_in_the_journal(env, capsys):
+    """User, 2026-11-21: the journal gives the flux gained; the record keeps mag and mag_limit, the decision values."""
+    env["objects"] = [obj([lsst_det(FIRST, -500.0, 50.0), lsst_det(NOW - 1, 2000.0, 60.0)], survey="lsst", oid="1706")]
+    assert mon.scan("D", (150, 12, 1)) == 0
+    assert ("  rising: r from below its template: +2500 nJy, 32.0 sigma over 4.0 d (base -500 +/- 50 nJy)"
+            in capsys.readouterr().out.splitlines())
+    assert report()["alerts"][0]["rise"] == {"band": "r", "mag": pytest.approx(2.8123468), "mag_limit": True, "level": 2000.0,
+                                             "base": -500.0, "base_err": 50.0, "sigma": pytest.approx(32.0092200), "days": 4.0}
+
+
+def test_a_veto_that_stops_a_firing_is_listed(env, capsys):
+    """The steady test never stops a rise silently: the journal and the report name it (rapid_rise_vetoed)."""
+    pts = [lsst_det(NOW - 4.0, 3000.0, 50.0), forced(NOW - 2.00, 765.0, 100.0), forced(NOW - 1.99, 1235.0, 100.0),
+           lsst_det(NOW - 0.5, 3000.0, 50.0)]
+    env["objects"] = [obj(pts, survey="lsst", oid="1706")]
+    assert mon.scan("D", (150, 12, 1)) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "Rapid rise stopped by an unsteady base: 1" in out
+    assert ("  lsst:1706  r +1.19 mag within 3 d, 23.1 sigma: base not steady "
+            "(base 1000 +/- 71 nJy from 2 points, chi2 11.0 on 1 dof)") in out
+    rep = report()
+    assert (rep["alerts"], rep["rejected"]) == ([], {"too_few_detections": 1})
+    assert rep["rapid_rise_vetoed"] == [{
+        "key": "lsst:1706", "band": "r", "mag": pytest.approx(1.1928031), "mag_limit": False, "level": pytest.approx(3000.0),
+        "base": pytest.approx(1000.0), "base_err": pytest.approx(70.7106781), "base_points": 2,
+        "sigma": pytest.approx(23.0940108), "days": pytest.approx(1.5), "base_chi2": pytest.approx(11.045), "base_dof": 1}]
 
 
 def test_a_non_finite_float_past_the_builder_fails_the_write_not_the_json(env, capsys, monkeypatch):
