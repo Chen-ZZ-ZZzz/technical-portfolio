@@ -18,7 +18,7 @@ antares-client version against the lock. It checks what the docs say about the u
 never that a unit works: that is the user's install.
 
 Beside the table, test_every_doc_link_lands guards the links in and between the READMEs
-and CLAUDE.md, the one kind of pointer a test can check in full: GitHub builds an anchor
+(the viewer's two included) and CLAUDE.md, the one kind of pointer a test can check in full: GitHub builds an anchor
 from its heading's text, so renaming a heading breaks every link to it without a sound.
 Links are not rows, because a row's pattern sees only the path spelling it expects:
 README.md#x written inside systemd/README.md opens that same file, and would match none.
@@ -40,7 +40,15 @@ from tests.test_sso_frozen import FROZEN_FILES
 
 ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD = ROOT / "systemd"
-DOCS = {name: (ROOT / name).read_text() for name in ("README.md", "systemd/README.md", "CLAUDE.md")}
+DOCS = {name: (ROOT / name).read_text() for name in (
+    "README.md", "systemd/README.md", "CLAUDE.md",
+    "viewer/README.md", "viewer/tests/data/README.md", "viewer/SPEC.md",
+)}
+# A doc in DOCS as a link target only, with no links of its own, and why. Every other doc must
+# show links: a reader that misses them all would otherwise pass without a sound.
+WITHOUT_LINKS = {
+    "viewer/SPEC.md": "the viewer's rules, in plain text; the viewer's READMEs link to it",
+}
 # A relative link to a doc, to a heading in one, or to a heading in this one: (path, anchor).
 # A URL is no pointer between the docs, nor is a link to a file that is not a doc.
 DOC_LINK = re.compile(r"\]\((?!\w+://)([^)#\s]*\.md)?(?:#([^)\s]+))?\)")
@@ -213,8 +221,10 @@ def test_the_docs_quote_what_they_describe(doc, pattern, value):
 
 
 def test_every_doc_link_lands():
-    unlinked = [name for name, text in DOCS.items() if not doc_links(text)]
+    unlinked = [name for name, text in DOCS.items() if name not in WITHOUT_LINKS and not doc_links(text)]
     assert not unlinked, f"no links seen in {unlinked}: nothing would be guarded"
+    linked = [name for name in WITHOUT_LINKS if doc_links(DOCS[name])]
+    assert not linked, f"{linked} now have links: take them out of WITHOUT_LINKS"
     assert not broken_links(DOCS)
 
 

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transient monitor reports</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 1.5rem; line-height: 1.4; }
+  nav { display: flex; gap: 1.25rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 .5rem; }
+  .reading { color: GrayText; }
+  .message { margin: .25rem 0; }
+  table { border-collapse: collapse; margin-top: .75rem; }
+  th, td { padding: .35rem .75rem; border-bottom: 1px solid #8885; text-align: left; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.sortable { cursor: pointer; }
+  th button { font: inherit; font-weight: bold; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #8882; }
+</style>
+<script src="viewer.js" defer></script>
+</head>
+<body>
+<main id="app"></main>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{
+ "mode": "live",
+ "footprint": "ecdfs",
+ "cone": [
+  53.1,
+  -27.8,
+  2.82
+ ],
+ "run_utc": "2026-11-21T21:13:44+00:00",
+ "run_mjd": 61365.88453703704,
+ "since_mjd": 61351.88453703704,
+ "settings": {
+  "lookback_days": 14.0,
+  "bracket_days": 10.0,
+  "min_detections": 3
+ },
+ "listings": {
+  "ztf": {
+   "status": "objects",
+   "detail": "48 objects active since 2026-11-08",
+   "newest_mjd": 61366.35131940013,
+   "answered_mjd": 61366.35131940013
+  },
+  "lsst": {
+   "status": "objects",
+   "detail": "12310 objects active since 2026-11-08",
+   "newest_mjd": 61359.230434937825,
+   "answered_mjd": 61359.230434937825
+  }
+ },
+ "photometry": {
+  "fetched": 2443,
+  "not_fetched": 9915,
+  "failed": 2
+ },
+ "fetch_errors": [
+  "lsst:171198427804205104: alerce lsst: HTTPSConnectionPool(host='api-lsst.alerce.online', port=443): Read timed out. (read timeout=60.0)",
+  "lsst:171198427622277225: alerce lsst: HTTPSConnectionPool(host='api-lsst.alerce.online', port=443): Read timed out. (read timeout=60.0)"
+ ],
+ "objects": {
+  "total": 12358,
+  "by_survey": {
+   "lsst": 12310,
+   "ztf": 48
+  },
+  "kept": 15
+ },
+ "rejected": {
+  "no_photometry": 2,
+  "old_no_recent_detection": 5743,
+  "preexisting_ztf_no_rise": 1,
+  "single_detection": 4172,
+  "single_night": 371,
+  "too_few_detections": 810,
+  "unbracketed": 1244
+ },
+ "rapid_rise_vetoed": [],
+ "parked": {
+  "count": 1256,
+  "new": [],
+  "resolved": [
+   "lsst:171198427804205104",
+   "lsst:171198427622277225"
+  ],
+  "expired": []
+ },
+ "alerts": [],
+ "tns_earlier": [],
+ "point_source_watch": [
+  "Point-source watch: 9 point_source alerts awaiting a TNS classification; spectroscopic supernovae on a point source below S/N 7: 1 of 3 (SN 2026kfw S/N 6.3)"
+ ],
+ "warnings": []
+}

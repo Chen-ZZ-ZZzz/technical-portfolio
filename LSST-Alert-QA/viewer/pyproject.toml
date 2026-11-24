@@ -1,0 +1,16 @@
+[project]
+name = "rubin-qa-viewer"
+version = "0.1.0"
+description = "The transient monitor's report viewer and its Playwright suite"
+requires-python = ">=3.13"
+dependencies = []
+
+# Its own table, so pytest run from viewer/ stops here instead of walking up to the root's.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-playwright>=0.10.0",
+]
