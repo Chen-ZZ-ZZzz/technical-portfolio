@@ -39,6 +39,7 @@ SCIENCE_TAGS: frozenset = frozenset({
     "sso_confirmed",                            # class: known solar-system object, on its ephemeris
     "imhb_candidate",                           # class: accreting intermediate-mass black hole
     "SN_candies",                               # class: supernova candidate (Rubin stream)
+    "eyoue_slsn_luminous",                      # class: superluminous supernova, peak M ≤ −20 from a catalogue redshift (a wrong host match not ruled out)
     "soraisam_sublum",                          # class: intermediate-luminosity optical transient
     "young_rubin_transients",                   # light curve: young transient (Rubin stream)
     "nova_test",                                # light curve: bluer colour evolution
@@ -50,6 +51,7 @@ PIPELINE_TAGS: frozenset = frozenset({
     "lc_feature_extractor",                     # processing: light-curve features computed
     "refitt_newsources_snrcut",                 # selection: new sources at S/N > 5, for the REFITT broker
     "siena_mag_coord_cut",                      # selection: magnitude and position cut, for the Siena telescope
+    "eyoue_slsn_prefilter",                     # selection: prefilter for a downstream SLSN step; no class
     "iso_forest_anomaly_detection",             # processing: anomaly detector's pass; no class
     "LAISS_RFC_AD_filter",                      # processing: classifier/anomaly detector's pass; result elsewhere
     "desoto_classified",                        # processing: a classifier's pass, by its name; no description read
@@ -57,6 +59,7 @@ PIPELINE_TAGS: frozenset = frozenset({
     "matheson_extreme_vpdf",                    # processing: a variability metric; no class
     "in_LSSTDDF",                               # footprint: an LSST deep drilling field
     "in_shadow_virgo",                          # footprint
+    "in_decam_shadow",                          # footprint: DECam Shadow Survey fields (six galaxy clusters); read from the name, no description found
     "NUTTelA_TAO",                              # no description available: kept out of scoring
     "desi_target",                              # selection: DESI's brightness range; at most a weak hint
     "lsst_scimma_quality_transient",            # quality gate: S/N > 10, no quality flags, no known SSO

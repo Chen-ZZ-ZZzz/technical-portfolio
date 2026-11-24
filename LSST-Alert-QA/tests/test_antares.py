@@ -789,6 +789,45 @@ class TestClassifyAntares:
         assert "unknown: ['brand_new_filter_2027']" in cl["flag"]
         assert cl["n_classifiers"] == 0
 
+    def test_the_unknown_list_is_sorted(self):
+        """
+        No recorded locus keeps two unknown tags since eyoue_slsn_prefilter was classed
+        (2026-11-24), and a real pair would last only until a round classes one of them: two
+        names no round will class, given in reverse order.
+        """
+        assert not {"aa_unseen_filter", "zz_unseen_filter"} & (SCIENCE_TAGS | PIPELINE_TAGS)
+        cl = classify_antares(["zz_unseen_filter", "lc_feature_extractor", "aa_unseen_filter"])
+        assert cl["unknown_tags"] == ["aa_unseen_filter", "zz_unseen_filter"]
+        assert cl["flag"] == ("no_science_tags (pipeline: ['lc_feature_extractor']; "
+                              "unknown: ['aa_unseen_filter', 'zz_unseen_filter'])")
+
+    def test_in_decam_shadow_is_a_pipeline_tag(self):
+        """
+        A footprint, like in_shadow_virgo: the DECam Shadow Survey's fields over six galaxy
+        clusters. The class rests on the name, no description found (Chen, 2026-11-22), as
+        its line in classifier.py says. No recorded locus carries it, so a plain list.
+        """
+        cl = classify_antares(["in_decam_shadow", "lc_feature_extractor"])
+        assert cl["flag"] == "no_science_tags (pipeline: ['in_decam_shadow', 'lc_feature_extractor']; unknown: [])"
+        assert cl["unknown_tags"] == []
+        beside = classify_antares(["dimmers", "in_decam_shadow"])
+        assert (beside["top_class"], beside["verdict"], beside["unknown_tags"]) == ("dimmers", "pass", [])
+
+    @pytest.mark.parametrize("other_science,expected", [
+        ([], ("eyoue_slsn_luminous", "pass", None)),
+        (["extragalactic"], ("extragalactic, eyoue_slsn_luminous", "review_major", "multiple_science_tags")),
+    ])
+    def test_eyoue_slsn_luminous_is_a_science_tag(self, other_science, expected):
+        """
+        Chen, 2026-11-24: a superluminous supernova by its peak absolute magnitude from a
+        catalogue redshift, a class claim. Alone it is the locus's one science tag (PASS);
+        beside another, here extragalactic (it needs a host with a redshift), it splits the
+        vote. No recorded locus carries it, so a plain list.
+        """
+        cl = classify_antares(["eyoue_slsn_luminous", "lc_feature_extractor", *other_science])
+        assert (cl["top_class"], cl["verdict"], cl["flag_reason"]) == expected
+        assert cl["unknown_tags"] == []
+
     def test_no_tags_at_all(self):
         """no_classification has one owner, validate_antares (2026-11-04): the classifier adds nothing."""
         cl = classify_antares([])
@@ -818,7 +857,7 @@ class TestTagClassesOnRecordedLoci:
 
     @pytest.mark.parametrize("locus_id,min_unknown", [
         ("ANT20262tl85caoepac", 0),  # its pipeline tags served out of order
-        ("ANT2022r8hygxeyd6qm", 2),  # two unknown tags, so their order is tested too
+        ("ANT2022r8hygxeyd6qm", 1),  # three pipeline tags and one unknown (the unknown list's order: a plain list)
     ])
     def test_tag_lists_are_sorted_whatever_order_antares_serves(self, locus_id, min_unknown):
         """
@@ -844,6 +883,24 @@ class TestTagClassesOnRecordedLoci:
         assert cl["flag"] == ("no_science_tags (pipeline: ['in_LSSTDDF', 'lc_feature_extractor', "
                               "'lsst_scimma_quality_transient', 'uniform_random_sample']; unknown: [])")
         assert (cl["flag_reason"], cl["verdict"], cl["unknown_tags"]) == ("no_science_tags", "review_major", [])
+
+    def test_eyoue_slsn_prefilter_is_a_pipeline_tag(self):
+        """
+        Chen, 2026-11-24: ANTARES describes it as a candidate for a downstream SLSN step, a
+        prefilter feeding a later filter: a selection, not a class. On a locus without a
+        science tag it is named among the pipeline tags; beside one science tag (the
+        listing's ANT2019fyrbw, dimmers) it neither splits the vote nor shows as unknown.
+        """
+        tags = fake_antares.served_tags("ANT2022r8hygxeyd6qm")
+        assert "eyoue_slsn_prefilter" in tags and tag_split(tags)[0] == []
+        cl = classify_antares(tags)
+        assert cl["flag"] == ("no_science_tags (pipeline: ['eyoue_slsn_prefilter', 'lc_feature_extractor', "
+                              f"'lsst_scimma_quality_transient']; unknown: ['{LANTERN}'])")
+        listed = {d["locus"]["locus_id"]: d["locus"]["tags"] for d in json.loads(LISTING.read_bytes())["data"]}
+        beside = listed["ANT2019fyrbw"]
+        assert "eyoue_slsn_prefilter" in beside and tag_split(beside)[0] == ["dimmers"]
+        cl = classify_antares(beside)
+        assert (cl["top_class"], cl["verdict"], cl["flag"], cl["unknown_tags"]) == ("dimmers", "pass", None, [])
 
     def test_no_tag_is_in_both_sets(self):
         """classify_antares looks for science tags first: a tag in both sets would score as science unseen."""

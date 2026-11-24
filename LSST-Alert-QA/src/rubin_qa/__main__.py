@@ -115,7 +115,7 @@ def flag_split(df: pd.DataFrame) -> str:
 
 def unknown_tag_split(df: pd.DataFrame) -> str:
     """
-    "unknown tags: lantern_xgboost_t2.0.7_c0.95 165, eyoue_slsn_prefilter 1": the ANTARES
+    "unknown tags: <tag> <loci>, …" (a run's line: README, "Pipeline QA Report"): the ANTARES
     tags in neither of classifier.py's sets, each with the number of loci carrying it, by
     count, then name, so a new tag shows in the journal on the first run that meets it.
     Read from the report's unknown_tags column, so the CSV reproduces it. "none" only for

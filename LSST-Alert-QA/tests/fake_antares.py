@@ -21,8 +21,10 @@ each for what it is used for:
   ANT20250fk7udcecmrt  microlensing_candidate as the locus's only science tag: PASS.
   ANT2026b0g1vijrn6ym  microlensing_candidate beside extragalactic (multiple_science_tags),
                        and lantern_xgboost_t2.0.7_c0.95 on a locus with science tags.
-  ANT2022r8hygxeyd6qm  no science tag and two unknown tags: the order of the unknown list,
-                       and lantern_xgboost_t2.0.7_c0.95 on a locus without science tags.
+  ANT2022r8hygxeyd6qm  no science tag, three pipeline tags and, since eyoue_slsn_prefilter
+                       was classed (2026-11-24), one unknown tag: the order of the pipeline
+                       list, eyoue_slsn_prefilter as a pipeline tag, and
+                       lantern_xgboost_t2.0.7_c0.95 on a locus without science tags.
 The tests assert what they need of a recording before relying on it, so a re-recording
 whose tags changed fails there, never silently.
 """
