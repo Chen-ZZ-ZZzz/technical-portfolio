@@ -4,30 +4,30 @@ The viewer shows the transient monitor's reports in a web page. It in turn serve
 
 Tests are written from these rules, not from the page’s code.
 
-1. Report files are in reports/. Live report files have <name>s "transient_<FOOTPRINT>_<YYYYMMDD>_<hhmmss>.json".
+1. Report files are in reports/. Live report files have names "`transient_<FOOTPRINT>_<YYYYMMDD>_<hhmmss>.json`".
 
-2. Init report files have <name>s "transient_<FOOTPRINT>_<YYYYMMDD>_<hhmmss>_init.json".
+2. Init report files have names "`transient_<FOOTPRINT>_<YYYYMMDD>_<hhmmss>_init.json`".
 
 3. Given reports/ is empty, when opened without ?file=, the page shows "Report folder empty" and no table.
 
 4. Given reports/ can't be listed, when opened without ?file=, the page shows "Report folder not found" and no table.
 
-5. Given ?file= containing / or \, the error page shows "Invalid file name". This rule applies before Rule 6.
-   - Given ?file=transient_x/../../logs/replay_ecdfs_20261102_163727.json, then "Invalid file name".
-   - Given ?file=transient_x\..\..\logs\replay_ecdfs_20261102_163727.json, then "Invalid file name".
+5. Given ?file= containing `/` or `\`, the error page shows "Invalid file name". This rule applies before Rule 6.
+   - Given `?file=transient_x/../../logs/replay_ecdfs_20261102_163727.json`, then "Invalid file name".
+   - Given `?file=transient_x\..\..\logs\replay_ecdfs_20261102_163727.json`, then "Invalid file name".
 
-6. Given ?file= matches neither Rule 1 nor Rule 2, the error page shows "Invalid file name: <name>".
+6. Given ?file= matches neither Rule 1 nor Rule 2, the error page shows "`Invalid file name: <name>`".
 
 7. Given opened without ?file=, the viewer must show the overview listing every report in reports/
 
 8. Given reports/ has files, but none matches Rule 1 or 2, when opened without ?file=, the page shows "No reports found in the folder" and no table.
 
-9. When a report file can't be opened, the error page shows "Report not found: <name>".
+9. When a report file can't be opened, the error page shows "`Report not found: <name>`".
 
-10. Given a file that isn't valid JSON, the error page shows "Not a valid report: <name>".
+10. Given a file that isn't valid JSON, the error page shows "`Not a valid report: <name>`".
     - Given transient_foobar_20251003_000000.json containing {"mode":, then "Not a valid report: transient_foobar_20251003_000000.json"
 
-11. Given a file is valid JSON, but contains no top-level run_utc, or run_utc is not a valid time, the error page shows "Not a valid report: <name>". Valid run_utc value defined as pattern: "<YYYY>-<MM>-<DD>T<hh>:<mm>:<ss>+00:00".
+11. Given a file is valid JSON, but contains no top-level run_utc, or run_utc is not a valid time, the error page shows "`Not a valid report: <name>`". Valid run_utc value defined as pattern: "`<YYYY>-<MM>-<DD>T<hh>:<mm>:<ss>+00:00`".
     - Given transient_foobar_20251001_000000.json containing "foobar", then "Not a valid report: transient_foobar_20251001_000000.json"
     - Given transient_foobar_20251002_000000.json containing {}, then "Not a valid report: transient_foobar_20251002_000000.json"
     - Given transient_foobar_20251009_000000.json containing {"run_utc": "2025-10-08T23:00:00+0100"}, then "Not a valid report: transient_foobar_20251009_000000.json"
@@ -44,7 +44,7 @@ Tests are written from these rules, not from the page’s code.
 
 16. When a user clicks Raw JSON link, the file opens in a new tab.
     - Given transient_ecdfs_20261105_160051.json, the new tab’s address ends in reports/transient_ecdfs_20261105_160051.json
-    - Given transient_<f>oobar_20251004_000000.json, the new tab’s address ends in reports/transient_%3Cf%3Eoobar_20251004_000000.json
+    - Given `transient_<f>oobar_20251004_000000.json`, the new tab’s address ends in reports/transient_%3Cf%3Eoobar_20251004_000000.json
 
 17. A Report page contains one region "Report" showing its content. An error page shows no such region. The Raw JSON link isn't inside the Report region.
     - Given transient_ecdfs_20261109_160151.json, the page shows Report region.
@@ -56,9 +56,9 @@ Tests are written from these rules, not from the page’s code.
 
 20. Given report files and none is good, when opened without ?file=, the page shows their message lines and no table.
 
-21. Overview format. one report per row.
+21. Overview format. one report per row. Columns, in this order:
 
-        Columns, in this order: Report, Date, Mode, Exit, Alerts, Reported Earlier, Message.
+    Report, Date, Mode, Exit, Alerts, Reported Earlier, Message.
 
 22. When clicks a row, the page opens that report.
 
@@ -83,13 +83,13 @@ Tests are written from these rules, not from the page’s code.
 31. `Reported Earlier` shows state_before.reported
     - Given transient_ecdfs_20261111_160243.json, then "8".
 
-32. <SURVEY> names in `Message` are listing keys under listings, in uppercase.
+32. `<SURVEY>` names in `Message` are listing keys under listings, in uppercase.
     - Given listings.lsst, then "LSST".
 
 33. Given exit 0, Message shows "-".
     - Given transient_ecdfs_20261110_160051.json, then "-".
 
-34. Given exit 1, when one listing failed, `Message` shows "ERROR: <SURVEY> listing failed".
+34. Given exit 1, when one listing failed, Message shows "`ERROR: <SURVEY> listing failed`".
     - Given transient_ecdfs_20261102_163727.json, then "ERROR: LSST listing failed".
     - Given transient_ecdfs_20261112_224310.json, then "ERROR: ZTF listing failed".
 
@@ -110,9 +110,9 @@ Tests are written from these rules, not from the page’s code.
 
 39. Sortable columns: Report, Date, Mode, Exit, and Alerts.
 
-        Active column shows ▲ or ▼, the other sortable columns ↕.
+    Active column shows ▲ or ▼, the other sortable columns ↕.
 
-        ▲ means the values ascend down the table (A→Z, 0→9, oldest→newest).
+    ▲ means the values ascend down the table (A→Z, 0→9, oldest→newest).
 
 40. When click on sortable column headers, flip the order if sorted by it, else sort by it (Rules 43 to 48).
 
@@ -140,19 +140,19 @@ Tests are written from these rules, not from the page’s code.
 51. Given user is in report page, when returns to overview by the link, or by Back, overview keeps the sort.
 
 52. Text from URL must appear character for character.
-    - Given ?file=<foo>bar.json, then "Invalid file name: <foo>bar.json".
+    - Given `?file=<foo>bar.json`, then "`Invalid file name: <foo>bar.json`".
     - Given ?file=foo+bar.json, then "Invalid file name: foo+bar.json".
 
 53. Text from a report must appear character for character.
-    - Given transient_<f>oobar_20251004_000000.json whose "footprint" is "<f>oobar", then "<f>oobar" shows in the Report column of the overview page, and in the main heading of the report page.
+    - Given `transient_<f>oobar_20251004_000000.json` whose "footprint" is "`<f>oobar`", then "`<f>oobar`" shows in the Report column of the overview page, and in the main heading of the report page.
 
 54. In the Report region, the main heading is its run_utc, footprint, and mode. Assumed: A report with run_utc also has footprint and mode.
     - Given ?file=transient_ecdfs_20261105_160051.json, then "2026-11-05 15:00:51 UTC - ecdfs - live".
     - Given ?file=transient_ecdfs_20261112_095400_init.json, then "2026-11-12 08:54:00 UTC - ecdfs - init".
 
-55. Cone line in the Report region. Labels: "Cone", "RA", "Dec", "Radius". Values: ra=cone.0, dec=cone.1, r=cone.2. It shows "Cone" "RA <ra>°" "Dec <dec>°" "Radius <r>°". The line shows these four texts, in this order; what separates them is free. Values as written in the report; whole number shows with ".0". Also, the minus is the plain keyboard hyphen. Assumed: Report writes cone values as decimal numbers (90.0, never 90).
+55. Cone line in the Report region. Labels: "Cone", "RA", "Dec", "Radius". Values: ra=cone.0, dec=cone.1, r=cone.2. It shows "Cone" "`RA <ra>°`" "`Dec <dec>°`" "`Radius <r>°`". The line shows these four texts, in this order; what separates them is free. Values as written in the report; whole number shows with ".0". Also, the minus is the plain keyboard hyphen. Assumed: Report writes cone values as decimal numbers (90.0, never 90).
     - Given ?file=transient_ecdfs_20261111_160243.json, then "Cone" "RA 53.1°" "Dec -27.8°" "Radius 2.82°".
-    - Given ?file=transient_<f>oobar_20251004_000000.json, then "Cone" "RA 200.5°" "Dec 90.0°" "Radius 1.25°".
+    - Given `?file=transient_<f>oobar_20251004_000000.json`, then "Cone" "RA 200.5°" "Dec 90.0°" "Radius 1.25°".
 
 56. Top level keys: None must be missed
    - mode
